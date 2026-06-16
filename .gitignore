@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Built plugin bundles
+*.plugin
+
+# Self-test / generated artifacts (skills write deliverables into the USER's folders, not the repo)
+*-selftest.html
+/--self-test
+
+# OS cruft
+.DS_Store
+Thumbs.db

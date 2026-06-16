@@ -1,0 +1,699 @@
+"""Reconciliation — match A <-> B, then triage the discrepancies.
+
+Reconciles any two record sets (A = "ours" / source, B = "theirs" / target): matches
+line-by-line on a shared key OR heuristically on amount + date, then runs **Discrepancy
+Triage** — every unreconciled item is classified (category, materiality, probable cause,
+suggested action), not just listed. Produces a reconciliation working paper (.xlsx) for
+review and sign off.
+
+Design notes:
+- Pure `match()` / `triage()` work on already-parsed rows (list[dict]) — no I/O, so the
+  self-test runs offline with no dependencies.
+- `reconcile_files()` is the higher-level wrapper that reads A and B in any format via the
+  shared engine (`ingest`) and normalises (`dataclean`) before matching.
+- Deterministic. NEVER force-fits a match — an unmatched item stays flagged. It is a
+  WORKING PAPER for a qualified person; it does NOT post adjustments or write to any system.
+
+Run `python reconcile.py --self-test` (offline) for a worked check.
+"""
+from __future__ import annotations
+
+import argparse
+import datetime as _dt
+import re
+import sys
+from pathlib import Path
+
+# --------------------------------------------------------------------------- #
+# Discrepancy Triage taxonomy — the heart of the skill.
+# Each category maps to a probable cause and a suggested action. {A}/{B} are filled
+# with the two side labels at render time.
+# --------------------------------------------------------------------------- #
+TRIAGE = {
+    "missing_in_B":     ("In {A} but not {B} — unrecorded/omitted in {B}, or a timing/cut-off item",
+                         "Investigate; record in {B} or chase {B}"),
+    "missing_in_A":     ("In {B} but not {A} — unrecorded/omitted in {A}, or a timing/cut-off item",
+                         "Investigate; record in {A} or query {B}"),
+    "amount_mismatch":  ("Same item matched, but the amounts differ",
+                         "Investigate the difference; correct the wrong side"),
+    "rounding":         ("Amounts differ within the rounding / FX tolerance",
+                         "Accept within tolerance (note only)"),
+    "sign_flip":        ("Equal magnitude, opposite sign — a debit/credit or direction error",
+                         "Correct the sign / side of the entry"),
+    "duplicate":        ("Appears more than once on the {side} side",
+                         "Confirm and remove the duplicate"),
+    "timing_difference":("Matches on amount but the dates differ — likely in-transit / cut-off",
+                         "Monitor — expected to clear next period"),
+}
+
+# --------------------------------------------------------------------------- #
+# Presets — column-mapping + match defaults for common recurring reconciliations.
+# The engine is generic; a preset just pre-fills sensible defaults (override per run).
+# --------------------------------------------------------------------------- #
+PRESETS = {
+    "invoice_tracker_vs_ledger": {
+        "label": "Internal invoice tracker vs accounting records",
+        "a_label": "Tracker", "b_label": "Ledger",
+        "mode": "key", "key": "invoice_no", "amount": "amount", "date": "date",
+        "note": "Completeness: every tracked invoice is booked, and every booked entry is tracked. "
+                "missing_in_B = invoiced-not-booked; missing_in_A = booked-not-tracked.",
+    },
+    "bank_vs_ledger": {
+        "label": "Bank statement vs cashbook / ledger",
+        "a_label": "Bank", "b_label": "Cashbook",
+        "mode": "amount_date", "key": None, "amount": "amount", "date": "date",
+        "note": "Banks rarely share a clean key — match on amount + date; un-cleared items are "
+                "usually timing_difference (in transit) until they clear.",
+    },
+    "fa_vs_internal": {
+        "label": "Fund administrator vs internal records",
+        "a_label": "FA", "b_label": "Internal",
+        "mode": "key", "key": "ref", "amount": "amount", "date": "date",
+        "note": "The outsourced-admin check (NAV / cash / capital accounts / positions). "
+                "Sensitive or confidential data — keep strictly local.",
+    },
+    "payments_vs_bank": {
+        "label": "Payments (AP / PRF) vs bank",
+        "a_label": "Approved", "b_label": "Bank",
+        "mode": "key", "key": "payment_ref", "amount": "amount", "date": "date",
+        "note": "Payments requested/approved vs what actually left the bank. missing_in_B = "
+                "approved-not-paid; missing_in_A = paid-without-approval (flag).",
+    },
+}
+
+
+# --------------------------------------------------------------------------- #
+# Parsing helpers
+# --------------------------------------------------------------------------- #
+def to_amount(x):
+    """Best-effort numeric parse: strips currency symbols, thousands separators, brackets=neg."""
+    if x is None:
+        return None
+    if isinstance(x, (int, float)):
+        return float(x)
+    s = str(x).strip()
+    if not s:
+        return None
+    neg = s.startswith("(") and s.endswith(")")
+    s = re.sub(r"[^0-9.\-]", "", s.replace(",", ""))
+    if s in ("", "-", ".", "-."):
+        return None
+    try:
+        v = float(s)
+    except ValueError:
+        return None
+    return -v if neg else v
+
+
+def to_date(x):
+    """Parse common date forms to a date; None if unparseable (kept raw, flagged elsewhere)."""
+    if x is None or str(x).strip() == "":
+        return None
+    if isinstance(x, _dt.datetime):
+        return x.date()
+    if isinstance(x, _dt.date):
+        return x
+    s = str(x).strip()
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d %b %Y", "%d %B %Y",
+                "%m/%d/%Y", "%Y/%m/%d", "%d.%m.%Y"):
+        try:
+            return _dt.datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def norm_key(x):
+    return re.sub(r"\s+", "", str(x).strip().lower()) if x not in (None, "") else None
+
+
+# --------------------------------------------------------------------------- #
+# Stage 1 — match A <-> B
+# --------------------------------------------------------------------------- #
+def match(rows_a, rows_b, *, key=None, amount="amount", date=None,
+          mode="key", tol=0.01, date_window_days=5):
+    """Match two row sets. Returns a dict of buckets, each a list of records.
+
+    Buckets: matched, value_diffs, a_only, b_only, dup_a, dup_b.
+    Every record carries its source row(s) and the parsed amount/date/key.
+    """
+    A = [{"row": r, "amt": to_amount(r.get(amount)), "dt": to_date(r.get(date)) if date else None,
+          "key": norm_key(r.get(key)) if key else None, "i": i} for i, r in enumerate(rows_a)]
+    B = [{"row": r, "amt": to_amount(r.get(amount)), "dt": to_date(r.get(date)) if date else None,
+          "key": norm_key(r.get(key)) if key else None, "i": i} for i, r in enumerate(rows_b)]
+
+    res = {"matched": [], "value_diffs": [], "a_only": [], "b_only": [], "dup_a": [], "dup_b": []}
+
+    if mode == "key":
+        from collections import defaultdict
+        ib, ia = defaultdict(list), defaultdict(list)
+        for b in B:
+            ib[b["key"]].append(b)
+        for a in A:
+            ia[a["key"]].append(a)
+        for k, items in ia.items():
+            if k is not None and len(items) > 1:
+                res["dup_a"].extend(items[1:])
+        for k, items in ib.items():
+            if k is not None and len(items) > 1:
+                res["dup_b"].extend(items[1:])
+        dupb_ids = {id(x) for x in res["dup_b"]}
+        usedb, seen_a = set(), set()
+        for a in A:
+            k = a["key"]
+            if k is not None and k in seen_a:
+                continue                          # duplicate occurrence -> already in dup_a
+            if k is not None:
+                seen_a.add(k)
+            cand = ib.get(k) if k is not None else None
+            if cand:
+                b = cand[0]
+                usedb.add(id(b))
+                da = (a["amt"] or 0) - (b["amt"] or 0)
+                res["matched" if abs(da) <= tol else "value_diffs"].append({"a": a, "b": b, "diff": da})
+            else:
+                res["a_only"].append({"a": a})
+        for b in B:
+            if id(b) not in usedb and id(b) not in dupb_ids:
+                res["b_only"].append({"b": b})
+
+    else:  # amount_date heuristic
+        usedb = set()
+        bidx = list(B)
+        for a in A:
+            best = None
+            for b in bidx:
+                if id(b) in usedb:
+                    continue
+                if a["amt"] is None or b["amt"] is None:
+                    continue
+                if abs(a["amt"] - b["amt"]) <= tol:
+                    if a["dt"] and b["dt"]:
+                        gap = abs((a["dt"] - b["dt"]).days)
+                    else:
+                        gap = 0
+                    if best is None or gap < best[1]:
+                        best = (b, gap)
+            if best is None:
+                res["a_only"].append({"a": a})
+            else:
+                b, gap = best
+                usedb.add(id(b))
+                if gap == 0:
+                    res["matched"].append({"a": a, "b": b, "diff": 0.0})
+                else:
+                    res["matched"].append({"a": a, "b": b, "diff": 0.0, "date_gap": gap})
+        for b in bidx:
+            if id(b) not in usedb:
+                res["b_only"].append({"b": b})
+    return res
+
+
+# --------------------------------------------------------------------------- #
+# Stage 2 — Discrepancy Triage
+# --------------------------------------------------------------------------- #
+def _materiality(v, material, escalate):
+    v = abs(v or 0)
+    if v >= escalate:
+        return "escalate"
+    if v >= material:
+        return "material"
+    return "immaterial"
+
+
+def triage(res, *, a_label="A", b_label="B", material=1000.0, escalate=10000.0,
+           rounding=0.05, date_window_days=5):
+    """Classify every unreconciled item. Returns a list of exception dicts."""
+    out = []
+
+    def cause_action(cat, side=None):
+        c, act = TRIAGE[cat]
+        f = {"A": a_label, "B": b_label, "side": side or ""}
+        return c.format(**f), act.format(**f)
+
+    for m in res["matched"]:
+        if m.get("date_gap"):
+            c, act = cause_action("timing_difference")
+            out.append(_exc("timing_difference", m["a"], m["b"], 0.0, "monitor", c, act,
+                            material, escalate))
+    for d in res["value_diffs"]:
+        diff = d["diff"]
+        a, b = d["a"], d["b"]
+        adiff = round(abs(diff), 2)            # avoid float dust at the band edge
+        if adiff <= rounding:
+            cat = "rounding"
+        elif a["amt"] is not None and b["amt"] is not None \
+                and round(abs(a["amt"] + b["amt"]), 2) <= rounding and round(abs(a["amt"]), 2) > rounding:
+            cat = "sign_flip"
+        else:
+            cat = "amount_mismatch"
+        c, act = cause_action(cat)
+        out.append(_exc(cat, a, b, diff, _verb(cat), c, act, material, escalate))
+    for d in res["a_only"]:
+        c, act = cause_action("missing_in_B")
+        a = d["a"]
+        out.append(_exc("missing_in_B", a, None, a["amt"], "investigate", c, act, material, escalate))
+    for d in res["b_only"]:
+        c, act = cause_action("missing_in_A")
+        b = d["b"]
+        out.append(_exc("missing_in_A", None, b, b["amt"], "investigate", c, act, material, escalate))
+    for d in res["dup_a"]:
+        c, act = cause_action("duplicate", side=a_label)
+        out.append(_exc("duplicate", d, None, d["amt"], "remove", c, act, material, escalate))
+    for d in res["dup_b"]:
+        c, act = cause_action("duplicate", side=b_label)
+        out.append(_exc("duplicate", None, d, d["amt"], "remove", c, act, material, escalate))
+
+    order = {"escalate": 0, "material": 1, "immaterial": 2}
+    out.sort(key=lambda e: (order.get(e["materiality"], 3), -abs(e["magnitude"] or 0)))
+    return out
+
+
+def _verb(cat):
+    return {"rounding": "accept", "sign_flip": "correct", "amount_mismatch": "investigate"}.get(cat, "investigate")
+
+
+def _exc(cat, a, b, magnitude, action, cause, action_text, material, escalate):
+    mat = "within tolerance" if cat == "rounding" else _materiality(magnitude, material, escalate)
+    return {
+        "category": cat, "magnitude": magnitude, "materiality": mat,
+        "probable_cause": cause, "suggested_action": action_text, "action": action,
+        "a": (a or {}).get("row") if a else None,
+        "b": (b or {}).get("row") if b else None,
+        "status": "open",
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Aggregation matching (sum-to-one / sum-to-sum) — a 2nd pass, CONFIRM-FIRST.
+# Heuristic, so proposals are NEVER auto-accepted: the caller presents them and the
+# user confirms; apply_aggregations() only moves the CONFIRMED ones to matched.
+# Bounded by a shared key + a date window + counterparty (and a subset-size cap) to
+# stay tractable and avoid coincidental matches.
+# --------------------------------------------------------------------------- #
+from itertools import combinations as _combos  # noqa: E402
+
+
+def _same(a_row, b_row, col):
+    return norm_key(a_row.get(col)) == norm_key(b_row.get(col))
+
+
+def _within(a_item, b_item, days):
+    if days is None or not a_item["dt"] or not b_item["dt"]:
+        return True
+    return abs((a_item["dt"] - b_item["dt"]).days) <= days
+
+
+def _compat(t, c, group_col, party_col, date_window):
+    if group_col and not _same(t["row"], c["row"], group_col):
+        return False
+    if party_col and not _same(t["row"], c["row"], party_col):
+        return False
+    return _within(t, c, date_window)
+
+
+def _subset_sum(target_amt, cands, tol, max_subset):
+    """Smallest subset (size >= 2) of cands whose amounts tie to target within tol; else None."""
+    items = [c for c in cands if c["amt"] is not None]
+    for size in range(2, min(max_subset, len(items)) + 1):
+        for combo in _combos(items, size):
+            if abs(sum(c["amt"] for c in combo) - target_amt) <= tol:
+                return list(combo)
+    return None
+
+
+def _basis(group_col, party_col, date_window, extra=""):
+    bits = []
+    if group_col:
+        bits.append(f"same {group_col}")
+    if party_col:
+        bits.append(f"same {party_col}")
+    if date_window is not None:
+        bits.append(f"within {date_window}d")
+    bits.append("amounts tie")
+    return (" + ".join(bits) + extra).strip()
+
+
+def _proposal(kind, A, B, basis):
+    sa = round(sum(x["amt"] or 0 for x in A), 2)
+    sb = round(sum(x["amt"] or 0 for x in B), 2)
+    return {"kind": kind, "basis": basis,
+            "a_items": [x["row"] for x in A], "b_items": [x["row"] for x in B],
+            "a_sum": sa, "b_sum": sb, "residual": round(sa - sb, 2),
+            "_A": A, "_B": B}            # internal handles for apply (in-process only)
+
+
+def propose_aggregations(res, *, group_col=None, party_col=None, date_window=None,
+                         tol=0.01, max_subset=5):
+    """Read-only: propose sum-to-one and sum-to-sum matches over the still-unmatched items.
+    Returns a list of proposal dicts. NEVER mutates res and NEVER auto-accepts — the caller
+    confirms, then calls apply_aggregations()."""
+    a_rem = [d["a"] for d in res["a_only"]]
+    b_rem = [d["b"] for d in res["b_only"]]
+    used, proposals = set(), []
+    basis = _basis(group_col, party_col, date_window)
+
+    # (1) sum-to-sum control totals — tie group sums, grouping by the available key(s)
+    # combined (e.g. batch + counterparty), so a shared run still splits per counterparty.
+    group_cols = [c for c in (group_col, party_col) if c]
+    if group_cols:
+        from collections import defaultdict
+        def gk(x):
+            return tuple(norm_key(x["row"].get(c)) for c in group_cols)
+        ga, gb = defaultdict(list), defaultdict(list)
+        for x in a_rem:
+            ga[gk(x)].append(x)
+        for x in b_rem:
+            gb[gk(x)].append(x)
+        for k in set(ga) & set(gb):
+            if any(v is None for v in k):
+                continue
+            A, B = ga[k], gb[k]
+            if len(A) + len(B) < 3:            # a 1:1 within a group isn't an aggregation
+                continue
+            if abs(sum(x["amt"] or 0 for x in A) - sum(x["amt"] or 0 for x in B)) <= tol:
+                label = "+".join(str(v) for v in k)
+                proposals.append(_proposal("many_to_many", A, B,
+                                           _basis(group_col, party_col, date_window,
+                                                  f" (group {'+'.join(group_cols)}={label})")))
+                used |= {id(x) for x in A + B}
+
+    # (2) sum-to-one subset-sum on what's left, constrained by the keys.
+    for side, targets, pool, kind in [("A", a_rem, b_rem, "one_to_many"),
+                                      ("B", b_rem, a_rem, "many_to_one")]:
+        for t in targets:
+            if id(t) in used or t["amt"] is None:
+                continue
+            cands = [c for c in pool if id(c) not in used and _compat(t, c, group_col, party_col, date_window)]
+            hit = _subset_sum(t["amt"], cands, tol, max_subset)
+            if hit:
+                A, B = ([t], hit) if side == "A" else (hit, [t])
+                proposals.append(_proposal(kind, A, B, basis))
+                used |= {id(x) for x in [t] + hit}
+    return proposals
+
+
+def apply_aggregations(res, proposals, accepted):
+    """Move CONFIRMED proposals' items out of the exception pool into 'matched_agg'.
+    `accepted` = indices (into `proposals`) the user confirmed. In-process only."""
+    res.setdefault("matched_agg", [])
+    keep = set()
+    for i in set(accepted):
+        p = proposals[i]
+        res["matched_agg"].append(p)
+        keep |= {id(x) for x in p["_A"]} | {id(x) for x in p["_B"]}
+    res["a_only"] = [d for d in res["a_only"] if id(d["a"]) not in keep]
+    res["b_only"] = [d for d in res["b_only"] if id(d["b"]) not in keep]
+    return res
+
+
+def render_proposals(proposals, *, a_label="A", b_label="B"):
+    """A short, human-readable list of the proposed aggregations to confirm."""
+    if not proposals:
+        return "No aggregation proposals."
+    L = ["## Proposed aggregations — CONFIRM before they count as reconciled", ""]
+    for i, p in enumerate(proposals):
+        tie = "ties" if abs(p["residual"]) < 0.005 else f"residual {p['residual']:,}"
+        L.append(f"**[{i}] {p['kind']}** — {a_label} {p['a_sum']:,} vs {b_label} {p['b_sum']:,} ({tie}); {p['basis']}")
+        L.append(f"    {a_label}: " + " | ".join(str(r) for r in p["a_items"]))
+        L.append(f"    {b_label}: " + " | ".join(str(r) for r in p["b_items"]))
+    L.append("")
+    L.append("> Confirm which to accept; only confirmed proposals are applied. The rest stay as exceptions.")
+    return "\n".join(L)
+
+
+def finalize(res, *, a_label="A", b_label="B", material=1000.0, escalate=10000.0):
+    """Triage what remains (after any confirmed aggregations) and summarise."""
+    exceptions = triage(res, a_label=a_label, b_label=b_label, material=material, escalate=escalate)
+    summary = summarise(res, exceptions)
+    return exceptions, summary
+
+
+# --------------------------------------------------------------------------- #
+# Summary + report
+# --------------------------------------------------------------------------- #
+def summarise(res, exceptions, *, amount="amount"):
+    agg = res.get("matched_agg", [])
+    matched_n = len(res["matched"])
+    agg_a_items = sum(len(p["a_items"]) for p in agg)
+    reconciled = matched_n + agg_a_items
+    total_n = reconciled + len(exceptions)
+    mat_val = sum(abs((m["a"]["amt"] or 0)) for m in res["matched"]) + sum(abs(p["a_sum"]) for p in agg)
+    exc_val = sum(abs(e["magnitude"] or 0) for e in exceptions)
+    by_cat = {}
+    for e in exceptions:
+        by_cat.setdefault(e["category"], {"n": 0, "val": 0.0})
+        by_cat[e["category"]]["n"] += 1
+        by_cat[e["category"]]["val"] += abs(e["magnitude"] or 0)
+    reds = sum(1 for e in exceptions if e["materiality"] in ("material", "escalate"))
+    rag = "GREEN" if reds == 0 and exceptions == [] else ("RED" if reds else "AMBER")
+    return {
+        "matched": matched_n, "aggregated": len(agg), "exceptions": len(exceptions), "total": total_n,
+        "pct_reconciled": round(100 * reconciled / total_n, 1) if total_n else 100.0,
+        "value_matched": round(mat_val, 2), "value_in_exception": round(exc_val, 2),
+        "by_category": by_cat, "material_or_escalate": reds, "rag": rag,
+    }
+
+
+def render_report(summary, exceptions, *, a_label="A", b_label="B", title="Reconciliation"):
+    L = [f"# {title}: {a_label} vs {b_label}", ""]
+    s = summary
+    agg = f", {s['aggregated']} aggregation(s)" if s.get("aggregated") else ""
+    L.append(f"**{s['rag']}** — {s['pct_reconciled']}% of items reconciled "
+             f"({s['matched']} matched 1:1{agg}); {s['exceptions']} exception(s), "
+             f"{s['material_or_escalate']} material/escalate.")
+    L.append(f"Value matched: {s['value_matched']:,} · value in exception: {s['value_in_exception']:,}")
+    L.append("")
+    if s["by_category"]:
+        L.append("| Category | # | Value |")
+        L.append("|---|---|---|")
+        for c, d in sorted(s["by_category"].items(), key=lambda kv: -kv[1]["val"]):
+            L.append(f"| {c} | {d['n']} | {round(d['val'], 2):,} |")
+        L.append("")
+    if exceptions:
+        L.append("## Exceptions (triaged — highest first)")
+        L.append("| Category | Magnitude | Materiality | Probable cause | Action |")
+        L.append("|---|---|---|---|---|")
+        for e in exceptions[:50]:
+            L.append(f"| {e['category']} | {round(e['magnitude'] or 0, 2):,} | {e['materiality']} "
+                     f"| {e['probable_cause']} | {e['suggested_action']} |")
+    L.append("")
+    L.append("> Working paper for review by a qualified person — not a posting; "
+             "no adjustment is made. Unmatched items are flagged, never force-fitted.")
+    return "\n".join(L)
+
+
+def write_workpaper(res, exceptions, summary, out_path, *, a_label="A", b_label="B"):
+    """Write the .xlsx working paper (Summary + Matched + Exceptions). Needs openpyxl."""
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Summary"
+    s = summary
+    for r in [["Reconciliation", f"{a_label} vs {b_label}"], ["RAG", s["rag"]],
+              ["% reconciled", s["pct_reconciled"]], ["Matched", s["matched"]],
+              ["Exceptions", s["exceptions"]], ["Material/escalate", s["material_or_escalate"]],
+              ["Value matched", s["value_matched"]], ["Value in exception", s["value_in_exception"]],
+              [], ["Category", "#", "Value"]]:
+        ws.append(r)
+    for c, d in sorted(s["by_category"].items(), key=lambda kv: -kv[1]["val"]):
+        ws.append([c, d["n"], round(d["val"], 2)])
+
+    we = wb.create_sheet("Exceptions")
+    we.append(["Category", "Magnitude", "Materiality", "Probable cause", "Suggested action",
+               f"{a_label} row", f"{b_label} row", "Status"])
+    for e in exceptions:
+        we.append([e["category"], e["magnitude"], e["materiality"], e["probable_cause"],
+                   e["suggested_action"], str(e["a"]) if e["a"] else "", str(e["b"]) if e["b"] else "",
+                   e["status"]])
+
+    wm = wb.create_sheet("Matched")
+    wm.append([f"{a_label} row", f"{b_label} row", "Diff"])
+    for m in res["matched"]:
+        wm.append([str(m["a"]["row"]), str(m["b"]["row"]), m.get("diff", 0.0)])
+
+    if res.get("matched_agg"):
+        wa = wb.create_sheet("Aggregations")
+        wa.append(["Kind", "Basis", f"{a_label} sum", f"{b_label} sum", "Residual",
+                   f"{a_label} items", f"{b_label} items"])
+        for p in res["matched_agg"]:
+            wa.append([p["kind"], p["basis"], p["a_sum"], p["b_sum"], p["residual"],
+                       " | ".join(str(r) for r in p["a_items"]),
+                       " | ".join(str(r) for r in p["b_items"])])
+    wb.save(out_path)
+    return out_path
+
+
+# --------------------------------------------------------------------------- #
+# File wrapper (uses the shared engine) + redaction
+# --------------------------------------------------------------------------- #
+def _load_engine():
+    """Add the shared scripts/ (the toolkit-root engine, or a vendored sibling scripts/)."""
+    cands = [
+        Path(__file__).resolve().parents[3] / "scripts",            # toolkit-root engine
+        Path(__file__).resolve().parent / "scripts",                # vendored sibling
+    ]
+    for p in cands:
+        if (p / "ingest.py").is_file() and str(p) not in sys.path:
+            sys.path.insert(0, str(p))
+            break
+    import ingest, dataclean  # noqa: F401
+    return ingest, dataclean
+
+
+def _records(raw):
+    """ingest.read_any returns (list-of-lists, note). Turn it into list[dict] using the
+    first non-blank row as the header. (Messy inputs should be tidied with data-tidy first.)"""
+    rows = raw[0] if isinstance(raw, tuple) else raw
+    rows = [r for r in rows if any(str(c).strip() for c in r)]
+    if not rows:
+        return []
+    header = [str(h).strip() for h in rows[0]]
+    out = []
+    for r in rows[1:]:
+        r = list(r) + [None] * (len(header) - len(r))
+        out.append({header[i]: r[i] for i in range(len(header))})
+    return out
+
+
+def reconcile_files(path_a, path_b, *, preset=None, aggregate=False, group_col=None,
+                    party_col=None, date_window=None, auto_confirm=False, **opts):
+    """Read A and B in any format (shared `ingest`), match, optionally propose aggregations,
+    then triage. Returns (res, exceptions, summary, proposals).
+
+    Confirm-first: with `aggregate=True` the proposals are returned UN-applied unless
+    `auto_confirm=True`. The agent should present `proposals`, get the user's confirmation,
+    call `apply_aggregations(res, proposals, accepted)`, then `finalize(res, ...)`."""
+    ingest, _ = _load_engine()
+    cfg = dict(PRESETS.get(preset, {})) if preset else {}
+    cfg.update({k: v for k, v in opts.items() if v is not None})
+    rows_a = _records(ingest.read_any(path_a))
+    rows_b = _records(ingest.read_any(path_b))
+    res = match(rows_a, rows_b, key=cfg.get("key"), amount=cfg.get("amount", "amount"),
+                date=cfg.get("date"), mode=cfg.get("mode", "key"), tol=cfg.get("tol", 0.01))
+    proposals = []
+    if aggregate:
+        proposals = propose_aggregations(res, group_col=group_col, party_col=party_col,
+                                         date_window=date_window, tol=cfg.get("tol", 0.01))
+        if auto_confirm and proposals:
+            apply_aggregations(res, proposals, range(len(proposals)))
+    exc, summary = finalize(res, a_label=cfg.get("a_label", "A"), b_label=cfg.get("b_label", "B"),
+                            material=cfg.get("material", 1000.0), escalate=cfg.get("escalate", 10000.0))
+    return res, exc, summary, proposals
+
+
+def redact(text, terms, amounts=False):
+    """Mask party/asset terms (and optionally amounts) before a recon artefact leaves entitled use."""
+    out = text
+    for t in sorted([t for t in terms if t], key=len, reverse=True):
+        out = re.sub(re.escape(t), "[redacted]", out, flags=re.I)
+    if amounts:
+        out = re.sub(r"-?\d[\d,]*\.?\d*", "[amount]", out)
+    return out
+
+
+def catalogue_md():
+    L = ["# Reconciliation presets", ""]
+    for k, p in PRESETS.items():
+        L.append(f"## `{k}` — {p['label']}")
+        L.append(f"- {p['a_label']} (A) vs {p['b_label']} (B); default match: **{p['mode']}**"
+                 + (f" on `{p['key']}`" if p.get("key") else " (amount + date)"))
+        L.append(f"- {p['note']}")
+        L.append("")
+    return "\n".join(L)
+
+
+# --------------------------------------------------------------------------- #
+# Self-test (offline; no engine/openpyxl needed)
+# --------------------------------------------------------------------------- #
+def _self_test():
+    A = [
+        {"invoice_no": "INV-001", "amount": "1,000.00", "date": "01 Jun 2026"},
+        {"invoice_no": "INV-002", "amount": "2,500.00", "date": "02 Jun 2026"},
+        {"invoice_no": "INV-003", "amount": "750.00", "date": "03 Jun 2026"},   # not booked
+        {"invoice_no": "INV-004", "amount": "12,000.00", "date": "04 Jun 2026"},
+        {"invoice_no": "INV-004", "amount": "12,000.00", "date": "04 Jun 2026"},  # duplicate in A
+    ]
+    B = [
+        {"invoice_no": "INV-001", "amount": "1000.00"},
+        {"invoice_no": "INV-002", "amount": "2500.05"},   # rounding
+        {"invoice_no": "INV-004", "amount": "11500.00"},  # material mismatch 500
+        {"invoice_no": "INV-009", "amount": "300.00"},    # booked, not tracked
+    ]
+    res = match(A, B, key="invoice_no", amount="amount", mode="key")
+    exc = triage(res, a_label="Tracker", b_label="Ledger", material=400, escalate=10000)
+    cats = sorted({e["category"] for e in exc})
+    s = summarise(res, exc)
+    print("matched:", len(res["matched"]), "| exceptions:", len(exc), "| categories:", cats)
+    print("RAG:", s["rag"], "| % reconciled:", s["pct_reconciled"])
+    assert len(res["matched"]) == 1, "INV-001 should match exactly"
+    assert "rounding" in cats and "amount_mismatch" in cats, "rounding + mismatch expected"
+    assert "missing_in_B" in cats and "missing_in_A" in cats, "both missings expected"
+    assert "duplicate" in cats, "duplicate INV-004 in A expected"
+    assert any(e["materiality"] == "material" for e in exc), "the 500 diff should be material"
+
+    # aggregation (sum-to-one) + confirm-first
+    A2 = [{"party": "Acme", "batch": "BR1", "amount": "8000", "date": "05 Jun 2026"},
+          {"party": "Beta", "batch": "BR2", "amount": "2000", "date": "06 Jun 2026"}]
+    B2 = [{"party": "Acme", "batch": "BR1", "amount": "3000", "date": "03 Jun 2026"},
+          {"party": "Acme", "batch": "BR1", "amount": "5000", "date": "04 Jun 2026"}]
+    r2 = match(A2, B2, amount="amount", date="date", mode="amount_date")
+    props = propose_aggregations(r2, group_col="batch", party_col="party", date_window=5)
+    assert props and abs(props[0]["residual"]) < 0.005, "8000 should tie to 3000+5000"
+    e_before, _ = finalize(r2)
+    assert len(e_before) == 4, "confirm-first: nothing applied until confirmed"
+    apply_aggregations(r2, props, [0])
+    e_after, s_after = finalize(r2)
+    assert len(r2["matched_agg"]) == 1 and len(e_after) == 1, "after confirm: 1 agg, Beta remains"
+    print("aggregation + confirm-first: PASS")
+    print("self-test: PASS")
+    return 0
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description="Reconcile A <-> B and triage the discrepancies.")
+    ap.add_argument("a", nargs="?", help="source A (ours)")
+    ap.add_argument("b", nargs="?", help="source B (theirs)")
+    ap.add_argument("--preset", choices=list(PRESETS), help="recurring-reconciliation preset")
+    ap.add_argument("--key", help="match key column (override)")
+    ap.add_argument("--amount", default="amount")
+    ap.add_argument("--date")
+    ap.add_argument("--mode", choices=["key", "amount_date"])
+    ap.add_argument("--material", type=float, default=1000.0)
+    ap.add_argument("--escalate", type=float, default=10000.0)
+    ap.add_argument("--aggregate", action="store_true", help="propose sum-to-one / sum-to-sum matches")
+    ap.add_argument("--group-col", help="shared reference/batch column bounding aggregation")
+    ap.add_argument("--party-col", help="counterparty/account column bounding aggregation")
+    ap.add_argument("--date-window", type=int, help="aggregate only within +/- N days")
+    ap.add_argument("--auto-confirm", action="store_true",
+                    help="accept all aggregation proposals without review (headless/testing only)")
+    ap.add_argument("--out", help="write the .xlsx working paper here")
+    ap.add_argument("--catalogue", action="store_true", help="print the presets catalogue")
+    ap.add_argument("--self-test", action="store_true")
+    a = ap.parse_args(argv)
+    if a.self_test:
+        return _self_test()
+    if a.catalogue:
+        print(catalogue_md())
+        return 0
+    if not (a.a and a.b):
+        ap.error("need source A and B (or --self-test / --catalogue)")
+    res, exc, summary, proposals = reconcile_files(
+        a.a, a.b, preset=a.preset, key=a.key, amount=a.amount, date=a.date,
+        mode=a.mode, material=a.material, escalate=a.escalate,
+        aggregate=a.aggregate, group_col=a.group_col, party_col=a.party_col,
+        date_window=a.date_window, auto_confirm=a.auto_confirm)
+    p = PRESETS.get(a.preset, {})
+    al, bl = p.get("a_label", "A"), p.get("b_label", "B")
+    if proposals and not a.auto_confirm:
+        print(render_proposals(proposals, a_label=al, b_label=bl))
+        print()
+    print(render_report(summary, exc, a_label=al, b_label=bl, title=p.get("label", "Reconciliation")))
+    if a.out:
+        write_workpaper(res, exc, summary, a.out, a_label=al, b_label=bl)
+        print(f"\nworking paper -> {a.out}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

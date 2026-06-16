@@ -1,0 +1,30 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "WebFetch|WebSearch|mcp__(?!workspace__|cowork__).*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c \"import os,sys,subprocess; root=os.environ.get('CLAUDE_PLUGIN_ROOT') or r'${CLAUDE_PLUGIN_ROOT}'; p=os.path.join(root,'hooks','pii_egress_guard.py'); sys.exit(subprocess.run([sys.executable,p]).returncode if os.path.isfile(p) else 0)\"",
+            "timeout": 15,
+            "statusMessage": "Data-handling check"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c \"import os,sys,subprocess; root=os.environ.get('CLAUDE_PLUGIN_ROOT') or r'${CLAUDE_PLUGIN_ROOT}'; p=os.path.join(root,'hooks','skillmd_hygiene.py'); sys.exit(subprocess.run([sys.executable,p]).returncode if os.path.isfile(p) else 0)\"",
+            "timeout": 15,
+            "statusMessage": "SKILL.md hygiene check"
+          }
+        ]
+      }
+    ]
+  }
+}
