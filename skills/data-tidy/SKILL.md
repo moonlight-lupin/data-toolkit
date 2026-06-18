@@ -49,14 +49,28 @@ handles a pasted markdown/TSV/CSV table. Returns `(rows, note)`.
 
 ### 2 — Profile (against the target)
 `dataclean.profile_table(header, rows)` / `dataclean.render_profile(...)` — shows columns,
-inferred types, % missing, distinct counts, sample values, duplicate rows. Read-only; "see
-the mess" before touching it. Focus on the columns the target output needs.
+inferred types (incl. **categorical** / **ordinal**), % missing, distinct counts, sample
+values, duplicate rows. Read-only; "see the mess" before touching it. Focus on the columns
+the target output needs.
+
+For a scored health check, `dataclean.score_quality(header, rows)` /
+`render_quality_report(...)` grade each column (completeness A–F, type consistency) and list
+issues by severity (missing, won't-parse, standardisation candidates, whitespace/encoding
+noise). **Quality-report-only mode:** if the user just wants "a data quality report", run
+profile + score, deliver the report, and stop — no recipe, no output table. Re-run after
+applying to show the lift (before → after).
 
 ### 3 — Propose the recipe
 Draft a **recipe** (the declarative transform spec — see `references/recipe-spec.md`):
 which source column → which target column, the type/format per column (house defaults:
 **dates → DD MMM YYYY**, **currency → amount + code**), dedup keys, and validation rules.
 Show it to the user.
+
+For **categorical** columns with inconsistent variants ("USA" / "U.S.A." / "united states"),
+propose a value standardisation as part of the recipe: `propose_value_map(col_values,
+master=…)` → `render_value_map_proposals(...)` for the user to confirm →
+`value_map_from_clusters(clusters, accepted=[...])` baked into the column as `value_map`.
+Heuristic, so **never auto-applied** — confirm first, like the rest of the recipe.
 
 ### 4 — Confirm → 5 — Apply
 On the user's OK:
@@ -111,8 +125,11 @@ managed machine, ask IT to deploy it). See `references/recipe-spec.md` for setup
 
 ## Files
 - `../../scripts/dataclean.py` *(shared)* — engine: `profile_table`/`render_profile`,
-  `apply_recipe`, `write_xlsx`, `render_report`, **`emit_runner`** (reuse runners/cards);
-  parsers (date/number/currency); `--self-test`.
+  `score_quality`/`render_quality_report` (health grading), `propose_value_map`/
+  `render_value_map_proposals`/`value_map_from_clusters` (categorical standardisation),
+  `apply_recipe` (now supports `value_map` + `case`/`strip_specials`/`fix_encoding`),
+  `write_xlsx`, `render_report`, **`emit_runner`** (reuse runners/cards); parsers
+  (date/number/currency); `--self-test`.
 - `../../scripts/ingest.py` *(shared)* — source adapters incl. PDF + local-OCR;
   `read_any`/`read_paste`/`read_text`/`list_pdf_tables`; `ocr_available()`; `--self-test`.
 - `scripts/make_samples.py` — writes synthetic messy samples to `examples/`.

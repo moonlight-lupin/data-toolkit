@@ -82,8 +82,39 @@ def sample_table_pdf():
     return out
 
 
+def categorical_survey_csv():
+    """Messy CATEGORICAL data — variant clusters (USA / U.S.A. / usa; UK / U.K. / uk),
+    ordinal scales (Low/Medium/High, Poor..Excellent) in mixed casing, encoding (mojibake
+    'CafÃ©') + whitespace noise, a number column with a bad cell, plus a blank and an exact
+    duplicate row. Exercises categorical/ordinal detection (D), string hygiene (C), value
+    standardisation (B) and the quality report (A)."""
+    import csv
+    EX.mkdir(exist_ok=True)
+    rows = [
+        ["Country", "Priority", "Satisfaction", "Status", "Amount", "Comment"],
+        ["USA", "Low", "Good", "Open", "1,000", "Great service"],
+        ["U.S.A.", "medium", "Excellent", "Closed", "£2,500", "CafÃ© visit was lovely"],
+        ["usa", "HIGH", "Fair", "open", "3.2m", "Needs follow-up!!!"],
+        ["United States", "High", "Poor", "Pending", "4,000", "CafÃ© staff were rude"],
+        ["Canada", "low", "Good", "Closed", "5000", "Fine"],
+        ["canada", "Medium", "Excellent", "Open", "6,000", "  spaced out comment  "],
+        ["CANADA", "High", "Good", "Closed", "soon", "ok"],            # 'soon' = bad number
+        ["United Kingdom", "Low", "Fair", "Pending", "7,500", "n/a"],
+        ["uk", "medium", "Good", "Open", "8,000", "Good"],
+        ["U.K.", "High", "Excellent", "Closed", "9000", "Excellent!"],
+        ["USA", "Low", "Good", "Open", "1,000", "Great service"],      # exact dup of row 1
+        ["", "", "", "", "", ""],                                       # blank
+        ["Canada", "Medium", "Poor", "Open", "2,200", "meh"],
+    ]
+    out = EX / "messy_categorical_survey.csv"
+    with open(out, "w", newline="", encoding="utf-8") as f:
+        csv.writer(f).writerows(rows)
+    return out
+
+
 if __name__ == "__main__":
     print("wrote:", finance_export_xlsx())
     print("wrote:", contacts_paste_txt())
+    print("wrote:", categorical_survey_csv())
     pdf = sample_table_pdf()
     print("wrote:", pdf if pdf else "(PDF skipped — PyMuPDF not installed)")

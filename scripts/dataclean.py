@@ -25,6 +25,8 @@ from __future__ import annotations
 import re
 import sys
 import datetime as dt
+import unicodedata
+from collections import Counter
 from pathlib import Path
 
 try:
@@ -163,6 +165,38 @@ def _looks_total(row):
 # Profile (read-only) — inspect ONLY against what the target needs is the skill's job;
 # this gives the full picture the recipe is proposed from.
 # --------------------------------------------------------------------------- #
+# Ordered vocabularies for ORDINAL detection. Lowercased; detection is by set-membership,
+# the returned order follows the scale. Extend freely — keep each scale internally ordered.
+ORDINAL_SCALES = [
+    ("low", "medium", "high"),
+    ("low", "med", "high"),
+    ("low", "moderate", "high", "critical"),
+    ("xs", "s", "m", "l", "xl", "xxl", "xxxl"),
+    ("extra small", "small", "medium", "large", "extra large"),
+    ("poor", "fair", "good", "very good", "excellent"),
+    ("very poor", "poor", "average", "good", "very good"),
+    ("strongly disagree", "disagree", "neutral", "agree", "strongly agree"),
+    ("never", "rarely", "sometimes", "often", "always"),
+    ("cold", "warm", "hot"),
+    ("bronze", "silver", "gold", "platinum", "diamond"),
+    ("q1", "q2", "q3", "q4"),
+    ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"),
+    ("mon", "tue", "wed", "thu", "fri", "sat", "sun"),
+]
+
+
+def match_ordinal(distinct_lower):
+    """If the distinct (lowercased) values fit a single ordered scale, return them in scale
+    order; else None. Used to tag a column 'ordinal' and to suggest a sort order."""
+    vals = {_s(v).lower() for v in distinct_lower if _s(v) != ""}
+    if not (2 <= len(vals) <= 12):
+        return None
+    for scale in ORDINAL_SCALES:
+        if vals <= set(scale):
+            return [s for s in scale if s in vals]
+    return None
+
+
 def _infer_type(values):
     nonempty = [v for v in values if _s(v) != ""]
     if not nonempty:
@@ -177,6 +211,15 @@ def _infer_type(values):
         return "number"
     if frac(lambda s: s.lower() in ("yes", "no", "true", "false", "y", "n")) > 0.8:
         return "bool"
+    # text-like: separate ORDINAL / CATEGORICAL from free text (advisory — informs the recipe)
+    distinct_lower = {_s(v).lower() for v in nonempty}
+    if match_ordinal(distinct_lower):
+        return "ordinal"
+    n = len(nonempty)
+    distinct = len(distinct_lower)
+    # categorical = few distinct values that REPEAT (low cardinality + low distinct/row ratio)
+    if n >= 8 and 2 <= distinct <= 20 and distinct <= n / 2:
+        return "categorical"
     return "text"
 
 
@@ -208,6 +251,101 @@ def render_profile(prof):
     for c in prof["columns"]:
         out.append(f"| {c['name']} | {c['type']} | {c['missing_pct']}% | {c['distinct']} | "
                    f"{'; '.join(c['samples'])} |")
+    return "\n".join(out)
+
+
+# --------------------------------------------------------------------------- #
+# Quality / health scoring (A) — grade a dataset BEFORE deciding what to clean, and again
+# after, to show the lift. Read-only; deterministic. Surfaces issues with a severity so the
+# user acts on the few that matter. (Folds in semantic types (D), hygiene noise (C) and
+# standardisation candidates (B).)
+# --------------------------------------------------------------------------- #
+def _grade(pct):
+    return ("A" if pct >= 95 else "B" if pct >= 85 else "C" if pct >= 70
+            else "D" if pct >= 50 else "F")
+
+
+def _type_consistency(nonempty, t):
+    """% of non-empty cells that match the column's inferred type. Text-like types score on
+    cleanliness (no whitespace/encoding noise) rather than parseability."""
+    if not nonempty:
+        return 100.0
+    if t in ("number", "currency", "date", "bool"):
+        fn = {"number": lambda s: parse_number(s)[0] is not None,
+              "currency": lambda s: parse_currency(s)[0] is not None,
+              "date": lambda s: parse_date(s)[0] is not None,
+              "bool": lambda s: _s(s).lower() in ("yes", "no", "true", "false", "y", "n")}[t]
+        return round(100 * sum(1 for v in nonempty if fn(_s(v))) / len(nonempty), 1)
+    clean = sum(1 for v in nonempty if not _has_noise(v))
+    return round(100 * clean / len(nonempty), 1)
+
+
+def _has_noise(v):
+    raw = str(v)
+    collapsed = re.sub(r"\s+", " ", raw).strip()
+    return raw != collapsed or any(m in raw for m in ("Ã", "â€", "Â"))
+
+
+def score_quality(header, rows, prof=None):
+    """Score a table's health. -> {overall_score, overall_grade, rows, duplicate_rows,
+    columns:[{name,type,completeness,completeness_grade,consistency,issues:[{severity,msg}]}],
+    issues:[...]} . Issue severities: 'critical' | 'warn' | 'info'."""
+    prof = prof or profile_table(header, rows)
+    n = prof["rows"]
+    cols_out, all_issues, scores = [], [], []
+    for j, c in enumerate(prof["columns"]):
+        vals = [r[j] if j < len(r) else "" for r in rows]
+        nonempty = [v for v in vals if _s(v) != ""]
+        completeness = round(100 - c["missing_pct"], 1)
+        consistency = _type_consistency(nonempty, c["type"])
+        issues = []
+        if c["missing_pct"] > 50:
+            issues.append(("critical", f"{c['missing_pct']}% missing"))
+        elif c["missing_pct"] > 20:
+            issues.append(("warn", f"{c['missing_pct']}% missing"))
+        if c["type"] in ("number", "currency", "date", "bool") and consistency < 90:
+            issues.append(("warn", f"{round(100 - consistency, 1)}% don't parse as {c['type']}"))
+        if c["type"] in ("text", "categorical", "ordinal"):
+            clusters = propose_value_map(nonempty)
+            if clusters:
+                sev = "warn" if len(clusters) > 2 else "info"
+                issues.append((sev, f"{len(clusters)} value variant cluster(s) could be standardised"))
+        noise = sum(1 for v in nonempty if _has_noise(v))
+        if noise:
+            issues.append(("info", f"{noise} cell(s) with whitespace/encoding noise"))
+        cols_out.append({"name": c["name"], "type": c["type"], "completeness": completeness,
+                         "completeness_grade": _grade(completeness), "consistency": consistency,
+                         "distinct": c["distinct"], "issues": issues})
+        all_issues += [{"column": c["name"], "severity": s, "msg": m} for s, m in issues]
+        scores.append((completeness + consistency) / 2)
+    overall = round(sum(scores) / len(scores), 1) if scores else 0.0
+    dup_pct = round(100 * prof["duplicate_rows"] / n, 1) if n else 0.0
+    overall = round(max(0.0, overall - min(15.0, dup_pct)), 1)  # penalise duplicate rows
+    if prof["duplicate_rows"]:
+        all_issues.append({"column": "(table)", "severity": "warn" if dup_pct > 5 else "info",
+                           "msg": f"{prof['duplicate_rows']} duplicate row(s) ({dup_pct}%)"})
+    return {"overall_score": overall, "overall_grade": _grade(overall), "rows": n,
+            "duplicate_rows": prof["duplicate_rows"], "columns": cols_out, "issues": all_issues}
+
+
+def render_quality_report(q, title="Data quality report"):
+    _RANK = {"critical": 0, "warn": 1, "info": 2}
+    _ICON = {"critical": "🔴", "warn": "🟠", "info": "🔵"}
+    out = [f"# {title}",
+           f"**Overall: {q['overall_score']}/100 — grade {q['overall_grade']}**  "
+           f"({q['rows']} rows, {len(q['columns'])} columns, {q['duplicate_rows']} duplicate)",
+           "", "| Column | Type | Complete | Consistency | Issues |", "|---|---|---|---|---|"]
+    for c in q["columns"]:
+        top = c["issues"][0][1] if c["issues"] else "—"
+        out.append(f"| {c['name']} | {c['type']} | {c['completeness']}% ({c['completeness_grade']}) "
+                   f"| {c['consistency']}% | {top} |")
+    if q["issues"]:
+        out.append(f"\n## Issues ({len(q['issues'])}) — worst first")
+        for it in sorted(q["issues"], key=lambda x: _RANK.get(x["severity"], 3)):
+            out.append(f"- {_ICON.get(it['severity'], '')} **{it['severity']}** — "
+                       f"{it['column']}: {it['msg']}")
+    else:
+        out.append("\n_No issues detected._")
     return "\n".join(out)
 
 
@@ -289,6 +427,147 @@ def apply_recipe(raw_rows, recipe, masters=None):
     return out_header, out_rows, log
 
 
+# --------------------------------------------------------------------------- #
+# String hygiene (opt-in, on the `text` type). Deterministic; every change is logged
+# (soft-flagged) so nothing is mangled silently. All stdlib.
+# --------------------------------------------------------------------------- #
+# Common UTF-8-as-Latin-1 mojibake, as a fallback when the clean round-trip can't be applied.
+_MOJIBAKE = {
+    "â€™": "'", "â€˜": "'", "â€œ": '"', "â€\x9d": '"', "â€”": "—", "â€“": "–",
+    "â€¦": "…", "Ã©": "é", "Ã¨": "è", "Ã ": "à", "Ã¢": "â", "Ã§": "ç", "Ã±": "ñ",
+    "Ã¼": "ü", "Ã¶": "ö", "Ã¤": "ä", "Ã‰": "É", "Ã¡": "á", "Ã³": "ó", "Ãº": "ú",
+    "Â£": "£", "Â ": " ", "Â": "",
+}
+# strip_specials default: keep word chars, whitespace and common business punctuation.
+_SPECIALS_DEFAULT = re.compile(r"[^\w\s.,;:&@/()\-+%'\"£$€]", re.UNICODE)
+
+
+def _fix_encoding(s):
+    """Repair common mojibake then NFC-normalise. Tries the principled UTF-8/Latin-1
+    round-trip first, falls back to a small replacement map."""
+    if any(seq in s for seq in ("Ã", "â€", "Â")):
+        try:
+            s = s.encode("latin-1").decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            for bad, good in _MOJIBAKE.items():
+                s = s.replace(bad, good)
+    return unicodedata.normalize("NFC", s)
+
+
+def _text_hygiene(s, spec):
+    """Apply opt-in casing / special-strip / encoding fixes. -> (s, note)."""
+    notes = []
+    if spec.get("fix_encoding"):
+        fixed = _fix_encoding(s)
+        if fixed != s:
+            notes.append("encoding repaired")
+        s = fixed
+    sp = spec.get("strip_specials")
+    if sp:
+        pat = _SPECIALS_DEFAULT if sp is True else re.compile(sp)
+        stripped = re.sub(r"\s+", " ", pat.sub("", s)).strip()
+        if stripped != s:
+            notes.append("special chars stripped")
+        s = stripped
+    case = spec.get("case")
+    if case == "lower":
+        s = s.lower()
+    elif case == "upper":
+        s = s.upper()
+    elif case == "title":
+        s = s.title()
+    elif case == "sentence":
+        s = (s[:1].upper() + s[1:].lower()) if s else s
+    return s, "; ".join(notes)
+
+
+# --------------------------------------------------------------------------- #
+# Categorical value standardisation (B). PROPOSE clusters of inconsistent variants of the
+# SAME category and a canonical form; the user CONFIRMS; the confirmed map is baked into the
+# recipe as `value_map` and applied here. Never auto-applied without confirmation (HITL).
+# --------------------------------------------------------------------------- #
+def _fold(s):
+    """Aggressive match key: lowercase, strip accents (NFKD), drop non-alphanumerics, collapse
+    spaces. 'U.S.A.' / 'usa' / 'U S A' -> 'usa'; 'Café' / 'cafe' -> 'cafe'."""
+    s = unicodedata.normalize("NFKD", _s(s))
+    s = "".join(c for c in s if not unicodedata.combining(c)).lower()
+    return re.sub(r"[^a-z0-9]", "", s)
+
+
+def propose_value_map(values, master=None):
+    """Cluster near-variant values of one column and propose a canonical per cluster.
+    Returns clusters sorted by frequency: [{canonical, variants:[surface...], counts, n}].
+    Canonical = the matching master entry if `master` is given, else the most frequent surface
+    (ties → longest). A cluster is only proposed when there is something to standardise
+    (>1 surface form, or a single form that differs from its master canonical).
+    PROPOSAL ONLY — show it, get confirmation, then bake the accepted map into the recipe."""
+    counts = Counter(_s(v) for v in values if _s(v) != "")
+    groups = {}
+    for surf, c in counts.items():
+        groups.setdefault(_fold(surf), Counter())[surf] += c
+    master_lookup = {_fold(m): _s(m) for m in master} if master else {}
+    clusters = []
+    for fold, surfaces in groups.items():
+        mcanon = master_lookup.get(fold)
+        canonical = mcanon or sorted(surfaces.items(), key=lambda kv: (-kv[1], -len(kv[0])))[0][0]
+        if len(surfaces) > 1 or (mcanon and canonical not in surfaces):
+            ordered = [s for s, _ in sorted(surfaces.items(), key=lambda kv: -kv[1])]
+            clusters.append({"canonical": canonical, "variants": ordered,
+                             "counts": dict(surfaces), "n": sum(surfaces.values()),
+                             "from_master": bool(mcanon)})
+    return sorted(clusters, key=lambda c: -c["n"])
+
+
+def render_value_map_proposals(clusters, col_name):
+    """Markdown for the user to CONFIRM before applying (like reconcile's aggregation review)."""
+    if not clusters:
+        return f"_No value-standardisation candidates in **{col_name}**._"
+    out = [f"## Proposed value standardisation — **{col_name}** ({len(clusters)} cluster(s))",
+           "Confirm before applying — nothing is changed until you accept. Canonical ← variants.",
+           "", "| Canonical | Variants (count) | Source |", "|---|---|---|"]
+    for c in clusters:
+        vs = ", ".join(f"{v} ({c['counts'][v]})" for v in c["variants"])
+        out.append(f"| {c['canonical']} | {vs} | {'master' if c['from_master'] else 'most frequent'} |")
+    return "\n".join(out)
+
+
+def value_map_from_clusters(clusters, accepted=None):
+    """Turn confirmed clusters into a recipe-ready value_map: {canonical: [variants...]}.
+    `accepted` = indices to apply (default all)."""
+    idx = range(len(clusters)) if accepted is None else accepted
+    return {clusters[i]["canonical"]: clusters[i]["variants"] for i in idx}
+
+
+def _vmap_norm(spec):
+    """Build (and cache) a fold->canonical lookup from spec['value_map'], which may be
+    {canonical: [variants]} (readable) or {variant: canonical} (flat)."""
+    norm = spec.get("_vmap_norm")
+    if norm is not None:
+        return norm
+    vm = spec.get("value_map") or {}
+    norm = {}
+    if any(isinstance(v, (list, tuple)) for v in vm.values()):
+        for canon, variants in vm.items():
+            norm[_fold(canon)] = canon
+            for v in variants:
+                norm[_fold(v)] = canon
+    else:
+        for variant, canon in vm.items():
+            norm[_fold(variant)] = canon
+    spec["_vmap_norm"] = norm
+    return norm
+
+
+def _apply_value_map(s, spec):
+    """If the cell matches a confirmed cluster, replace with the canonical. -> (s, note)."""
+    if not spec.get("value_map"):
+        return s, ""
+    mapped = _vmap_norm(spec).get(_fold(s))
+    if mapped and mapped != s:
+        return mapped, f"standardised → {mapped}"
+    return s, ""
+
+
 def _convert(raw, spec):
     """-> (value, note, kept_raw). kept_raw=True means a HARD failure (raw kept for review);
     a note with kept_raw=False is a soft WARNING (value converted, but flag it too)."""
@@ -297,8 +576,11 @@ def _convert(raw, spec):
     t = spec.get("type", "text")
     if _s(raw) == "":
         return "", "", False
-    if t == "text":
-        return re.sub(r"\s+", " ", _s(raw)), "", False
+    if t in ("text", "categorical", "ordinal"):
+        s = re.sub(r"\s+", " ", _s(raw))
+        s, note = _text_hygiene(s, spec)
+        s, vnote = _apply_value_map(s, spec)
+        return s, "; ".join(n for n in (note, vnote) if n), False
     if t == "number":
         n, note = parse_number(raw)
         return (n, "", False) if n is not None else (_s(raw), note, True)
@@ -615,3 +897,48 @@ if __name__ == "__main__":
     write_xlsx(h, rows, out)
     print("\n[self-test] clean rows:", rows)
     out.unlink()
+
+    # --- D: semantic type detection (categorical / ordinal) ---
+    sizes = ["S", "M", "L", "M", "S", "XL", "L", "M", "S", "L"]
+    statuses = ["Open", "Closed", "Open", "Pending", "Open", "Closed",
+                "Pending", "Open", "Closed", "Open"]
+    print("\n[self-test] infer ordinal   :", _infer_type(sizes))
+    print("[self-test] infer categorical:", _infer_type(statuses))
+    print("[self-test] ordinal order    :", match_ordinal(set(sizes)))
+    assert _infer_type(sizes) == "ordinal", _infer_type(sizes)
+    assert _infer_type(statuses) == "categorical", _infer_type(statuses)
+
+    # --- C: string hygiene (encoding / case / specials) ---
+    v, note, _ = _convert("Beta Famille FranÃ§aise", {"type": "text", "fix_encoding": True})
+    print("[self-test] fix_encoding     :", repr(v), "|", note)
+    v2, n2, _ = _convert("  ACME   pension!!  ", {"type": "text", "case": "title",
+                                                   "strip_specials": True})
+    print("[self-test] case+strip       :", repr(v2), "|", n2)
+    assert "ç" in v, v
+    assert v2 == "Acme Pension", v2
+    print("[self-test] D + C passed.")
+
+    # --- B: categorical value standardisation (propose -> confirm -> apply) ---
+    countries = ["USA", "U.S.A.", "USA", "usa", "United States", "Canada", "canada"]
+    clusters = propose_value_map(countries)
+    print("\n" + render_value_map_proposals(clusters, "Country"))
+    assert clusters[0]["canonical"] == "USA", clusters[0]
+    vmap = value_map_from_clusters(clusters)            # user confirmed all
+    sv, svnote, _ = _convert("u.s.a.", {"type": "categorical", "value_map": vmap})
+    print("[self-test] standardise      :", repr(sv), "|", svnote)
+    assert sv == "USA", sv
+    clm = propose_value_map(["united states", "UNITED STATES", "United States"],
+                            master=["United States"])
+    assert clm[0]["canonical"] == "United States" and clm[0]["from_master"], clm
+
+    # --- A: quality / health report ---
+    qh = ["Amount", "Country", "Notes"]
+    qr = [["1,000", "USA", "ok"], ["2,500", "U.S.A.", "FranÃ§aise"], ["3.2m", "usa", "fine"],
+          ["soon", "United States", "ok  "], ["4,000", "Canada", "ok"], ["5,000", "canada", "x"],
+          ["6,000", "USA", "ok"], ["7,000", "usa", "ok"], ["8,000", "Canada", "ok"], ["", "", ""]]
+    q = score_quality(qh, qr)
+    print("\n" + render_quality_report(q))
+    assert q["overall_grade"] in ("A", "B", "C", "D", "F")
+    assert q["columns"][0]["consistency"] < 100         # 'soon' isn't a number
+    assert any("standardis" in i["msg"] or "cluster" in i["msg"] for i in q["issues"])
+    print("\n[self-test] B + A passed.")
