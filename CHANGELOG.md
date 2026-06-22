@@ -4,6 +4,15 @@
 
 Finance-grade hardening (correctness fixes across the shared engine):
 
+- **Currency-aware reconciliation.** `match` takes a `currency` column (else the code is
+  detected from the amount cell's symbol) and **compares currencies** — 100 USD no longer
+  matches 100 SGD. A key match in different currencies goes to a new `currency_diffs` bucket /
+  `currency_mismatch` triage category; in amount_date mode incompatible currencies don't match.
+  Wired through `reconcile_files` and the CLI (`--currency`).
+- **Visualise reads multi-tab workbooks safely.** `viz.rows_from_xlsx` no longer silently reads
+  the 'active' sheet — it reuses `ingest.read_xlsx` when reachable (auto-select single data
+  sheet, raise on several), with a matching standalone fallback when ingest isn't on the path.
+
 - **Exact `Decimal` amounts (was float).** `dataclean.parse_number` / `parse_currency` and
   `reconcile.to_amount` now return `Decimal`, so sums, tolerances and currency tables don't
   drift by binary-float dust — a genuine tie no longer splits at the tolerance edge.

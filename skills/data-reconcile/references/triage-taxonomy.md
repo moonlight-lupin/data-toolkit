@@ -20,6 +20,7 @@ Each row of A is matched to B, producing one of:
 | **in B only** | no counterpart in A |
 | **duplicate** | the same key appears more than once on one side (extra occurrences) |
 | **ambiguous** | equal amount on both sides but dates beyond the matching window — a possible match held back for confirmation |
+| **currency differs** | matched on key, but the two sides are in different currencies → goes to triage (not amount-compared) |
 
 Match strategy is chosen **per run**:
 
@@ -48,6 +49,7 @@ Every unreconciled item is classified on four dimensions.
 | **duplicate** | Appears more than once on one side | Confirm and remove the duplicate |
 | **timing_difference** | Matches on amount, dates differ but within the window — in-transit / cut-off | Monitor — expected to clear next period |
 | **ambiguous_match** | Equal amount, dates differ beyond the window — possibly the same item, possibly coincidental | Confirm it's the same item before reconciling; else treat as separate |
+| **currency_mismatch** | Same item on both sides, but the currencies differ — amounts not comparable as-is | Investigate; convert at the correct rate, or fix the mis-booked currency |
 
 *What `missing_in_B` / `missing_in_A` mean in context (set by the preset):*
 - **invoice tracker vs ledger** — `missing_in_B` = invoiced-not-booked; `missing_in_A` = booked-not-tracked.

@@ -106,6 +106,8 @@ open_in_browser(path)                # review; Ctrl-P → Save as PDF for a PDF
 
 ```python
 rows = rows_from_xlsx("tasks.xlsx")              # header+rows .xlsx -> list of dicts
+# Multi-tab workbook? It won't guess: it auto-reads the single data sheet, but raises if
+# several tabs hold data — pass rows_from_xlsx("book.xlsx", sheet="Q2") to choose.
 open_ = [r for r in rows if str(r.get("Status", "")).lower() != "done"]
 overdue = sum(1 for r in open_ if _is_overdue(r))   # compute KPIs in plain Python
 # ...then build kpi_row / charts / table from open_ as above.

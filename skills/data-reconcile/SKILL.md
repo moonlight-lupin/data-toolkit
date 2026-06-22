@@ -49,6 +49,10 @@ ledger / bank statement / fund administrator). Pick the **preset** if it's a rec
   `ambiguous_match` for you to confirm, so transactions weeks apart aren't passed off as timing.
 
 Amounts are parsed as exact **`Decimal`** — ties don't break on binary-float dust.
+**Currencies are compared**, so 100 USD never matches 100 SGD: name a currency column with
+`--currency <col>` (else the code is read from the amount cell's symbol — `US$`/`S$`/`£`/…; a
+bare `$` is treated as ambiguous). A key match whose currencies differ is flagged
+`currency_mismatch`; in amount_date mode incompatible currencies simply don't match.
 Multi-tab `.xlsx`? Pass `sheet_a=` / `sheet_b=` (CLI `--sheet-a/--sheet-b`); otherwise ingest
 auto-picks the single data sheet, or asks you to choose.
 
@@ -106,6 +110,7 @@ finance to red-line). In short:
 | `duplicate` | appears more than once on one side | confirm + remove |
 | `timing_difference` | matches on amount, dates differ but **within** the window — in-transit / cut-off | monitor — clears next period |
 | `ambiguous_match` | equal amount, dates differ **beyond** the window — possible match, possibly coincidental | confirm same item before reconciling |
+| `currency_mismatch` | matched item, but the currencies differ — amounts not comparable as-is | investigate; convert at rate / fix mis-booked currency |
 
 Materiality grades each by value: **within tolerance → immaterial → material → escalate**
 (thresholds you set per run).

@@ -637,21 +637,76 @@ _INTERACT_JS = """<script>
 # Optional adapters — feed the engine from existing toolkit .xlsx stores.
 # Kept light and dependency-optional so the engine stands alone.
 # --------------------------------------------------------------------------- #
-def rows_from_xlsx(path, sheet=None) -> list[dict]:
-    """Read a simple header+rows .xlsx into a list of dicts (needs openpyxl).
-    Use to point the engine at any header+rows .xlsx (e.g. a clean table from
-    data-tidy / data-extract)."""
-    import openpyxl  # optional dependency
-    wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
-    ws = wb[sheet] if sheet else wb.active
-    it = ws.iter_rows(values_only=True)
-    header = [str(h) if h is not None else "" for h in next(it, [])]
+def _load_ingest():
+    """Import the shared ingest engine (toolkit-root scripts/, or a vendored sibling) if it's
+    reachable — for its multi-sheet-safe .xlsx reader. Returns the module or None."""
+    import importlib
+    from pathlib import Path as _P
+    for p in (_P(__file__).resolve().parents[3] / "scripts",   # toolkit-root engine
+              _P(__file__).resolve().parent / "scripts"):       # vendored sibling
+        if (p / "ingest.py").is_file():
+            if str(p) not in sys.path:
+                sys.path.insert(0, str(p))
+            try:
+                return importlib.import_module("ingest")
+            except ImportError:
+                return None
+    return None
+
+
+def _rows_to_dicts(rows) -> list[dict]:
+    if not rows:
+        return []
+    header = [str(h) if h is not None else "" for h in rows[0]]
     out = []
-    for row in it:
-        if all(c is None for c in row):
+    for row in rows[1:]:
+        if all(c is None or str(c).strip() == "" for c in row):
             continue
         out.append({header[i]: row[i] for i in range(min(len(header), len(row)))})
     return out
+
+
+def rows_from_xlsx(path, sheet=None) -> list[dict]:
+    """Read a simple header+rows .xlsx into a list of dicts (needs openpyxl).
+    Use to point the engine at any header+rows .xlsx (e.g. a clean table from
+    data-tidy / data-extract).
+
+    Multi-tab safe: it won't silently read the 'active' sheet. When the shared `ingest` engine
+    is reachable it uses `ingest.read_xlsx` (auto-selects the single data sheet; raises
+    `SheetSelectionRequired` if several tabs hold data). Standalone (ingest absent), the same
+    rule is applied locally. Pass `sheet=<name>` to read a specific tab."""
+    ing = _load_ingest()
+    if ing is not None:
+        rows, _ = ing.read_xlsx(path, sheet=sheet)
+        return _rows_to_dicts(rows)
+
+    # Standalone fallback — mirror ingest's single-sheet safety without importing it.
+    import openpyxl  # optional dependency
+    wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
+    try:
+        def _has_data(ws):
+            for r in ws.iter_rows(values_only=True):
+                if any(c is not None and str(c).strip() != "" for c in r):
+                    return True
+            return False
+        if sheet is not None:
+            ws = wb[sheet]
+        else:
+            cands = [ws for ws in wb.worksheets
+                     if ws.sheet_state == "visible" and _has_data(ws)]
+            if len(cands) == 1:
+                ws = cands[0]
+            elif not cands:
+                ws = wb.active
+            else:
+                names = ", ".join(repr(ws.title) for ws in cands)
+                raise ValueError(
+                    f"{Path(path).name} has {len(cands)} non-empty sheets ({names}); "
+                    f"pass sheet=<name> to choose one.")
+        rows = [["" if c is None else c for c in r] for r in ws.iter_rows(values_only=True)]
+    finally:
+        wb.close()
+    return _rows_to_dicts(rows)
 
 
 # --------------------------------------------------------------------------- #

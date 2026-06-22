@@ -79,7 +79,7 @@ All in `scripts/viz.py`; each returns an HTML fragment, `dashboard()` assembles 
 | `section(title, *blocks)` / `grid(*blocks, cols)` | titled section / N-column layout |
 | `dashboard(title, blocks, subtitle, as_of, out_path, footnote, theme)` | full page: header, as-of stamp, print CSS, footer disclaimer; `theme` re-skins the shell |
 | `apply_theme(theme)` | rebind the active palette/font/logo so blocks built afterwards use a firm's brand |
-| `rows_from_xlsx(path, sheet)` | read a header+rows `.xlsx` → list of dicts (needs `openpyxl`) |
+| `rows_from_xlsx(path, sheet)` | read a header+rows `.xlsx` → list of dicts (needs `openpyxl`); multi-tab safe — auto-reads the single data sheet, raises if several hold data (pass `sheet=`) |
 | `open_in_browser(path)` | open the rendered file for review / print-to-PDF |
 
 Minimal example:

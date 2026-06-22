@@ -48,6 +48,9 @@ TRIAGE = {
     "ambiguous_match":  ("Equal amount but the dates differ beyond the matching window — "
                          "possibly the same item, possibly coincidental",
                          "Confirm it is the same item before reconciling; else treat the two as separate"),
+    "currency_mismatch":("Same item on both sides, but the currencies differ — the amounts are "
+                         "not comparable as-is",
+                         "Investigate; convert at the correct rate, or fix the mis-booked currency"),
 }
 
 # --------------------------------------------------------------------------- #
@@ -137,15 +140,60 @@ def norm_key(x):
     return re.sub(r"\s+", "", str(x).strip().lower()) if x not in (None, "") else None
 
 
+# Currency detection (mirrors dataclean's, kept local so the pure matcher runs offline).
+# A bare "$" is deliberately ambiguous -> None (it is NOT assumed USD).
+_CCY_SYMBOLS = {"US$": "USD", "S$": "SGD", "A$": "AUD", "HK$": "HKD", "NZ$": "NZD",
+                "C$": "CAD", "R$": "BRL", "£": "GBP", "€": "EUR", "¥": "JPY"}
+_CCY_CODES = {"USD", "SGD", "GBP", "EUR", "JPY", "AUD", "HKD", "NZD", "CAD", "CHF",
+              "CNY", "RMB", "INR", "BRL"}
+
+
+def to_currency(x):
+    """Best-effort ISO currency code from a cell -> code or None. Reads an explicit code
+    (USD/SGD/…) or a disambiguated symbol (US$/S$/A$/HK$/NZ$/C$/£/€/¥). A bare '$' stays
+    ambiguous (None) — never assumed USD, the SG/AU/HK foot-gun this guards against."""
+    if x is None:
+        return None
+    s = str(x).strip().upper()
+    if not s:
+        return None
+    for code in _CCY_CODES:
+        if re.search(rf"\b{code}\b", s):
+            return "CNY" if code == "RMB" else code
+    for sym, code in _CCY_SYMBOLS.items():           # US$ before S$ (substring) — dict order holds
+        if sym.upper() in s:
+            return code
+    return None
+
+
+def _rec_ccy(row, currency_col, amount_col):
+    """The record's currency: an explicit currency column wins (normalised), else detect from
+    the amount cell's symbol/code; None when genuinely unknown."""
+    if currency_col and row.get(currency_col) not in (None, ""):
+        raw = row.get(currency_col)
+        return to_currency(raw) or str(raw).strip().upper() or None
+    return to_currency(row.get(amount_col))
+
+
+def _ccy_ok(a_ccy, b_ccy):
+    """Compatible to match when equal, or either side's currency is unknown."""
+    return a_ccy is None or b_ccy is None or a_ccy == b_ccy
+
+
 # --------------------------------------------------------------------------- #
 # Stage 1 — match A <-> B
 # --------------------------------------------------------------------------- #
-def match(rows_a, rows_b, *, key=None, amount="amount", date=None,
+def match(rows_a, rows_b, *, key=None, amount="amount", date=None, currency=None,
           mode="key", tol=0.01, date_window_days=5):
     """Match two row sets. Returns a dict of buckets, each a list of records.
 
-    Buckets: matched, value_diffs, a_only, b_only, dup_a, dup_b, ambiguous.
-    Every record carries its source row(s) and the parsed amount/date/key.
+    Buckets: matched, value_diffs, currency_diffs, a_only, b_only, dup_a, dup_b, ambiguous.
+    Every record carries its source row(s) and the parsed amount/date/key/currency.
+
+    `currency` names a currency column (else the code is detected from the amount cell's
+    symbol). Currencies are COMPARED, so 100 USD never silently matches 100 SGD: in key mode a
+    key match whose currencies differ goes to `currency_diffs` (not amount-compared); in
+    amount_date mode an equal-amount pair only matches when the currencies are compatible.
 
     In `amount_date` mode `date_window_days` is a HARD constraint: an equal-amount pair only
     counts as matched when the dates are within the window (a small in-window gap is a genuine
@@ -154,13 +202,16 @@ def match(rows_a, rows_b, *, key=None, amount="amount", date=None,
     weeks apart are never silently passed off as timing differences. `date_window_days=None`
     disables the window (any nearest-date equal-amount pair matches — the old behaviour)."""
     tol = Decimal(str(tol))
-    A = [{"row": r, "amt": to_amount(r.get(amount)), "dt": to_date(r.get(date)) if date else None,
-          "key": norm_key(r.get(key)) if key else None, "i": i} for i, r in enumerate(rows_a)]
-    B = [{"row": r, "amt": to_amount(r.get(amount)), "dt": to_date(r.get(date)) if date else None,
-          "key": norm_key(r.get(key)) if key else None, "i": i} for i, r in enumerate(rows_b)]
 
-    res = {"matched": [], "value_diffs": [], "a_only": [], "b_only": [], "dup_a": [],
-           "dup_b": [], "ambiguous": []}
+    def _mk(rows):
+        return [{"row": r, "amt": to_amount(r.get(amount)),
+                 "dt": to_date(r.get(date)) if date else None,
+                 "key": norm_key(r.get(key)) if key else None,
+                 "ccy": _rec_ccy(r, currency, amount), "i": i} for i, r in enumerate(rows)]
+    A, B = _mk(rows_a), _mk(rows_b)
+
+    res = {"matched": [], "value_diffs": [], "currency_diffs": [], "a_only": [], "b_only": [],
+           "dup_a": [], "dup_b": [], "ambiguous": []}
 
     if mode == "key":
         from collections import defaultdict
@@ -188,7 +239,10 @@ def match(rows_a, rows_b, *, key=None, amount="amount", date=None,
                 b = cand[0]
                 usedb.add(id(b))
                 da = (a["amt"] or 0) - (b["amt"] or 0)
-                res["matched" if abs(da) <= tol else "value_diffs"].append({"a": a, "b": b, "diff": da})
+                if not _ccy_ok(a["ccy"], b["ccy"]):   # same key, different currency — not comparable
+                    res["currency_diffs"].append({"a": a, "b": b, "diff": da})
+                else:
+                    res["matched" if abs(da) <= tol else "value_diffs"].append({"a": a, "b": b, "diff": da})
             else:
                 res["a_only"].append({"a": a})
         for b in B:
@@ -208,6 +262,8 @@ def match(rows_a, rows_b, *, key=None, amount="amount", date=None,
                 if id(b) in usedb or b["amt"] is None:
                     continue
                 if abs(a["amt"] - b["amt"]) > tol:
+                    continue
+                if not _ccy_ok(a["ccy"], b["ccy"]):  # equal amount, different currency — not the same money
                     continue
                 gap = abs((a["dt"] - b["dt"]).days) if (a["dt"] and b["dt"]) else 0
                 if win is None or gap <= win:
@@ -267,6 +323,11 @@ def triage(res, *, a_label="A", b_label="B", material=1000.0, escalate=10000.0,
         c, act = cause_action("ambiguous_match")
         c = f"{c} (dates {d['date_gap']} days apart)"
         out.append(_exc("ambiguous_match", a, b, a["amt"], "confirm", c, act, material, escalate))
+    for d in res.get("currency_diffs", []):
+        a, b = d["a"], d["b"]
+        c, act = cause_action("currency_mismatch")
+        c = f"{c} ({a['ccy'] or '?'} vs {b['ccy'] or '?'})"
+        out.append(_exc("currency_mismatch", a, b, a["amt"], "investigate", c, act, material, escalate))
     for d in res["value_diffs"]:
         diff = d["diff"]
         a, b = d["a"], d["b"]
@@ -608,7 +669,8 @@ def reconcile_files(path_a, path_b, *, preset=None, aggregate=False, group_col=N
     rows_a = _records(ingest.read_any(path_a, sheet=sheet_a))
     rows_b = _records(ingest.read_any(path_b, sheet=sheet_b))
     res = match(rows_a, rows_b, key=cfg.get("key"), amount=cfg.get("amount", "amount"),
-                date=cfg.get("date"), mode=cfg.get("mode", "key"), tol=cfg.get("tol", 0.01),
+                date=cfg.get("date"), currency=cfg.get("currency"), mode=cfg.get("mode", "key"),
+                tol=cfg.get("tol", 0.01),
                 date_window_days=(date_window if date_window is not None else 5))
     proposals = []
     if aggregate:
@@ -701,6 +763,20 @@ def _self_test():
     # Decimal exactness: amounts tie without binary-float drift (a float recon can break 0.1+0.2)
     assert to_amount("0.1") + to_amount("0.2") == to_amount("0.3"), "Decimal must be exact"
     print("Decimal amounts: PASS")
+
+    # currency-aware matching: 100 USD must NOT reconcile against 100 SGD
+    Ac = [{"ref": "R1", "amount": "100.00", "ccy": "USD"},
+          {"ref": "R2", "amount": "50.00", "ccy": "SGD"}]
+    Bc = [{"ref": "R1", "amount": "100.00", "ccy": "SGD"},   # same key, wrong currency
+          {"ref": "R2", "amount": "50.00", "ccy": "SGD"}]
+    rc = match(Ac, Bc, key="ref", amount="amount", currency="ccy", mode="key")
+    assert len(rc["matched"]) == 1 and len(rc["currency_diffs"]) == 1, rc
+    assert any(e["category"] == "currency_mismatch" for e in triage(rc)), "expect currency_mismatch"
+    # code detected from the amount cell's symbol when there's no currency column
+    rs = match([{"amount": "US$ 100"}], [{"amount": "S$ 100"}], amount="amount", mode="amount_date")
+    assert not rs["matched"] and not rs["ambiguous"], "US$100 must not match S$100"
+    assert to_currency("$100") is None, "bare $ stays ambiguous (not USD)"
+    print("currency-aware matching: PASS")
     print("self-test: PASS")
     return 0
 
@@ -713,6 +789,8 @@ def main(argv=None):
     ap.add_argument("--key", help="match key column (override)")
     ap.add_argument("--amount", default="amount")
     ap.add_argument("--date")
+    ap.add_argument("--currency", help="currency column (else the code is read from the amount cell); "
+                                       "currencies are compared so 100 USD != 100 SGD")
     ap.add_argument("--mode", choices=["key", "amount_date"])
     ap.add_argument("--material", type=float, default=1000.0)
     ap.add_argument("--escalate", type=float, default=10000.0)
@@ -739,7 +817,7 @@ def main(argv=None):
         ap.error("need source A and B (or --self-test / --catalogue)")
     res, exc, summary, proposals = reconcile_files(
         a.a, a.b, preset=a.preset, key=a.key, amount=a.amount, date=a.date,
-        mode=a.mode, material=a.material, escalate=a.escalate,
+        currency=a.currency, mode=a.mode, material=a.material, escalate=a.escalate,
         aggregate=a.aggregate, group_col=a.group_col, party_col=a.party_col,
         date_window=a.date_window, auto_confirm=a.auto_confirm,
         sheet_a=a.sheet_a, sheet_b=a.sheet_b)
