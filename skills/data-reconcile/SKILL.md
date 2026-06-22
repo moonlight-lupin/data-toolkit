@@ -43,8 +43,14 @@ ledger / bank statement / fund administrator). Pick the **preset** if it's a rec
 ### 2. Pick the match strategy (per run — it's a mix)
 - **Key** — a shared reference exists on both sides (invoice no, payment ref): `--mode key --key <col>`.
 - **Amount + date** — no clean key (typical for bank vs cashbook): `--mode amount_date` — matches
-  on amount within tolerance, nearest date; a matched pair with different dates is a **timing
-  difference** (likely in-transit), not a true exception.
+  on amount within tolerance, nearest date **within the date window** (`--date-window N`, default
+  ±5 days). A small in-window gap is a **timing difference** (likely in-transit), not a true
+  exception. An equal-amount pair *outside* the window is **not** reconciled — it's flagged
+  `ambiguous_match` for you to confirm, so transactions weeks apart aren't passed off as timing.
+
+Amounts are parsed as exact **`Decimal`** — ties don't break on binary-float dust.
+Multi-tab `.xlsx`? Pass `sheet_a=` / `sheet_b=` (CLI `--sheet-a/--sheet-b`); otherwise ingest
+auto-picks the single data sheet, or asks you to choose.
 
 Messy inputs? Tidy them with **data-tidy** first, then reconcile the clean outputs.
 
@@ -98,7 +104,8 @@ finance to red-line). In short:
 | `rounding` | differ within the rounding / FX tolerance | accept (note) |
 | `sign_flip` | equal magnitude, opposite sign | correct the sign/side |
 | `duplicate` | appears more than once on one side | confirm + remove |
-| `timing_difference` | matches on amount, dates differ — in-transit / cut-off | monitor — clears next period |
+| `timing_difference` | matches on amount, dates differ but **within** the window — in-transit / cut-off | monitor — clears next period |
+| `ambiguous_match` | equal amount, dates differ **beyond** the window — possible match, possibly coincidental | confirm same item before reconciling |
 
 Materiality grades each by value: **within tolerance → immaterial → material → escalate**
 (thresholds you set per run).

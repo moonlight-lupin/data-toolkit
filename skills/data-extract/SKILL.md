@@ -61,8 +61,12 @@ FIELDS = [
 ]
 record, flags = extract.extract_fields("subscription.pdf", FIELDS)
 ```
-`extract_fields` finds `Label: value` / `Label[tab]value` / `Label   value`, converts by
-type, and **flags** anything not found or uncertain (kept raw, never invented).
+`extract_fields` finds `Label: value` / `Label[tab]value` / `Label   value` / `Label .... value`
+(dotted leader), **and the next-line layout** (label alone, value on the line below — common on
+confirmations/certificates), stopping at the next field's label so it won't grab a neighbouring
+label. Converts by type (amounts as exact `Decimal`; bare `$` ambiguous → give expected
+`currency`) and **flags** anything not found or uncertain (kept raw, never invented). Genuinely
+2-D box/grid layouts still need **table mode** instead.
 
 **Tables** — pick, then pull:
 ```python

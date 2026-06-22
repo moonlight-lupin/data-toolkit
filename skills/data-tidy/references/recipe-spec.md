@@ -31,8 +31,20 @@ the same recurring source). Build it from the profile + the user's intent, confi
 - **columns** — the output, in order. Each: `source` (source column name; loose/contains
   match, case-insensitive), `target` (output name), `type`, and options:
   - `type`: `text` (trim + collapse whitespace) · `number` (handles `1,234`, `(500)`,
-    `1.2m`, `15%`) · `currency` (amount + detected code; `currency` option = expected code,
-    mismatch flagged) · `date` (→ DD MMM YYYY; `dayfirst` default true for UK/SG) · `bool`.
+    `1.2m`, `15%`) · `currency` (amount + detected code) · `date` (→ DD MMM YYYY; `dayfirst`
+    default true for UK/SG) · `bool`.
+    - **Amounts are parsed as `Decimal`, not float** — exact for finance (sums, reconciliation
+      and currency tables don't drift by 1e-17). `write_xlsx` writes them as real numbers.
+  - **Currency options** (on a `currency` column):
+    - `currency`: the **expected** ISO code (e.g. `"SGD"`). A detected code that differs is
+      flagged; a bare/ambiguous `$` is **resolved to this expected code**.
+    - `code_target`: emit the detected currency code into its **own column** (named here),
+      placed right after the amount — keep the currency for multi-market data instead of
+      collapsing it into a bare number.
+    - A **bare `$`** is treated as **ambiguous** (could be USD/SGD/AUD/HKD…) and is *not*
+      silently assumed to be USD — it is flagged unless an expected `currency` is given.
+      Disambiguated dollars (`US$`, `S$`, `A$`, `HK$`, `NZ$`, `C$`) and ISO codes resolve
+      directly.
   - `trim` (default true).
   - **String hygiene (opt-in, `text` type only — off by default, every change logged/flagged):**
     - `case`: `lower` | `upper` | `title` | `sentence` — normalise casing.

@@ -27,6 +27,7 @@ import sys
 import datetime as dt
 import unicodedata
 from collections import Counter
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 try:
@@ -38,9 +39,24 @@ from openpyxl import Workbook, load_workbook  # noqa: F401 (load_workbook used b
 
 DATE_OUT = "%d %b %Y"  # house format: 13 Jun 2026
 
-CURRENCY_SIGNS = {"£": "GBP", "$": "USD", "¥": "JPY", "€": "EUR",
-                  "S$": "SGD", "US$": "USD", "SGD": "SGD", "GBP": "GBP",
-                  "JPY": "JPY", "USD": "USD", "EUR": "EUR"}
+# Currency CODE resolution. Note: a BARE "$" is deliberately NOT here — in SG/AU/HK/US
+# contexts it is ambiguous (USD? SGD? AUD? HKD?), so it is never silently resolved to USD.
+# A disambiguated dollar (US$, S$, A$, HK$, NZ$, C$, R$) and the ISO codes are resolved.
+# Longest signs first so "US$" wins over "$" and "S$" isn't shadowed.
+CURRENCY_SIGNS = {
+    "US$": "USD", "S$": "SGD", "A$": "AUD", "HK$": "HKD", "NZ$": "NZD",
+    "C$": "CAD", "R$": "BRL",
+    "SGD": "SGD", "USD": "USD", "GBP": "GBP", "JPY": "JPY", "EUR": "EUR",
+    "AUD": "AUD", "HKD": "HKD", "NZD": "NZD", "CAD": "CAD", "CHF": "CHF",
+    "CNY": "CNY", "RMB": "CNY", "INR": "INR",
+    "£": "GBP", "€": "EUR", "¥": "JPY",
+}
+# Order to probe signs in: multi-char (disambiguated) first, then unambiguous symbols.
+_CURRENCY_SIGN_ORDER = ("US$", "S$", "A$", "HK$", "NZ$", "C$", "R$",
+                        "SGD", "USD", "GBP", "JPY", "EUR", "AUD", "HKD", "NZD",
+                        "CAD", "CHF", "CNY", "RMB", "INR", "£", "€", "¥")
+# A bare "$" still SIGNALS "this is money" for type inference, even though its code is unknown.
+CURRENCY_DETECT = set(CURRENCY_SIGNS) | {"$"}
 
 _DATE_FORMATS = ["%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%d %b %Y", "%d %B %Y",
                  "%b %d, %Y", "%B %d, %Y", "%d/%m/%y", "%Y/%m/%d"]
@@ -55,47 +71,68 @@ def _s(v) -> str:
 
 
 def parse_number(v):
-    """'£1,234.50' '(500)' '1.2m' '15%' -> float. Returns (float|None, note)."""
+    """'£1,234.50' '(500)' '1.2m' '15%' -> Decimal. Returns (Decimal|None, note).
+
+    Uses Decimal (not float) so finance amounts stay exact — no binary-float drift in sums,
+    reconciliation or currency tables. Inputs that are already int/Decimal pass through; a
+    float is taken via its str() so 0.1 stays 0.1, not 0.1000000000000000055."""
+    if isinstance(v, bool):                       # avoid True/False -> 1/0
+        return None, f"not a number: {v!r}"
+    if isinstance(v, Decimal):
+        return v, ""
+    if isinstance(v, int):
+        return Decimal(v), ""
+    if isinstance(v, float):
+        return Decimal(str(v)), ""
     s = _s(v)
     if s == "":
         return None, "empty"
     neg = s.startswith("(") and s.endswith(")")
     s2 = s.strip("()")
-    mult = 1.0
+    mult = 1
     low = s2.lower()
     if low.endswith("m"):
-        mult, s2 = 1_000_000.0, s2[:-1]
+        mult, s2 = 1_000_000, s2[:-1]
     elif low.endswith("k"):
-        mult, s2 = 1_000.0, s2[:-1]
+        mult, s2 = 1_000, s2[:-1]
     pct = s2.rstrip().endswith("%")
     s2 = re.sub(r"[^\d.\-]", "", s2.replace(",", ""))
     if s2 in ("", "-", ".", "-."):
         return None, f"not a number: {s!r}"
     try:
-        n = float(s2) * mult
-    except ValueError:
+        n = Decimal(s2) * mult
+    except InvalidOperation:
         return None, f"not a number: {s!r}"
     if neg:
         n = -abs(n)
     if pct:
-        n /= 100.0
+        n /= 100                                  # exact: division by a power of ten
     return n, ""
 
 
 def parse_currency(v):
-    """'£1,000,000' 'S$ 2.5m' -> (amount, code). Returns ((amount, code)|None, note)."""
+    """'£1,000,000' 'S$ 2.5m' -> (Decimal amount, code). Returns ((amount, code)|None, note).
+
+    The code is detected SEPARATELY from the amount so multi-market data keeps its currency
+    (never collapsed into a bare number). A disambiguated dollar (US$/S$/A$/HK$/…) and ISO
+    codes resolve; a BARE "$" is flagged ambiguous and left unresolved (code=None) unless the
+    caller supplies an expected currency — see `_convert`."""
     s = _s(v)
     if s == "":
         return None, "empty"
     code = None
-    for sign in ("S$", "US$", "SGD", "GBP", "JPY", "USD", "EUR", "£", "$", "¥", "€"):
+    for sign in _CURRENCY_SIGN_ORDER:
         if sign in s:
             code = CURRENCY_SIGNS[sign]
             break
     amt, note = parse_number(s)
     if amt is None:
         return None, note
-    return (amt, code), ("" if code else "no currency symbol — code unknown")
+    if code:
+        return (amt, code), ""
+    if "$" in s:                                   # bare dollar — prefix not recognised above
+        return (amt, None), "ambiguous '$' — could be USD/SGD/AUD/HKD…; specify expected currency"
+    return (amt, None), "no currency symbol — code unknown"
 
 
 def _excel_serial(s):
@@ -205,7 +242,7 @@ def _infer_type(values):
         return sum(1 for v in nonempty if fn(_s(v))) / len(nonempty)
     if frac(lambda s: parse_date(s)[0] is not None) > 0.8:
         return "date"
-    if frac(lambda s: parse_currency(s)[0] is not None and any(k in s for k in CURRENCY_SIGNS)) > 0.5:
+    if frac(lambda s: parse_currency(s)[0] is not None and any(k in s for k in CURRENCY_DETECT)) > 0.5:
         return "currency"
     if frac(lambda s: parse_number(s)[0] is not None) > 0.8:
         return "number"
@@ -393,14 +430,21 @@ def apply_recipe(raw_rows, recipe, masters=None):
     cols = recipe.get("columns")
     if not cols:  # passthrough: keep all source columns as text
         cols = [{"source": h, "target": h, "type": "text"} for h in header_src]
-    out_header = [c["target"] for c in cols]
+    # A currency column may emit its detected code into a SEPARATE column (multi-market data):
+    # set "code_target" on a type:"currency" spec. The code column follows its amount column.
+    code_tgt = [c.get("code_target") if c.get("type") == "currency" else None for c in cols]
+    out_header = []
+    for c, ct in zip(cols, code_tgt):
+        out_header.append(c["target"])
+        if ct:
+            out_header.append(ct)
     idx = [(_col_index(header_src, c["source"]), c) for c in cols]
 
     out_rows = []
     conv = {c["target"]: {"ok": 0, "flagged": 0} for c in cols}
     for ri, r in enumerate(kept):
         out = []
-        for j, spec in idx:
+        for (j, spec), ct in zip(idx, code_tgt):
             raw = "" if j is None or j >= len(r) else r[j]
             val, note, kept_raw = _convert(raw, spec)  # kept_raw=True only on hard failure
             if _s(raw) != "":
@@ -411,6 +455,8 @@ def apply_recipe(raw_rows, recipe, masters=None):
                     log["flagged"].append({"row": ri + 1, "column": spec["target"],
                                            "value": _s(raw), "reason": note})
             out.append(val)
+            if ct:                                  # separate currency-code column
+                out.append(_currency_code(raw, spec))
         out_rows.append(out)
     log["transforms"] = [{"column": t, "converted": conv[t]["ok"], "flagged": conv[t]["flagged"]}
                          for t in conv]
@@ -568,6 +614,14 @@ def _apply_value_map(s, spec):
     return s, ""
 
 
+def _currency_code(raw, spec):
+    """Resolve the currency code for a cell -> code string (or "" if genuinely unknown).
+    Detected code wins; a bare/unknown code falls back to the recipe's expected `currency`."""
+    res, _ = parse_currency(raw)
+    code = res[1] if res else None
+    return code or spec.get("currency") or ""
+
+
 def _convert(raw, spec):
     """-> (value, note, kept_raw). kept_raw=True means a HARD failure (raw kept for review);
     a note with kept_raw=False is a soft WARNING (value converted, but flag it too)."""
@@ -590,8 +644,12 @@ def _convert(raw, spec):
             return _s(raw), note, True
         amt, code = res
         want = spec.get("currency")
-        if want and code and code != want:
-            note = (note + f"; currency {code} != expected {want}").strip("; ")
+        if want:
+            if code and code != want:
+                note = (note + f"; currency {code} != expected {want}").strip("; ")
+            elif code is None:
+                note = ""                          # ambiguous/unknown resolved by expected currency
+        # if no expected currency and the code is unknown/ambiguous, `note` already explains it
         return amt, note, False
     if t == "date":
         d, note = parse_date(raw, dayfirst=spec.get("dayfirst", True))
@@ -942,3 +1000,33 @@ if __name__ == "__main__":
     assert q["columns"][0]["consistency"] < 100         # 'soon' isn't a number
     assert any("standardis" in i["msg"] or "cluster" in i["msg"] for i in q["issues"])
     print("\n[self-test] B + A passed.")
+
+    # --- Decimal amounts (exact, no binary-float drift) ---
+    n1, _ = parse_number("0.1")
+    n2, _ = parse_number("0.2")
+    assert isinstance(n1, Decimal) and (n1 + n2) == Decimal("0.3"), (n1, n2, n1 + n2)
+    assert parse_number("1.2m")[0] == Decimal("1200000.0"), parse_number("1.2m")
+    assert parse_number("15%")[0] == Decimal("0.15"), parse_number("15%")
+    assert parse_number("(500)")[0] == Decimal("-500"), parse_number("(500)")
+    cval, _, _ = _convert("£1,234.50", {"type": "currency", "currency": "GBP"})
+    assert cval == Decimal("1234.50"), cval
+
+    # --- currency: bare '$' is ambiguous (not auto-USD); disambiguated/expected resolve ---
+    (amt, code), note = parse_currency("$1,000")
+    assert code is None and "ambiguous" in note, (code, note)
+    assert parse_currency("S$ 2.5m")[0] == (Decimal("2500000.0"), "SGD"), parse_currency("S$ 2.5m")
+    assert parse_currency("US$ 50")[0][1] == "USD"
+    # expected currency resolves the bare-$ ambiguity (note cleared)
+    v3, n3, _ = _convert("$1,000", {"type": "currency", "currency": "SGD"})
+    assert v3 == Decimal("1000") and n3 == "", (v3, n3)
+    assert _infer_type(["$100", "$2,000", "$3,500"]) == "currency"   # bare $ still reads as money
+
+    # --- currency code_target: emit the code into its own column ---
+    raw_cur = [["Amount"], ["S$ 1,000"], ["US$ 2,000"], ["$ 3,000"]]
+    rec_cur = {"columns": [{"source": "Amount", "target": "Amount", "type": "currency",
+                            "currency": "SGD", "code_target": "Currency"}]}
+    hc, rc, _ = apply_recipe(raw_cur, rec_cur)
+    assert hc == ["Amount", "Currency"], hc
+    assert [r[1] for r in rc] == ["SGD", "USD", "SGD"], rc   # bare $ -> expected SGD
+    assert rc[0][0] == Decimal("1000"), rc[0]
+    print("[self-test] Decimal + currency passed.")

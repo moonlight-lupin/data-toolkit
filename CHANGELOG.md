@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+Finance-grade hardening (correctness fixes across the shared engine):
+
+- **Exact `Decimal` amounts (was float).** `dataclean.parse_number` / `parse_currency` and
+  `reconcile.to_amount` now return `Decimal`, so sums, tolerances and currency tables don't
+  drift by binary-float dust — a genuine tie no longer splits at the tolerance edge.
+  `write_xlsx` writes them as real numbers. Matches the FP&A toolkit's choice.
+- **`amount_date` reconciliation honours the date window as a hard constraint.** Equal-amount
+  pairs only match when their dates are within `date_window_days` (default ±5); an equal-amount
+  pair *outside* the window is no longer silently booked as a timing difference — it goes to a
+  new `ambiguous` bucket / `ambiguous_match` triage category for the reviewer to confirm. The
+  window is now wired through `reconcile_files` and the CLI (`--date-window`).
+- **Safer currency handling.** Amount and currency code are kept distinct: a `currency` column
+  can emit its code into its own column via `code_target`. A **bare `$` is treated as ambiguous**
+  (could be USD/SGD/AUD/HKD…), not silently assumed USD — flagged unless an expected `currency`
+  is given (which then resolves it). Disambiguated dollars (`US$`/`S$`/`A$`/`HK$`/`NZ$`/`C$`) and
+  ISO codes resolve directly; the sign table is expanded for SG/AU/HK/NZ/CA/CH/CN/IN.
+- **Richer form extraction.** `extract._find_value` now also reads dotted-leader lines
+  (`Label .... value`) and the **next-line layout** (label alone, value on the following line),
+  stopping at the next field's label so it never grabs a neighbour. (Genuine 2-D box/grid forms
+  still need table mode — documented.)
+- **Excel sheet discovery + selection.** `ingest.list_sheets()` enumerates tabs; `read_xlsx` /
+  `read_any` auto-select the single non-empty sheet and **raise `SheetSelectionRequired`** when
+  several tabs hold data (instead of guessing the 'active' sheet). `reconcile_files` gains
+  `sheet_a` / `sheet_b` (CLI `--sheet-a` / `--sheet-b`).
+
 Engine improvements (borrowing sharper cleaning primitives from the `data-cleaner` skill):
 
 - **Semantic type detection (D):** `_infer_type` / `profile_table` now also tag `categorical`

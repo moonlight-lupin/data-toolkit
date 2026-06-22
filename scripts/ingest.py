@@ -4,11 +4,17 @@ shared path. Used by `data-tidy` (clean tabular data) and `data-extract` (get da
 out of documents). Lives at the toolkit-root `scripts/`; skills import it by adding
 `../../scripts` to sys.path (run from the skill directory).
 
-    from ingest import read_any, read_paste, read_text, list_pdf_tables, ocr_available
-    rows, note = read_any("export.xlsx")      # or .csv/.tsv, a .pdf, a .docx, a .msg
-    rows, note = read_paste(pasted_text)       # markdown / tab / csv-ish pasted table
-    text, note = read_text("form.pdf")         # document -> plain text (OCR fallback)
-    cands      = list_pdf_tables("report.pdf") # enumerate tables per page for selection
+    from ingest import read_any, read_paste, read_text, list_sheets, list_pdf_tables, ocr_available
+    rows, note = read_any("export.xlsx")       # or .csv/.tsv, a .pdf, a .docx, a .msg
+    rows, note = read_any("book.xlsx", sheet="Q2")  # pick a tab in a multi-sheet workbook
+    sheets     = list_sheets("book.xlsx")       # discover tabs (name/size/hidden/empty)
+    rows, note = read_paste(pasted_text)        # markdown / tab / csv-ish pasted table
+    text, note = read_text("form.pdf")          # document -> plain text (OCR fallback)
+    cands      = list_pdf_tables("report.pdf")  # enumerate tables per page for selection
+
+Multi-sheet workbooks: read_any/read_xlsx auto-select the single non-empty sheet; if several
+hold data they raise `SheetSelectionRequired` (never silently read the 'active' tab) — the
+caller lists `list_sheets()` and re-calls with `sheet=`.
 
 Heavy deps (PyMuPDF, python-docx, extract_msg, Tesseract) are imported LAZILY and degrade
 with a clear message rather than crashing — most jobs (xlsx / csv / paste / digital PDF)
@@ -33,11 +39,11 @@ except (AttributeError, ValueError):
     pass
 
 
-def read_any(path: str):
-    """Dispatch on extension -> (rows, note)."""
+def read_any(path: str, sheet=None):
+    """Dispatch on extension -> (rows, note). `sheet` selects the worksheet for .xlsx/.xlsm."""
     ext = Path(path).suffix.lower()
     if ext in (".xlsx", ".xlsm"):
-        return read_xlsx(path)
+        return read_xlsx(path, sheet=sheet)
     if ext in (".csv", ".tsv", ".txt"):
         return read_csv(path)
     if ext == ".pdf":
@@ -49,13 +55,83 @@ def read_any(path: str):
     raise ValueError(f"Unsupported source type: {ext or '(no extension)'}")
 
 
-def read_xlsx(path: str, sheet=None):
+class SheetSelectionRequired(ValueError):
+    """Raised when an .xlsx has several non-empty sheets and none was specified — real
+    workbooks carry cover sheets, multiple tabs and exports, so silently reading the 'active'
+    sheet is a foot-gun. The caller should show `sheets` and re-call with `sheet=<name>`."""
+    def __init__(self, path, sheets):
+        self.path = path
+        self.sheets = sheets
+        listing = ", ".join(
+            f"'{s['name']}' ({s['rows']}×{s['cols']}{', hidden' if s['hidden'] else ''})"
+            for s in sheets)
+        super().__init__(
+            f"{Path(path).name} has {len(sheets)} non-empty sheets: {listing}. "
+            f"Specify one, e.g. read_any(path, sheet='{sheets[0]['name']}').")
+
+
+def _sheet_has_data(ws):
+    """True as soon as any cell holds a non-blank value (cheap for non-empty sheets)."""
+    for row in ws.iter_rows(values_only=True):
+        if any(c is not None and str(c).strip() != "" for c in row):
+            return True
+    return False
+
+
+def list_sheets(path: str):
+    """Discover the worksheets in a workbook -> [{name, rows, cols, hidden, active, empty}],
+    so the caller (or the user) can choose which to read."""
     from openpyxl import load_workbook
     wb = load_workbook(path, data_only=True, read_only=True)
-    ws = wb[sheet] if sheet else wb.active
-    rows = [["" if c is None else c for c in row]
-            for row in ws.iter_rows(values_only=True)]
-    return rows, f"xlsx '{ws.title}', {len(rows)} raw rows"
+    try:
+        active_title = wb.active.title if wb.active is not None else None
+        out = []
+        for ws in wb.worksheets:
+            out.append({"name": ws.title,
+                        "rows": ws.max_row or 0, "cols": ws.max_column or 0,
+                        "hidden": ws.sheet_state != "visible",
+                        "active": ws.title == active_title,
+                        "empty": not _sheet_has_data(ws)})
+        return out
+    finally:
+        wb.close()
+
+
+def read_xlsx(path: str, sheet=None):
+    """Read one worksheet -> (rows, note). With `sheet=None`: auto-select the single non-empty
+    visible sheet; if several are non-empty, raise SheetSelectionRequired (never guess via the
+    'active' sheet). Pass `sheet=<name>` to read a specific tab."""
+    from openpyxl import load_workbook
+    sheets = list_sheets(path)
+    by_name = {s["name"]: s for s in sheets}
+    auto = False
+    if sheet is not None:
+        if sheet not in by_name:
+            raise ValueError(f"Sheet {sheet!r} not found in {Path(path).name}. "
+                             f"Available: {', '.join(by_name) or '(none)'}")
+        target = sheet
+    else:
+        candidates = [s for s in sheets if not s["empty"] and not s["hidden"]]
+        if len(candidates) == 1:
+            target, auto = candidates[0]["name"], True
+        elif not candidates:
+            non_empty = [s for s in sheets if not s["empty"]]   # all empty/hidden — best effort
+            target = (non_empty[0]["name"] if non_empty
+                      else next((s["name"] for s in sheets if s["active"]),
+                                sheets[0]["name"] if sheets else "Sheet1"))
+        else:
+            raise SheetSelectionRequired(path, candidates)
+    wb = load_workbook(path, data_only=True, read_only=True)
+    try:
+        ws = wb[target]
+        rows = [["" if c is None else c for c in row]
+                for row in ws.iter_rows(values_only=True)]
+    finally:
+        wb.close()
+    note = f"xlsx '{target}', {len(rows)} raw rows"
+    if auto:
+        note += " (auto-selected the only data sheet)"
+    return rows, note
 
 
 def read_csv(path: str):

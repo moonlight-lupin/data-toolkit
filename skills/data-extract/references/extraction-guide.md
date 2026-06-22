@@ -21,9 +21,17 @@
 - `labels` — every phrase that might precede the value; first match wins. Add the
   variations you actually see (e.g. "Amount" as well as "Commitment").
 - `type` — `text` / `number` / `currency` (+ expected `currency` code) / `date` / `bool`,
-  parsed by the shared engine. Output house format: dates DD MMM YYYY, currency amount + code.
-- Matches `Label: value`, `Label<tab>value`, and `Label   value` (2+ spaces),
-  case-insensitive. Unfound → blank + flagged. Ambiguous/odd values → converted-or-kept + flagged.
+  parsed by the shared engine. Output house format: dates DD MMM YYYY, amounts as exact
+  `Decimal`, currency amount + code. A bare `$` is ambiguous (give the expected `currency`).
+- Matching handles, on the same line, `Label: value`, `Label<tab>value`, `Label   value`
+  (2+ spaces) and `Label ..... value` (dotted leader); **and the next-line layout** — a label
+  alone on its line with the value on the following line (common on confirmations /
+  certificates / boxed forms). The next-line search stops at the *next* field's label, so it
+  never grabs a neighbouring label as a value. Case-insensitive. Unfound → blank + flagged;
+  ambiguous/odd values → converted-or-kept + flagged.
+- Still basic for genuinely 2-D layouts (values in side-by-side boxes / multi-column grids
+  that need spatial coordinates) — for those, use **table mode** (`list_tables`/`get_table`)
+  or hand the page text to data-tidy.
 
 ### Batch (many documents, same shape)
 Run `extract_fields` per document, collect the records, then

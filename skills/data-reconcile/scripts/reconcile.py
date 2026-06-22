@@ -22,6 +22,7 @@ import argparse
 import datetime as _dt
 import re
 import sys
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 # --------------------------------------------------------------------------- #
@@ -44,6 +45,9 @@ TRIAGE = {
                          "Confirm and remove the duplicate"),
     "timing_difference":("Matches on amount but the dates differ — likely in-transit / cut-off",
                          "Monitor — expected to clear next period"),
+    "ambiguous_match":  ("Equal amount but the dates differ beyond the matching window — "
+                         "possibly the same item, possibly coincidental",
+                         "Confirm it is the same item before reconciling; else treat the two as separate"),
 }
 
 # --------------------------------------------------------------------------- #
@@ -86,11 +90,17 @@ PRESETS = {
 # Parsing helpers
 # --------------------------------------------------------------------------- #
 def to_amount(x):
-    """Best-effort numeric parse: strips currency symbols, thousands separators, brackets=neg."""
-    if x is None:
+    """Best-effort numeric parse -> Decimal (exact, for finance): strips currency symbols and
+    thousands separators, treats (brackets) as negative. Decimal (not float) so reconciliation
+    sums and tolerances are exact — no binary-float drift making a tie look like a 0.01 break."""
+    if x is None or isinstance(x, bool):
         return None
-    if isinstance(x, (int, float)):
-        return float(x)
+    if isinstance(x, Decimal):
+        return x
+    if isinstance(x, int):
+        return Decimal(x)
+    if isinstance(x, float):
+        return Decimal(str(x))                    # via str() so 0.1 stays 0.1
     s = str(x).strip()
     if not s:
         return None
@@ -99,8 +109,8 @@ def to_amount(x):
     if s in ("", "-", ".", "-."):
         return None
     try:
-        v = float(s)
-    except ValueError:
+        v = Decimal(s)
+    except InvalidOperation:
         return None
     return -v if neg else v
 
@@ -134,15 +144,23 @@ def match(rows_a, rows_b, *, key=None, amount="amount", date=None,
           mode="key", tol=0.01, date_window_days=5):
     """Match two row sets. Returns a dict of buckets, each a list of records.
 
-    Buckets: matched, value_diffs, a_only, b_only, dup_a, dup_b.
+    Buckets: matched, value_diffs, a_only, b_only, dup_a, dup_b, ambiguous.
     Every record carries its source row(s) and the parsed amount/date/key.
-    """
+
+    In `amount_date` mode `date_window_days` is a HARD constraint: an equal-amount pair only
+    counts as matched when the dates are within the window (a small in-window gap is a genuine
+    timing difference). An equal-amount pair OUTSIDE the window is NOT reconciled — it goes to
+    `ambiguous` (a possible-but-uncertain match for the reviewer to confirm), so transactions
+    weeks apart are never silently passed off as timing differences. `date_window_days=None`
+    disables the window (any nearest-date equal-amount pair matches — the old behaviour)."""
+    tol = Decimal(str(tol))
     A = [{"row": r, "amt": to_amount(r.get(amount)), "dt": to_date(r.get(date)) if date else None,
           "key": norm_key(r.get(key)) if key else None, "i": i} for i, r in enumerate(rows_a)]
     B = [{"row": r, "amt": to_amount(r.get(amount)), "dt": to_date(r.get(date)) if date else None,
           "key": norm_key(r.get(key)) if key else None, "i": i} for i, r in enumerate(rows_b)]
 
-    res = {"matched": [], "value_diffs": [], "a_only": [], "b_only": [], "dup_a": [], "dup_b": []}
+    res = {"matched": [], "value_diffs": [], "a_only": [], "b_only": [], "dup_a": [],
+           "dup_b": [], "ambiguous": []}
 
     if mode == "key":
         from collections import defaultdict
@@ -180,29 +198,36 @@ def match(rows_a, rows_b, *, key=None, amount="amount", date=None,
     else:  # amount_date heuristic
         usedb = set()
         bidx = list(B)
+        win = date_window_days
         for a in A:
-            best = None
-            for b in bidx:
-                if id(b) in usedb:
-                    continue
-                if a["amt"] is None or b["amt"] is None:
-                    continue
-                if abs(a["amt"] - b["amt"]) <= tol:
-                    if a["dt"] and b["dt"]:
-                        gap = abs((a["dt"] - b["dt"]).days)
-                    else:
-                        gap = 0
-                    if best is None or gap < best[1]:
-                        best = (b, gap)
-            if best is None:
+            if a["amt"] is None:
                 res["a_only"].append({"a": a})
-            else:
-                b, gap = best
+                continue
+            best_in = best_out = None              # nearest in-window / nearest out-of-window
+            for b in bidx:
+                if id(b) in usedb or b["amt"] is None:
+                    continue
+                if abs(a["amt"] - b["amt"]) > tol:
+                    continue
+                gap = abs((a["dt"] - b["dt"]).days) if (a["dt"] and b["dt"]) else 0
+                if win is None or gap <= win:
+                    if best_in is None or gap < best_in[1]:
+                        best_in = (b, gap)
+                elif best_out is None or gap < best_out[1]:
+                    best_out = (b, gap)
+            if best_in is not None:
+                b, gap = best_in
                 usedb.add(id(b))
-                if gap == 0:
-                    res["matched"].append({"a": a, "b": b, "diff": 0.0})
-                else:
-                    res["matched"].append({"a": a, "b": b, "diff": 0.0, "date_gap": gap})
+                rec = {"a": a, "b": b, "diff": (a["amt"] - b["amt"])}
+                if gap:
+                    rec["date_gap"] = gap          # in-window gap -> genuine timing difference
+                res["matched"].append(rec)
+            elif best_out is not None:             # equal amount, but only OUTSIDE the window
+                b, gap = best_out
+                usedb.add(id(b))                   # reserve b so it isn't also counted as b_only
+                res["ambiguous"].append({"a": a, "b": b, "date_gap": gap})
+            else:
+                res["a_only"].append({"a": a})
         for b in bidx:
             if id(b) not in usedb:
                 res["b_only"].append({"b": b})
@@ -225,6 +250,7 @@ def triage(res, *, a_label="A", b_label="B", material=1000.0, escalate=10000.0,
            rounding=0.05, date_window_days=5):
     """Classify every unreconciled item. Returns a list of exception dicts."""
     out = []
+    material, escalate, rounding = Decimal(str(material)), Decimal(str(escalate)), Decimal(str(rounding))
 
     def cause_action(cat, side=None):
         c, act = TRIAGE[cat]
@@ -234,8 +260,13 @@ def triage(res, *, a_label="A", b_label="B", material=1000.0, escalate=10000.0,
     for m in res["matched"]:
         if m.get("date_gap"):
             c, act = cause_action("timing_difference")
-            out.append(_exc("timing_difference", m["a"], m["b"], 0.0, "monitor", c, act,
+            out.append(_exc("timing_difference", m["a"], m["b"], Decimal("0"), "monitor", c, act,
                             material, escalate))
+    for d in res.get("ambiguous", []):
+        a, b = d["a"], d["b"]
+        c, act = cause_action("ambiguous_match")
+        c = f"{c} (dates {d['date_gap']} days apart)"
+        out.append(_exc("ambiguous_match", a, b, a["amt"], "confirm", c, act, material, escalate))
     for d in res["value_diffs"]:
         diff = d["diff"]
         a, b = d["a"], d["b"]
@@ -348,6 +379,7 @@ def propose_aggregations(res, *, group_col=None, party_col=None, date_window=Non
     """Read-only: propose sum-to-one and sum-to-sum matches over the still-unmatched items.
     Returns a list of proposal dicts. NEVER mutates res and NEVER auto-accepts — the caller
     confirms, then calls apply_aggregations()."""
+    tol = Decimal(str(tol))
     a_rem = [d["a"] for d in res["a_only"]]
     b_rem = [d["b"] for d in res["b_only"]]
     used, proposals = set(), []
@@ -442,7 +474,7 @@ def summarise(res, exceptions, *, amount="amount"):
     exc_val = sum(abs(e["magnitude"] or 0) for e in exceptions)
     by_cat = {}
     for e in exceptions:
-        by_cat.setdefault(e["category"], {"n": 0, "val": 0.0})
+        by_cat.setdefault(e["category"], {"n": 0, "val": Decimal("0")})
         by_cat[e["category"]]["n"] += 1
         by_cat[e["category"]]["val"] += abs(e["magnitude"] or 0)
     reds = sum(1 for e in exceptions if e["materiality"] in ("material", "escalate"))
@@ -557,9 +589,15 @@ def _records(raw):
 
 
 def reconcile_files(path_a, path_b, *, preset=None, aggregate=False, group_col=None,
-                    party_col=None, date_window=None, auto_confirm=False, **opts):
+                    party_col=None, date_window=None, auto_confirm=False,
+                    sheet_a=None, sheet_b=None, **opts):
     """Read A and B in any format (shared `ingest`), match, optionally propose aggregations,
     then triage. Returns (res, exceptions, summary, proposals).
+
+    `sheet_a`/`sheet_b` pick the worksheet for multi-tab `.xlsx` inputs (else ingest selects
+    the single data sheet, or raises if several are non-empty). `date_window` (days) is the
+    hard matching window in amount_date mode — equal-amount pairs outside it are flagged
+    ambiguous, not reconciled (defaults to 5 days when not given).
 
     Confirm-first: with `aggregate=True` the proposals are returned UN-applied unless
     `auto_confirm=True`. The agent should present `proposals`, get the user's confirmation,
@@ -567,10 +605,11 @@ def reconcile_files(path_a, path_b, *, preset=None, aggregate=False, group_col=N
     ingest, _ = _load_engine()
     cfg = dict(PRESETS.get(preset, {})) if preset else {}
     cfg.update({k: v for k, v in opts.items() if v is not None})
-    rows_a = _records(ingest.read_any(path_a))
-    rows_b = _records(ingest.read_any(path_b))
+    rows_a = _records(ingest.read_any(path_a, sheet=sheet_a))
+    rows_b = _records(ingest.read_any(path_b, sheet=sheet_b))
     res = match(rows_a, rows_b, key=cfg.get("key"), amount=cfg.get("amount", "amount"),
-                date=cfg.get("date"), mode=cfg.get("mode", "key"), tol=cfg.get("tol", 0.01))
+                date=cfg.get("date"), mode=cfg.get("mode", "key"), tol=cfg.get("tol", 0.01),
+                date_window_days=(date_window if date_window is not None else 5))
     proposals = []
     if aggregate:
         proposals = propose_aggregations(res, group_col=group_col, party_col=party_col,
@@ -646,6 +685,22 @@ def _self_test():
     e_after, s_after = finalize(r2)
     assert len(r2["matched_agg"]) == 1 and len(e_after) == 1, "after confirm: 1 agg, Beta remains"
     print("aggregation + confirm-first: PASS")
+
+    # amount_date date window is a HARD constraint (gap 2): an equal amount OUTSIDE the window
+    # is flagged ambiguous, never silently passed off as a timing difference.
+    A3 = [{"amount": "100.00", "date": "01 Jun 2026"}]
+    B3 = [{"amount": "100.00", "date": "20 Jun 2026"}]
+    r3 = match(A3, B3, amount="amount", date="date", mode="amount_date", date_window_days=5)
+    assert not r3["matched"] and len(r3["ambiguous"]) == 1, ("out-of-window must not match", r3)
+    assert any(e["category"] == "ambiguous_match" for e in triage(r3)), "expect ambiguous_match"
+    r4 = match(A3, B3, amount="amount", date="date", mode="amount_date", date_window_days=30)
+    assert len(r4["matched"]) == 1 and not r4["ambiguous"], "within window should match"
+    assert r4["matched"][0].get("date_gap") == 19, r4["matched"][0]
+    print("amount_date window: PASS")
+
+    # Decimal exactness: amounts tie without binary-float drift (a float recon can break 0.1+0.2)
+    assert to_amount("0.1") + to_amount("0.2") == to_amount("0.3"), "Decimal must be exact"
+    print("Decimal amounts: PASS")
     print("self-test: PASS")
     return 0
 
@@ -664,7 +719,11 @@ def main(argv=None):
     ap.add_argument("--aggregate", action="store_true", help="propose sum-to-one / sum-to-sum matches")
     ap.add_argument("--group-col", help="shared reference/batch column bounding aggregation")
     ap.add_argument("--party-col", help="counterparty/account column bounding aggregation")
-    ap.add_argument("--date-window", type=int, help="aggregate only within +/- N days")
+    ap.add_argument("--date-window", type=int,
+                    help="amount_date matching + aggregation window, +/- N days (default 5 for "
+                         "matching); equal-amount pairs outside it are flagged ambiguous, not matched")
+    ap.add_argument("--sheet-a", help="worksheet name for a multi-tab .xlsx source A")
+    ap.add_argument("--sheet-b", help="worksheet name for a multi-tab .xlsx source B")
     ap.add_argument("--auto-confirm", action="store_true",
                     help="accept all aggregation proposals without review (headless/testing only)")
     ap.add_argument("--out", help="write the .xlsx working paper here")
@@ -682,7 +741,8 @@ def main(argv=None):
         a.a, a.b, preset=a.preset, key=a.key, amount=a.amount, date=a.date,
         mode=a.mode, material=a.material, escalate=a.escalate,
         aggregate=a.aggregate, group_col=a.group_col, party_col=a.party_col,
-        date_window=a.date_window, auto_confirm=a.auto_confirm)
+        date_window=a.date_window, auto_confirm=a.auto_confirm,
+        sheet_a=a.sheet_a, sheet_b=a.sheet_b)
     p = PRESETS.get(a.preset, {})
     al, bl = p.get("a_label", "A"), p.get("b_label", "B")
     if proposals and not a.auto_confirm:

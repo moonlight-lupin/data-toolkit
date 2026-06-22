@@ -26,6 +26,7 @@ from __future__ import annotations
 import re
 import sys
 import pathlib
+from decimal import Decimal
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -54,9 +55,10 @@ def extract_fields(source, fields, text=None):
     if text is None:
         text, _ = ingest.read_text(str(source))
     lines = [ln.rstrip() for ln in text.splitlines()]
+    all_labels = [lab for f in fields for lab in f.get("labels", [f["name"]])]
     record, flags = {}, []
     for f in fields:
-        raw = _find_value(lines, f.get("labels", [f["name"]]))
+        raw = _find_value(lines, f.get("labels", [f["name"]]), all_labels=all_labels)
         if raw is None:
             record[f["name"]] = ""
             flags.append({"field": f["name"], "issue": "label not found"})
@@ -71,15 +73,54 @@ def extract_fields(source, fields, text=None):
     return record, flags
 
 
-def _find_value(lines, labels):
-    """First value for any label: 'Label: value', 'Label<tab>value', or 'Label   value'."""
-    for label in labels:
-        lab = re.escape(label.strip())
-        for ln in lines:
-            m = re.match(rf"\s*{lab}\s*[:\t]\s*(.+)$", ln, re.IGNORECASE) \
-                or re.match(rf"\s*{lab}\s{{2,}}(.+)$", ln, re.IGNORECASE)
-            if m and m.group(1).strip():
-                return m.group(1).strip()
+def _clean_value(s):
+    """Tidy a captured value: drop box pipes and trailing dotted leaders, collapse spaces."""
+    s = re.sub(r"\.{2,}\s*$", "", s.strip().strip("|").strip()).strip()
+    return re.sub(r"\s{2,}", " ", s) or None
+
+
+def _looks_like_label(line, others):
+    """A line that is itself a field label — so a next-line search doesn't swallow the FOLLOWING
+    field's label as this field's value. True if it matches a known other label or ends in ':'."""
+    t = line.strip().lower().rstrip(":").strip()
+    return t in others or line.strip().endswith(":")
+
+
+def _find_value(lines, labels, *, all_labels=None):
+    """First value for any of `labels`. Handles, in order:
+      - same line:  'Label: value' · 'Label<tab>value' · 'Label  value' (2+ spaces) ·
+                    'Label ....... value' (dotted leader)
+      - next line:  the label sits alone on its line (optionally a trailing ':'), the value is
+                    on the next non-empty line — common on confirmations / certificates / boxed
+                    forms. The search stops if it hits the NEXT field's label (so it never
+                    grabs a neighbouring label as a value).
+    `all_labels` (every field's labels) powers the next-line guard. Returns the value or None."""
+    norm_labels = [lab.strip() for lab in labels if lab and lab.strip()]
+    others = ({lab.strip().lower() for lab in (all_labels or [])}
+              - {lab.lower() for lab in norm_labels})
+    n = len(lines)
+    for label in norm_labels:
+        lab = re.escape(label)
+        for i, ln in enumerate(lines):
+            m = (re.match(rf"\s*{lab}\s*[:\t]\s*(.+)$", ln, re.IGNORECASE)
+                 or re.match(rf"\s*{lab}\s*\.{{2,}}\s*(.+)$", ln, re.IGNORECASE)
+                 or re.match(rf"\s*{lab}\s{{2,}}(.+)$", ln, re.IGNORECASE))
+            if m:
+                cv = _clean_value(m.group(1))
+                if cv:
+                    return cv
+            # label alone on its line (optionally trailing ':') -> value on a following line
+            if re.fullmatch(rf"\s*{lab}\s*:?\s*", ln, re.IGNORECASE):
+                for j in range(i + 1, min(i + 4, n)):
+                    nxt = lines[j].strip()
+                    if not nxt:
+                        continue
+                    if _looks_like_label(nxt, others):
+                        break                      # ran into the next field — value is absent
+                    cv = _clean_value(nxt)
+                    if cv:
+                        return cv
+                    break
     return None
 
 
@@ -141,15 +182,23 @@ if __name__ == "__main__":
         {"name": "Commitment", "labels": ["commitment", "amount"], "type": "currency",
          "currency": "GBP"},
         {"name": "Close date", "labels": ["close date", "closing"], "type": "date"},
+        {"name": "Settlement bank", "labels": ["settlement bank", "bank"], "type": "text"},
+        {"name": "Fee", "labels": ["fee"], "type": "currency", "currency": "GBP"},
         {"name": "Reference", "labels": ["reference", "ref"], "type": "text"},
     ]
     sample = ("ABC Capital — Subscription confirmation\n"
               "Investor: Acme Pension Fund\n"
               "Commitment : GBP 1,000,000\n"
               "Close date\t12/06/2026\n"
+              "Settlement bank\n"                       # label alone -> value on the next line
+              "HSBC London\n"
+              "Fee .......... GBP 2,500\n"              # dotted leader
               "(no reference quoted)\n")
     rec, flags = extract_fields(None, FIELDS, text=sample)
     print("[extract_fields] record:", rec)
     print("[extract_fields] flags:", flags)
+    assert rec["Settlement bank"] == "HSBC London", rec       # next-line layout
+    assert rec["Fee"] == Decimal("2500"), rec                 # dotted leader + currency
+    assert rec["Commitment"] == Decimal("1000000"), rec
     print()
     print(render_fields_report([rec], [flags]))

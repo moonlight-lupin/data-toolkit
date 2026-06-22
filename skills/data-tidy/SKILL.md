@@ -46,6 +46,9 @@ import ingest, dataclean
 `ingest.read_any(path)` handles `.xlsx`/`.csv`/`.tsv`, `.pdf` (ruled tables → text-layout →
 **local-OCR** fallback for scans), `.docx` tables, and `.msg`; `ingest.read_paste(text)`
 handles a pasted markdown/TSV/CSV table. Returns `(rows, note)`.
+For a **multi-tab workbook** it won't guess: `read_any` auto-selects the single data sheet,
+but if several tabs hold data it raises `SheetSelectionRequired` — call `ingest.list_sheets(path)`,
+show the tabs, then `read_any(path, sheet="<name>")`.
 
 ### 2 — Profile (against the target)
 `dataclean.profile_table(header, rows)` / `dataclean.render_profile(...)` — shows columns,
@@ -63,8 +66,9 @@ applying to show the lift (before → after).
 ### 3 — Propose the recipe
 Draft a **recipe** (the declarative transform spec — see `references/recipe-spec.md`):
 which source column → which target column, the type/format per column (house defaults:
-**dates → DD MMM YYYY**, **currency → amount + code**), dedup keys, and validation rules.
-Show it to the user.
+**dates → DD MMM YYYY**, **amounts → exact `Decimal`**, **currency → amount + code**; a bare
+`$` is treated as ambiguous, not assumed USD — give the expected `currency`, or split the code
+out with `code_target`), dedup keys, and validation rules. Show it to the user.
 
 For **categorical** columns with inconsistent variants ("USA" / "U.S.A." / "united states"),
 propose a value standardisation as part of the recipe: `propose_value_map(col_values,
@@ -131,7 +135,8 @@ managed machine, ask IT to deploy it). See `references/recipe-spec.md` for setup
   `write_xlsx`, `render_report`, **`emit_runner`** (reuse runners/cards); parsers
   (date/number/currency); `--self-test`.
 - `../../scripts/ingest.py` *(shared)* — source adapters incl. PDF + local-OCR;
-  `read_any`/`read_paste`/`read_text`/`list_pdf_tables`; `ocr_available()`; `--self-test`.
+  `read_any`(`sheet=`)/`read_paste`/`read_text`/`list_sheets`/`list_pdf_tables`;
+  `ocr_available()`; `--self-test`.
 - `scripts/make_samples.py` — writes synthetic messy samples to `examples/`.
 - `references/recipe-spec.md` — the recipe format, the intent step, OCR/Tesseract setup.
 - `examples/` — synthetic messy samples (no real data) to build/demo against.
