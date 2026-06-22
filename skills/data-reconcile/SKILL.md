@@ -52,7 +52,10 @@ Amounts are parsed as exact **`Decimal`** — ties don't break on binary-float d
 **Currencies are compared**, so 100 USD never matches 100 SGD: name a currency column with
 `--currency <col>` (else the code is read from the amount cell's symbol — `US$`/`S$`/`£`/…; a
 bare `$` is treated as ambiguous). A key match whose currencies differ is flagged
-`currency_mismatch`; in amount_date mode incompatible currencies simply don't match.
+`currency_mismatch`; in amount_date mode incompatible currencies simply don't match. For
+audit/finance work add `--strict-currency` (`strict_currency=True`): an **unknown** currency on
+either side won't match either — it's routed to `currency_unknown` rather than assumed
+compatible (default mode stays permissive).
 Multi-tab `.xlsx`? Pass `sheet_a=` / `sheet_b=` (CLI `--sheet-a/--sheet-b`); otherwise ingest
 auto-picks the single data sheet, or asks you to choose.
 
@@ -111,6 +114,7 @@ finance to red-line). In short:
 | `timing_difference` | matches on amount, dates differ but **within** the window — in-transit / cut-off | monitor — clears next period |
 | `ambiguous_match` | equal amount, dates differ **beyond** the window — possible match, possibly coincidental | confirm same item before reconciling |
 | `currency_mismatch` | matched item, but the currencies differ — amounts not comparable as-is | investigate; convert at rate / fix mis-booked currency |
+| `currency_unknown` | amounts tie but a side's currency is unknown (strict mode only) | establish the currency both sides, then re-run |
 
 Materiality grades each by value: **within tolerance → immaterial → material → escalate**
 (thresholds you set per run).

@@ -51,6 +51,9 @@ TRIAGE = {
     "currency_mismatch":("Same item on both sides, but the currencies differ — the amounts are "
                          "not comparable as-is",
                          "Investigate; convert at the correct rate, or fix the mis-booked currency"),
+    "currency_unknown": ("Amounts tie but at least one side's currency is unknown — can't confirm "
+                         "it's the same money (strict-currency mode)",
+                         "Establish the currency on both sides, then re-run"),
 }
 
 # --------------------------------------------------------------------------- #
@@ -175,25 +178,36 @@ def _rec_ccy(row, currency_col, amount_col):
     return to_currency(row.get(amount_col))
 
 
-def _ccy_ok(a_ccy, b_ccy):
-    """Compatible to match when equal, or either side's currency is unknown."""
-    return a_ccy is None or b_ccy is None or a_ccy == b_ccy
+def _ccy_relation(a_ccy, b_ccy, strict=False):
+    """Classify a pair's currency relation -> 'ok' | 'mismatch' | 'unknown'.
+    - both known & equal           -> 'ok'
+    - both known & different        -> 'mismatch'
+    - at least one unknown          -> permissive: 'ok' (matchable); strict: 'unknown'
+    Strict mode is for audit/finance work — it refuses to reconcile what it can't currency-check."""
+    if a_ccy is not None and b_ccy is not None:
+        return "ok" if a_ccy == b_ccy else "mismatch"
+    return "unknown" if strict else "ok"
 
 
 # --------------------------------------------------------------------------- #
 # Stage 1 — match A <-> B
 # --------------------------------------------------------------------------- #
 def match(rows_a, rows_b, *, key=None, amount="amount", date=None, currency=None,
-          mode="key", tol=0.01, date_window_days=5):
+          mode="key", tol=0.01, date_window_days=5, strict_currency=False):
     """Match two row sets. Returns a dict of buckets, each a list of records.
 
-    Buckets: matched, value_diffs, currency_diffs, a_only, b_only, dup_a, dup_b, ambiguous.
-    Every record carries its source row(s) and the parsed amount/date/key/currency.
+    Buckets: matched, value_diffs, currency_diffs, currency_unknown, a_only, b_only, dup_a,
+    dup_b, ambiguous. Every record carries its source row(s) and the parsed
+    amount/date/key/currency.
 
     `currency` names a currency column (else the code is detected from the amount cell's
     symbol). Currencies are COMPARED, so 100 USD never silently matches 100 SGD: in key mode a
     key match whose currencies differ goes to `currency_diffs` (not amount-compared); in
     amount_date mode an equal-amount pair only matches when the currencies are compatible.
+
+    `strict_currency=True` (audit/finance mode) additionally refuses to match when a side's
+    currency is UNKNOWN — those pairs go to `currency_unknown` rather than being assumed
+    compatible. Default is permissive (unknown treated as compatible).
 
     In `amount_date` mode `date_window_days` is a HARD constraint: an equal-amount pair only
     counts as matched when the dates are within the window (a small in-window gap is a genuine
@@ -210,8 +224,8 @@ def match(rows_a, rows_b, *, key=None, amount="amount", date=None, currency=None
                  "ccy": _rec_ccy(r, currency, amount), "i": i} for i, r in enumerate(rows)]
     A, B = _mk(rows_a), _mk(rows_b)
 
-    res = {"matched": [], "value_diffs": [], "currency_diffs": [], "a_only": [], "b_only": [],
-           "dup_a": [], "dup_b": [], "ambiguous": []}
+    res = {"matched": [], "value_diffs": [], "currency_diffs": [], "currency_unknown": [],
+           "a_only": [], "b_only": [], "dup_a": [], "dup_b": [], "ambiguous": []}
 
     if mode == "key":
         from collections import defaultdict
@@ -239,8 +253,11 @@ def match(rows_a, rows_b, *, key=None, amount="amount", date=None, currency=None
                 b = cand[0]
                 usedb.add(id(b))
                 da = (a["amt"] or 0) - (b["amt"] or 0)
-                if not _ccy_ok(a["ccy"], b["ccy"]):   # same key, different currency — not comparable
+                rel = _ccy_relation(a["ccy"], b["ccy"], strict_currency)
+                if rel == "mismatch":               # same key, different currency — not comparable
                     res["currency_diffs"].append({"a": a, "b": b, "diff": da})
+                elif rel == "unknown":              # strict: can't currency-check this key match
+                    res["currency_unknown"].append({"a": a, "b": b, "diff": da})
                 else:
                     res["matched" if abs(da) <= tol else "value_diffs"].append({"a": a, "b": b, "diff": da})
             else:
@@ -257,16 +274,20 @@ def match(rows_a, rows_b, *, key=None, amount="amount", date=None, currency=None
             if a["amt"] is None:
                 res["a_only"].append({"a": a})
                 continue
-            best_in = best_out = None              # nearest in-window / nearest out-of-window
+            best_in = best_out = best_unknown = None   # in-window / out-of-window / strict-unknown
             for b in bidx:
                 if id(b) in usedb or b["amt"] is None:
                     continue
                 if abs(a["amt"] - b["amt"]) > tol:
                     continue
-                if not _ccy_ok(a["ccy"], b["ccy"]):  # equal amount, different currency — not the same money
+                rel = _ccy_relation(a["ccy"], b["ccy"], strict_currency)
+                if rel == "mismatch":              # equal amount, different currency — not the same money
                     continue
                 gap = abs((a["dt"] - b["dt"]).days) if (a["dt"] and b["dt"]) else 0
-                if win is None or gap <= win:
+                if rel == "unknown":               # strict: equal amount but currency unverifiable
+                    if best_unknown is None or gap < best_unknown[1]:
+                        best_unknown = (b, gap)
+                elif win is None or gap <= win:
                     if best_in is None or gap < best_in[1]:
                         best_in = (b, gap)
                 elif best_out is None or gap < best_out[1]:
@@ -282,6 +303,10 @@ def match(rows_a, rows_b, *, key=None, amount="amount", date=None, currency=None
                 b, gap = best_out
                 usedb.add(id(b))                   # reserve b so it isn't also counted as b_only
                 res["ambiguous"].append({"a": a, "b": b, "date_gap": gap})
+            elif best_unknown is not None:         # strict: equal amount, currency unknown
+                b, gap = best_unknown
+                usedb.add(id(b))
+                res["currency_unknown"].append({"a": a, "b": b, "diff": (a["amt"] - b["amt"])})
             else:
                 res["a_only"].append({"a": a})
         for b in bidx:
@@ -328,6 +353,11 @@ def triage(res, *, a_label="A", b_label="B", material=1000.0, escalate=10000.0,
         c, act = cause_action("currency_mismatch")
         c = f"{c} ({a['ccy'] or '?'} vs {b['ccy'] or '?'})"
         out.append(_exc("currency_mismatch", a, b, a["amt"], "investigate", c, act, material, escalate))
+    for d in res.get("currency_unknown", []):
+        a, b = d["a"], d["b"]
+        c, act = cause_action("currency_unknown")
+        c = f"{c} ({a['ccy'] or '?'} vs {b['ccy'] or '?'})"
+        out.append(_exc("currency_unknown", a, b, a["amt"], "confirm", c, act, material, escalate))
     for d in res["value_diffs"]:
         diff = d["diff"]
         a, b = d["a"], d["b"]
@@ -651,7 +681,7 @@ def _records(raw):
 
 def reconcile_files(path_a, path_b, *, preset=None, aggregate=False, group_col=None,
                     party_col=None, date_window=None, auto_confirm=False,
-                    sheet_a=None, sheet_b=None, **opts):
+                    sheet_a=None, sheet_b=None, strict_currency=False, **opts):
     """Read A and B in any format (shared `ingest`), match, optionally propose aggregations,
     then triage. Returns (res, exceptions, summary, proposals).
 
@@ -670,7 +700,7 @@ def reconcile_files(path_a, path_b, *, preset=None, aggregate=False, group_col=N
     rows_b = _records(ingest.read_any(path_b, sheet=sheet_b))
     res = match(rows_a, rows_b, key=cfg.get("key"), amount=cfg.get("amount", "amount"),
                 date=cfg.get("date"), currency=cfg.get("currency"), mode=cfg.get("mode", "key"),
-                tol=cfg.get("tol", 0.01),
+                tol=cfg.get("tol", 0.01), strict_currency=strict_currency,
                 date_window_days=(date_window if date_window is not None else 5))
     proposals = []
     if aggregate:
@@ -777,6 +807,15 @@ def _self_test():
     assert not rs["matched"] and not rs["ambiguous"], "US$100 must not match S$100"
     assert to_currency("$100") is None, "bare $ stays ambiguous (not USD)"
     print("currency-aware matching: PASS")
+
+    # strict currency: unknown currency must NOT match in strict mode (audit/finance)
+    Au = [{"ref": "R1", "amount": "100.00"}]          # no currency, none detectable
+    Bu = [{"ref": "R1", "amount": "100.00"}]
+    assert len(match(Au, Bu, key="ref", amount="amount")["matched"]) == 1, "permissive: unknown matches"
+    rstrict = match(Au, Bu, key="ref", amount="amount", strict_currency=True)
+    assert not rstrict["matched"] and len(rstrict["currency_unknown"]) == 1, rstrict
+    assert any(e["category"] == "currency_unknown" for e in triage(rstrict)), "expect currency_unknown"
+    print("strict currency: PASS")
     print("self-test: PASS")
     return 0
 
@@ -791,6 +830,9 @@ def main(argv=None):
     ap.add_argument("--date")
     ap.add_argument("--currency", help="currency column (else the code is read from the amount cell); "
                                        "currencies are compared so 100 USD != 100 SGD")
+    ap.add_argument("--strict-currency", action="store_true",
+                    help="audit/finance mode: don't match when a side's currency is unknown "
+                         "(routes to currency_unknown instead of assuming compatibility)")
     ap.add_argument("--mode", choices=["key", "amount_date"])
     ap.add_argument("--material", type=float, default=1000.0)
     ap.add_argument("--escalate", type=float, default=10000.0)
@@ -820,7 +862,7 @@ def main(argv=None):
         currency=a.currency, mode=a.mode, material=a.material, escalate=a.escalate,
         aggregate=a.aggregate, group_col=a.group_col, party_col=a.party_col,
         date_window=a.date_window, auto_confirm=a.auto_confirm,
-        sheet_a=a.sheet_a, sheet_b=a.sheet_b)
+        sheet_a=a.sheet_a, sheet_b=a.sheet_b, strict_currency=a.strict_currency)
     p = PRESETS.get(a.preset, {})
     al, bl = p.get("a_label", "A"), p.get("b_label", "B")
     if proposals and not a.auto_confirm:

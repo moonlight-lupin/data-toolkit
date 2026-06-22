@@ -158,6 +158,7 @@ user to file (e.g. in your synced or shared file store) — manual, no fixed des
 
 ## Requirements & mode
 Pre-screen: see `../../COMPATIBILITY.md` and run `python ../../scripts/envcheck.py`. Needs
-Python + `openpyxl`; `PyMuPDF` for PDF input; `python-docx` for `.docx`; `extract_msg` for
-`.msg`; **local Tesseract** only for scanned-PDF OCR (degrades cleanly without it). Mostly
-portable; OCR is the one local-binary dependency.
+Python + `openpyxl`; `PyMuPDF` for PDF input (`pdfplumber` optional — preferred for messy /
+borderless PDF tables); `python-docx` for `.docx`; `extract_msg` for `.msg`; **local Tesseract**
+only for scanned-PDF OCR (degrades cleanly without it). Mostly portable; OCR is the one
+local-binary dependency.

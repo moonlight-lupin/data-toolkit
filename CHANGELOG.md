@@ -1,9 +1,17 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-06-22
 
 Finance-grade hardening (correctness fixes across the shared engine):
 
+- **PDF tables: two engines, best result per page.** `ingest` now prefers **pdfplumber**
+  (optional dep; better on messy / borderless tables) and falls back to **PyMuPDF**, scoring
+  each page's extraction and keeping the better one; PyMuPDF + local Tesseract stays the OCR
+  path for scans. `list_pdf_tables` / `extract_pdf_table` report and accept the `engine`.
+- **Strict currency mode for reconciliation.** `match(..., strict_currency=True)` (CLI
+  `--strict-currency`) refuses to reconcile when a side's currency is unknown — those pairs go
+  to a `currency_unknown` bucket / triage category instead of matching. Default stays permissive
+  (unknown treated as compatible); strict mode is for audit/finance work.
 - **Currency-aware reconciliation.** `match` takes a `currency` column (else the code is
   detected from the amount cell's symbol) and **compares currencies** — 100 USD no longer
   matches 100 SGD. A key match in different currencies goes to a new `currency_diffs` bucket /

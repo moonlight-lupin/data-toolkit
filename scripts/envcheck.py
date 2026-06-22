@@ -44,8 +44,9 @@ def main():
     print(f"Tesseract (OCR)   : {tesseract or 'not found (scanned-PDF OCR unavailable)'}")
     # Shared-engine input adapters. openpyxl is the only hard dependency; the rest are
     # optional input formats imported lazily and degraded with a clear message.
-    libs = ["openpyxl", "fitz", "docx", "extract_msg"]
-    labels = {"fitz": "fitz (PyMuPDF)", "docx": "docx (python-docx)"}
+    libs = ["openpyxl", "fitz", "pdfplumber", "docx", "extract_msg"]
+    labels = {"fitz": "fitz (PyMuPDF)", "docx": "docx (python-docx)",
+              "pdfplumber": "pdfplumber (PDF tables, optional)"}
     print("Python libs       : " + ", ".join(
         f"{labels.get(m, m)}{'' if has(m) else '✗'}" for m in libs))
     print()
@@ -63,8 +64,8 @@ def main():
     # data-tidy — openpyxl core; PDF/docx/msg optional; OCR needs local Tesseract
     s, n = libs_ok("openpyxl")
     if s == OK:
-        opt = [lib for lib, mod in [("PyMuPDF/PDF", "fitz"), (".docx", "docx"),
-                                    (".msg", "extract_msg")] if not has(mod)]
+        opt = [lib for lib, mod in [("PyMuPDF/PDF", "fitz"), ("pdfplumber/messy-PDF-tables", "pdfplumber"),
+                                    (".docx", "docx"), (".msg", "extract_msg")] if not has(mod)]
         if not tesseract:
             opt.append("Tesseract/OCR-scans")
         n = "xlsx/csv/paste ready; optional inputs missing: " + ", ".join(opt) if opt \
@@ -74,7 +75,9 @@ def main():
     # data-extract — PyMuPDF for PDF docs (main input) + openpyxl out; OCR via local Tesseract
     s, n = libs_ok("fitz", "openpyxl")
     if s == OK:
-        extra = [] if has("docx") else [".docx"]
+        extra = [] if has("pdfplumber") else ["pdfplumber/messy-tables"]
+        if not has("docx"):
+            extra.append(".docx")
         if not has("extract_msg"):
             extra.append(".msg")
         if not tesseract:
@@ -85,8 +88,8 @@ def main():
     # data-reconcile — openpyxl core (xlsx working paper); CSV/PDF/docx/msg via shared engine
     s, n = libs_ok("openpyxl")
     if s == OK:
-        opt = [lib for lib, mod in [("PyMuPDF/PDF", "fitz"), (".docx", "docx"),
-                                    (".msg", "extract_msg")] if not has(mod)]
+        opt = [lib for lib, mod in [("PyMuPDF/PDF", "fitz"), ("pdfplumber/messy-PDF-tables", "pdfplumber"),
+                                    (".docx", "docx"), (".msg", "extract_msg")] if not has(mod)]
         n = "xlsx/csv ready; optional inputs missing: " + ", ".join(opt) if opt \
             else "all input adapters available"
     add("data-reconcile", "any (portable); fully local", s, n)

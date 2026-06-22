@@ -39,13 +39,18 @@ Run `extract_fields` per document, collect the records, then
 `render_fields_report(records, flags_list)` lists every flag across the batch.
 
 ## Table mode
-- `list_tables(path)` → candidates `{page, index, rows, cols, preview}` (PDF via PyMuPDF;
-  `.docx` via python-docx, `page = -1`). Show them; let the user pick.
-- `get_table(path, page, index)` → that table's rows. Then treat exactly like a tidy source:
-  build a recipe and `dataclean.apply_recipe`.
-- Ruled / aligned tables extract best. A PDF that's columnar text with no ruled lines may
-  return no `list_tables` candidates — use `ingest.read_text` + the tidy text-split path, or
-  field mode, instead.
+- `list_tables(path)` → candidates `{page, index, engine, rows, cols, preview}` (`.docx` via
+  python-docx, `page = -1`). Show them; let the user pick. `engine` says which extractor won
+  that page.
+- `get_table(path, page, index)` → that table's rows (pass `engine=` to force one). Then treat
+  exactly like a tidy source: build a recipe and `dataclean.apply_recipe`.
+- **PDF tables use two engines, best result per page:** **pdfplumber** (optional dependency,
+  preferred — stronger on messy / borderless / whitespace-aligned tables) and **PyMuPDF**
+  (fast, ruled tables, and the OCR backbone for scans). Each page keeps the higher-scoring
+  extraction; with pdfplumber not installed it's PyMuPDF only. Install pdfplumber when ruled
+  detection is missing columns on borderless tables.
+- A PDF that's columnar text with no detectable table still falls back to a text-layout split;
+  if even that is poor, use `ingest.read_text` + the tidy text path, or field mode.
 
 ## OCR (scanned documents)
 - Tried only on pages with no text layer; **local Tesseract** only (never cloud — sensitive data).
