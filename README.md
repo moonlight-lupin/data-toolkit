@@ -18,8 +18,9 @@ brandable (colours, font, logo).
   tables) into a structured, validated `.xlsx` + a change/audit report. Intent-first:
   profiles → proposes a transform recipe → you confirm → applies it deterministically.
 - **data-reconcile** — reconcile any two record sets (A vs B), match line-by-line on a key
-  or heuristically on amount + date, and triage every unmatched item into a reconciliation
-  working paper (`.xlsx`). Never force-fits a match; never posts an adjustment.
+  or heuristically on amount + date (within a hard date window), and triage every unmatched
+  item into a reconciliation working paper (`.xlsx`). **Currency-aware** (100 USD ≠ 100 SGD;
+  optional strict mode for audit work). Never force-fits a match; never posts an adjustment.
 - **data-visualise** — turn data into a self-contained, brandable **HTML dashboard** (KPI
   cards, bar/line/donut charts as inline SVG, RAG tables) that opens in a browser, prints to
   PDF, and doubles as a live HTML Artifact in Cowork / Claude.ai.
@@ -28,10 +29,10 @@ brandable (colours, font, logo).
 
 The three data-prep skills share one local engine in **`scripts/`**:
 
-- `ingest.py` — read CSV / `.xlsx` / PDF / `.docx` / `.msg` / pasted text (optional libs
-  per source).
-- `dataclean.py` — deterministic normalisation (dates → DD MMM YYYY, currency → amount +
-  code, dedupe, type coercion) with a change log.
+- `ingest.py` — read CSV / `.xlsx` (multi-sheet aware) / PDF / `.docx` / `.msg` / pasted text
+  (optional libs per source). PDF tables use the best of pdfplumber + PyMuPDF per page.
+- `dataclean.py` — deterministic normalisation (dates → DD MMM YYYY; amounts as exact
+  **`Decimal`**; currency → amount + separable code; dedupe, type coercion) with a change log.
 - `extract.py` — locate and pull fields/tables out of documents.
 - `envcheck.py` — environment prober: reports OS, Python libraries, OCR availability, and a
   per-skill readiness line.
@@ -53,9 +54,10 @@ stdlib HTML/SVG, no third-party library needed to render.
 ## Requirements
 
 - **Python 3** + **`openpyxl`** (the one hard dependency, for `.xlsx` I/O).
-- Optional, per input type: **PyMuPDF** (PDF), **python-docx** (`.docx`),
-  **extract_msg** (`.msg`), and a local **Tesseract** install for scanned-document OCR.
-  Each degrades gracefully — you only need the library for the inputs you actually use.
+- Optional, per input type: **PyMuPDF** (PDF), **pdfplumber** (preferred for messy /
+  borderless PDF tables), **python-docx** (`.docx`), **extract_msg** (`.msg`), and a local
+  **Tesseract** install for scanned-document OCR. Each degrades gracefully — you only need the
+  library for the inputs you actually use.
 - `data-visualise` needs no third-party library to render (pure stdlib HTML/SVG); a desktop
   browser is only needed to preview / print to PDF.
 
@@ -66,6 +68,19 @@ python scripts/envcheck.py
 ```
 
 See [`COMPATIBILITY.md`](COMPATIBILITY.md) for the per-skill mode/environment matrix.
+
+## Tests
+
+A regression suite locks in the finance-grade behaviours (exact Decimal amounts, currency
+comparison, the date window, multi-sheet selection, form-layout extraction, PDF engine
+scoring, …). Each engine script also has an inline self-test.
+
+```
+python tests/test_engine.py     # standalone, no pytest needed
+pytest tests/                   # if pytest is installed
+```
+
+See [`tests/README.md`](tests/README.md) for the full list of covered behaviours.
 
 ## Part of the firm's toolkit suite
 
