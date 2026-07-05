@@ -146,6 +146,35 @@ def norm_key(x):
     return re.sub(r"\s+", "", str(x).strip().lower()) if x not in (None, "") else None
 
 
+def _resolve_col(rows, name):
+    """Resolve a configured column name against a side's actual headers, case- and
+    whitespace-insensitively, so `--amount amount` still finds a bank CSV's 'Amount '.
+    Exact match wins; a unique normalised match is used; otherwise the name is returned
+    as-is (missing columns then behave as before — values come back None and get flagged)."""
+    if not name or not rows:
+        return name
+    keys = list(rows[0].keys())
+    if name in keys:
+        return name
+    want = str(name).strip().lower()
+    hits = [k for k in keys if str(k).strip().lower() == want]
+    return hits[0] if len(hits) == 1 else name
+
+
+def _row_amount(r, amount_col, debit_col=None, credit_col=None):
+    """Signed amount for a row. When debit/credit columns are configured and either cell
+    parses, the signed amount is debit - credit (accounting convention: debits positive);
+    else fall back to the single amount column. Handles the common bank/GL export layout
+    with separate Debit and Credit columns — including a mixed pair of files where only
+    one side splits them (the other side just uses its amount column)."""
+    if debit_col or credit_col:
+        d = to_amount(r.get(debit_col)) if debit_col else None
+        c = to_amount(r.get(credit_col)) if credit_col else None
+        if d is not None or c is not None:
+            return (d or Decimal(0)) - (c or Decimal(0))
+    return to_amount(r.get(amount_col))
+
+
 # Currency detection (mirrors dataclean's, kept local so the pure matcher runs offline).
 # A bare "$" is deliberately ambiguous -> None (it is NOT assumed USD).
 _CCY_SYMBOLS = {"US$": "USD", "S$": "SGD", "A$": "AUD", "HK$": "HKD", "NZ$": "NZD",
@@ -172,13 +201,18 @@ def to_currency(x):
     return None
 
 
-def _rec_ccy(row, currency_col, amount_col):
+def _rec_ccy(row, currency_col, amount_col, debit_col=None, credit_col=None):
     """The record's currency: an explicit currency column wins (normalised), else detect from
-    the amount cell's symbol/code; None when genuinely unknown."""
+    the amount (or debit/credit) cell's symbol/code; None when genuinely unknown."""
     if currency_col and row.get(currency_col) not in (None, ""):
         raw = row.get(currency_col)
         return to_currency(raw) or str(raw).strip().upper() or None
-    return to_currency(row.get(amount_col))
+    for col in (amount_col, debit_col, credit_col):
+        if col:
+            ccy = to_currency(row.get(col))
+            if ccy:
+                return ccy
+    return None
 
 
 def _ccy_relation(a_ccy, b_ccy, strict=False):
@@ -196,7 +230,8 @@ def _ccy_relation(a_ccy, b_ccy, strict=False):
 # Stage 1 — match A <-> B
 # --------------------------------------------------------------------------- #
 def match(rows_a, rows_b, *, key=None, amount="amount", date=None, currency=None,
-          mode="key", tol=0.01, date_window_days=5, strict_currency=False):
+          mode="key", tol=0.01, date_window_days=5, strict_currency=False,
+          debit=None, credit=None, flip_b=False):
     """Match two row sets. Returns a dict of buckets, each a list of records.
 
     Buckets: matched, value_diffs, currency_diffs, currency_unknown, a_only, b_only, dup_a,
@@ -217,15 +252,34 @@ def match(rows_a, rows_b, *, key=None, amount="amount", date=None, currency=None
     timing difference). An equal-amount pair OUTSIDE the window is NOT reconciled — it goes to
     `ambiguous` (a possible-but-uncertain match for the reviewer to confirm), so transactions
     weeks apart are never silently passed off as timing differences. `date_window_days=None`
-    disables the window (any nearest-date equal-amount pair matches — the old behaviour)."""
+    disables the window (any nearest-date equal-amount pair matches — the old behaviour).
+
+    `debit`/`credit` name separate Debit / Credit columns (the common bank/GL export layout):
+    the signed amount is then debit - credit; a row where neither parses falls back to the
+    `amount` column, so a debit/credit file can reconcile against a signed-amount file.
+    `flip_b=True` negates B's amounts before comparing — for sides that book the same money
+    with opposite sign conventions (e.g. bank statement vs the GL cash account).
+    All column names are resolved case- and whitespace-insensitively per side."""
     tol = Decimal(str(tol))
 
-    def _mk(rows):
-        return [{"row": r, "amt": to_amount(r.get(amount)),
-                 "dt": to_date(r.get(date)) if date else None,
-                 "key": norm_key(r.get(key)) if key else None,
-                 "ccy": _rec_ccy(r, currency, amount), "i": i} for i, r in enumerate(rows)]
-    A, B = _mk(rows_a), _mk(rows_b)
+    def _mk(rows, flip=False):
+        acol = _resolve_col(rows, amount)
+        dcol = _resolve_col(rows, date) if date else None
+        kcol = _resolve_col(rows, key) if key else None
+        ccol = _resolve_col(rows, currency) if currency else None
+        drcol = _resolve_col(rows, debit) if debit else None
+        crcol = _resolve_col(rows, credit) if credit else None
+        out = []
+        for i, r in enumerate(rows):
+            amt = _row_amount(r, acol, drcol, crcol)
+            if flip and amt is not None:
+                amt = -amt
+            out.append({"row": r, "amt": amt,
+                        "dt": to_date(r.get(dcol)) if dcol else None,
+                        "key": norm_key(r.get(kcol)) if kcol else None,
+                        "ccy": _rec_ccy(r, ccol, acol, drcol, crcol), "i": i})
+        return out
+    A, B = _mk(rows_a), _mk(rows_b, flip=flip_b)
 
     res = {"matched": [], "value_diffs": [], "currency_diffs": [], "currency_unknown": [],
            "parse_errors": [],
@@ -339,11 +393,38 @@ def _materiality(v, material, escalate):
     return "immaterial"
 
 
+# Common GST/VAT/WHT rates checked when an amount mismatch looks like net-vs-gross.
+# Advisory only — a matching ratio adds a hint to the probable cause, never a category change.
+_TAX_RATES = (Decimal("0.05"), Decimal("0.07"), Decimal("0.08"), Decimal("0.09"),
+              Decimal("0.10"), Decimal("0.15"), Decimal("0.20"))
+
+
+def _tax_hint(a_amt, b_amt):
+    """If the gap between two amounts is a common GST/VAT/WHT rate applied to the smaller
+    side (i.e. one side looks net, the other gross), return an advisory note; else None."""
+    if not a_amt or not b_amt:
+        return None
+    lo, hi = sorted((abs(a_amt), abs(b_amt)))
+    if lo == 0:
+        return None
+    ratio = (hi - lo) / lo
+    for r in _TAX_RATES:
+        if abs(ratio - r) <= Decimal("0.001"):
+            pct = (r * 100).quantize(Decimal(1))
+            return f"difference is {pct}% of the smaller side — possible GST/VAT/WHT (net vs gross)"
+    return None
+
+
 def triage(res, *, a_label="A", b_label="B", material=1000.0, escalate=10000.0,
-           rounding=0.05, date_window_days=5):
-    """Classify every unreconciled item. Returns a list of exception dicts."""
+           rounding=0.05, date_window_days=5, as_of=None):
+    """Classify every unreconciled item. Returns a list of exception dicts.
+
+    `as_of` (a date, or a parseable date string) ages the one-sided items: each
+    missing_in_A/missing_in_B exception with a parsed date gains `age_days`, so stale
+    open items (unbanked receipts, uncleared payments) rank visibly in the working paper."""
     out = []
     material, escalate, rounding = Decimal(str(material)), Decimal(str(escalate)), Decimal(str(rounding))
+    as_of = to_date(as_of)
 
     def cause_action(cat, side=None):
         c, act = TRIAGE[cat]
@@ -389,15 +470,28 @@ def triage(res, *, a_label="A", b_label="B", material=1000.0, escalate=10000.0,
         else:
             cat = "amount_mismatch"
         c, act = cause_action(cat)
+        if cat == "amount_mismatch":
+            hint = _tax_hint(a["amt"], b["amt"])
+            if hint:
+                c = f"{c} ({hint})"
         out.append(_exc(cat, a, b, diff, _verb(cat), c, act, material, escalate))
+
+    def _aged(e, item):
+        if as_of and item.get("dt"):
+            e["age_days"] = (as_of - item["dt"]).days
+            e["probable_cause"] += f" (aged {e['age_days']}d at {as_of.strftime('%d %b %Y')})"
+        return e
+
     for d in res["a_only"]:
         c, act = cause_action("missing_in_B")
         a = d["a"]
-        out.append(_exc("missing_in_B", a, None, a["amt"], "investigate", c, act, material, escalate))
+        out.append(_aged(_exc("missing_in_B", a, None, a["amt"], "investigate", c, act,
+                              material, escalate), a))
     for d in res["b_only"]:
         c, act = cause_action("missing_in_A")
         b = d["b"]
-        out.append(_exc("missing_in_A", None, b, b["amt"], "investigate", c, act, material, escalate))
+        out.append(_aged(_exc("missing_in_A", None, b, b["amt"], "investigate", c, act,
+                              material, escalate), b))
     for d in res["dup_a"]:
         c, act = cause_action("duplicate", side=a_label)
         out.append(_exc("duplicate", d, None, d["amt"], "remove", c, act, material, escalate))
@@ -422,6 +516,7 @@ def _exc(cat, a, b, magnitude, action, cause, action_text, material, escalate):
         "a": (a or {}).get("row") if a else None,
         "b": (b or {}).get("row") if b else None,
         "currency": (a or {}).get("ccy") or (b or {}).get("ccy"),
+        "age_days": None,
         "status": "open",
     }
 
@@ -576,11 +671,56 @@ def render_proposals(proposals, *, a_label="A", b_label="B"):
     return "\n".join(L)
 
 
-def finalize(res, *, a_label="A", b_label="B", material=1000.0, escalate=10000.0):
+def finalize(res, *, a_label="A", b_label="B", material=1000.0, escalate=10000.0, as_of=None):
     """Triage what remains (after any confirmed aggregations) and summarise."""
-    exceptions = triage(res, a_label=a_label, b_label=b_label, material=material, escalate=escalate)
+    exceptions = triage(res, a_label=a_label, b_label=b_label, material=material,
+                        escalate=escalate, as_of=as_of)
     summary = summarise(res, exceptions)
     return exceptions, summary
+
+
+# --------------------------------------------------------------------------- #
+# Statement completeness — opening + net movement = closing
+# --------------------------------------------------------------------------- #
+def check_balance(rows, *, amount="amount", debit=None, credit=None,
+                  opening=None, closing=None):
+    """Completeness check for a statement-style extract: does opening balance + net movement
+    tie to the stated closing balance? Catches a truncated or filtered export BEFORE it
+    silently 'reconciles'. Returns a dict; `ties` is None when a balance is missing/unparseable.
+    Movement is summed in the file's own sign convention (debit - credit when those columns
+    are configured)."""
+    acol = _resolve_col(rows, amount)
+    drcol = _resolve_col(rows, debit) if debit else None
+    crcol = _resolve_col(rows, credit) if credit else None
+    movement, unparsed = Decimal("0"), 0
+    for r in rows:
+        amt = _row_amount(r, acol, drcol, crcol)
+        if amt is None:
+            unparsed += 1
+        else:
+            movement += amt
+    op, cl = to_amount(opening), to_amount(closing)
+    computed = (op + movement) if op is not None else None
+    ties = None
+    if computed is not None and cl is not None:
+        ties = abs(computed - cl) <= Decimal("0.01")
+    return {"opening": op, "movement": movement, "computed_closing": computed,
+            "stated_closing": cl, "ties": ties, "rows": len(rows), "unparsed": unparsed}
+
+
+def render_balance_check(chk, label="A"):
+    """One-line human summary of a check_balance() result."""
+    if chk["ties"] is None:
+        return (f"Balance check ({label}): incomplete — opening/closing missing or unparseable "
+                f"(net movement {_money(chk['movement'])} over {chk['rows']} row(s))")
+    verdict = "TIES" if chk["ties"] else \
+        f"DOES NOT TIE (gap {_money(chk['computed_closing'] - chk['stated_closing'])}) — extract may be truncated/filtered"
+    line = (f"Balance check ({label}): opening {_money(chk['opening'])} + movement "
+            f"{_money(chk['movement'])} = {_money(chk['computed_closing'])} vs stated closing "
+            f"{_money(chk['stated_closing'])} — {verdict}")
+    if chk["unparsed"]:
+        line += f"; {chk['unparsed']} row(s) unparseable and excluded"
+    return line
 
 
 # --------------------------------------------------------------------------- #
@@ -599,13 +739,29 @@ def summarise(res, exceptions, *, amount="amount"):
         by_cat.setdefault(e["category"], {"n": 0, "val": Decimal("0")})
         by_cat[e["category"]]["n"] += 1
         by_cat[e["category"]]["val"] += abs(e["magnitude"] or 0)
+    # Per-currency split of the value figures — the headline totals sum across currencies
+    # (indicative only when mixed), so a mixed recon also reports each currency separately.
+    by_ccy = {}
+    def _ccy_add(ccy, field, v):
+        d = by_ccy.setdefault(ccy or "?", {"matched_val": Decimal("0"),
+                                           "exception_val": Decimal("0")})
+        d[field] += abs(v or 0)
+    for m in res["matched"]:
+        _ccy_add(m["a"].get("ccy") or m["b"].get("ccy"), "matched_val", m["a"]["amt"])
+    for p in agg:
+        items = p.get("_A") or []
+        ccy = next((x.get("ccy") for x in items if x.get("ccy")), None)
+        _ccy_add(ccy, "matched_val", p["a_sum"])
+    for e in exceptions:
+        _ccy_add(e.get("currency"), "exception_val", e["magnitude"])
     reds = sum(1 for e in exceptions if e["materiality"] in ("material", "escalate"))
     rag = "GREEN" if reds == 0 and exceptions == [] else ("RED" if reds else "AMBER")
     return {
         "matched": matched_n, "aggregated": len(agg), "exceptions": len(exceptions), "total": total_n,
         "pct_reconciled": round(100 * reconciled / total_n, 1) if total_n else 100.0,
         "value_matched": round(mat_val, 2), "value_in_exception": round(exc_val, 2),
-        "by_category": by_cat, "material_or_escalate": reds, "rag": rag,
+        "by_category": by_cat, "by_currency": by_ccy,
+        "material_or_escalate": reds, "rag": rag,
     }
 
 
@@ -625,7 +781,8 @@ def _md_escape(v):
     return str("" if v is None else v).replace("|", "\\|").replace("\r\n", "<br>").replace("\n", "<br>")
 
 
-def render_report(summary, exceptions, *, a_label="A", b_label="B", title="Reconciliation"):
+def render_report(summary, exceptions, *, a_label="A", b_label="B", title="Reconciliation",
+                  balances=None):
     L = [f"# {_md_escape(title)}: {_md_escape(a_label)} vs {_md_escape(b_label)}", ""]
     s = summary
     agg = f", {s['aggregated']} aggregation(s)" if s.get("aggregated") else ""
@@ -633,7 +790,19 @@ def render_report(summary, exceptions, *, a_label="A", b_label="B", title="Recon
              f"({s['matched']} matched 1:1{agg}); {s['exceptions']} exception(s), "
              f"{s['material_or_escalate']} material/escalate.")
     L.append(f"Value matched: {_money(s['value_matched'])} · value in exception: {_money(s['value_in_exception'])}")
+    for label, chk in (balances or []):
+        L.append(_md_escape(render_balance_check(chk, label)))
     L.append("")
+    by_ccy = s.get("by_currency") or {}
+    if len(by_ccy) > 1:
+        L.append("Mixed currencies — the value totals above sum across currencies (indicative "
+                 "only); per currency:")
+        L.append("| Currency | Value matched | Value in exception |")
+        L.append("|---|---|---|")
+        for c in sorted(by_ccy):
+            d = by_ccy[c]
+            L.append(f"| {_md_escape(c)} | {_money(d['matched_val'], c)} | {_money(d['exception_val'], c)} |")
+        L.append("")
     if s["by_category"]:
         L.append("| Category | # | Value |")
         L.append("|---|---|---|")
@@ -671,11 +840,14 @@ def write_workpaper(res, exceptions, summary, out_path, *, a_label="A", b_label=
         ws.append([c, d["n"], _quantize_money(d["val"])])
 
     we = wb.create_sheet("Exceptions")
-    we.append(["Category", "Magnitude", "Materiality", "Probable cause", "Suggested action",
+    we.append(["Category", "Magnitude", "Currency", "Materiality", "Age (days)",
+               "Probable cause", "Suggested action",
                f"{a_label} row", f"{b_label} row", "Status"])
     for e in exceptions:
         we.append([e["category"], _quantize_money(e["magnitude"], e.get("currency")),
-                   e["materiality"], e["probable_cause"],
+                   e.get("currency") or "", e["materiality"],
+                   e.get("age_days") if e.get("age_days") is not None else "",
+                   e["probable_cause"],
                    e["suggested_action"], str(e["a"]) if e["a"] else "", str(e["b"]) if e["b"] else "",
                    e["status"]])
 
@@ -749,7 +921,13 @@ def reconcile_files(path_a, path_b, *, preset=None, aggregate=False, group_col=N
 
     Confirm-first: with `aggregate=True` the proposals are returned UN-applied unless
     `auto_confirm=True`. The agent should present `proposals`, get the user's confirmation,
-    call `apply_aggregations(res, proposals, accepted)`, then `finalize(res, ...)`."""
+    call `apply_aggregations(res, proposals, accepted)`, then `finalize(res, ...)`.
+
+    Extra keyword options (also settable via a preset): `debit`/`credit` (separate Debit /
+    Credit columns -> signed amount), `flip_b` (negate B's amounts — opposite sign
+    conventions), `as_of` (age one-sided items in the triage), and `opening_a`/`closing_a` /
+    `opening_b`/`closing_b` (statement completeness checks, reported in
+    `summary['balance_checks']`)."""
     ingest, _ = _load_engine()
     cfg = dict(PRESETS.get(preset, {})) if preset else {}
     cfg.update({k: v for k, v in opts.items() if v is not None})
@@ -758,6 +936,8 @@ def reconcile_files(path_a, path_b, *, preset=None, aggregate=False, group_col=N
     res = match(rows_a, rows_b, key=cfg.get("key"), amount=cfg.get("amount", "amount"),
                 date=cfg.get("date"), currency=cfg.get("currency"), mode=cfg.get("mode", "key"),
                 tol=cfg.get("tol", 0.01), strict_currency=strict_currency,
+                debit=cfg.get("debit"), credit=cfg.get("credit"),
+                flip_b=cfg.get("flip_b", False),
                 date_window_days=(date_window if date_window is not None else 5))
     proposals = []
     if aggregate:
@@ -766,7 +946,17 @@ def reconcile_files(path_a, path_b, *, preset=None, aggregate=False, group_col=N
         if auto_confirm and proposals:
             apply_aggregations(res, proposals, range(len(proposals)))
     exc, summary = finalize(res, a_label=cfg.get("a_label", "A"), b_label=cfg.get("b_label", "B"),
-                            material=cfg.get("material", 1000.0), escalate=cfg.get("escalate", 10000.0))
+                            material=cfg.get("material", 1000.0), escalate=cfg.get("escalate", 10000.0),
+                            as_of=cfg.get("as_of"))
+    balances = []
+    for label, rows, op, cl in ((cfg.get("a_label", "A"), rows_a, cfg.get("opening_a"), cfg.get("closing_a")),
+                                (cfg.get("b_label", "B"), rows_b, cfg.get("opening_b"), cfg.get("closing_b"))):
+        if op is not None or cl is not None:
+            balances.append((label, check_balance(rows, amount=cfg.get("amount", "amount"),
+                                                  debit=cfg.get("debit"), credit=cfg.get("credit"),
+                                                  opening=op, closing=cl)))
+    if balances:
+        summary["balance_checks"] = balances
     return res, exc, summary, proposals
 
 
@@ -884,7 +1074,20 @@ def main(argv=None):
     ap.add_argument("--preset", choices=list(PRESETS), help="recurring-reconciliation preset")
     ap.add_argument("--key", help="match key column (override)")
     ap.add_argument("--amount", default="amount")
+    ap.add_argument("--debit", help="debit column (bank/GL exports with separate Debit/Credit "
+                                    "columns; signed amount = debit - credit)")
+    ap.add_argument("--credit", help="credit column (see --debit)")
+    ap.add_argument("--flip-b", action="store_true",
+                    help="negate B's amounts before comparing (sides book the same money with "
+                         "opposite signs, e.g. bank statement vs GL cash account)")
     ap.add_argument("--date")
+    ap.add_argument("--as-of", help="ageing date (e.g. today) — one-sided exceptions with a "
+                                    "parsed date gain age_days in the working paper")
+    ap.add_argument("--opening-a", help="opening balance of side A — enables the "
+                                        "opening + movement = closing completeness check")
+    ap.add_argument("--closing-a", help="stated closing balance of side A")
+    ap.add_argument("--opening-b", help="opening balance of side B")
+    ap.add_argument("--closing-b", help="stated closing balance of side B")
     ap.add_argument("--currency", help="currency column (else the code is read from the amount cell); "
                                        "currencies are compared so 100 USD != 100 SGD")
     ap.add_argument("--strict-currency", action="store_true",
@@ -919,13 +1122,17 @@ def main(argv=None):
         currency=a.currency, mode=a.mode, material=a.material, escalate=a.escalate,
         aggregate=a.aggregate, group_col=a.group_col, party_col=a.party_col,
         date_window=a.date_window, auto_confirm=a.auto_confirm,
-        sheet_a=a.sheet_a, sheet_b=a.sheet_b, strict_currency=a.strict_currency)
+        sheet_a=a.sheet_a, sheet_b=a.sheet_b, strict_currency=a.strict_currency,
+        debit=a.debit, credit=a.credit, flip_b=(a.flip_b or None), as_of=a.as_of,
+        opening_a=a.opening_a, closing_a=a.closing_a,
+        opening_b=a.opening_b, closing_b=a.closing_b)
     p = PRESETS.get(a.preset, {})
     al, bl = p.get("a_label", "A"), p.get("b_label", "B")
     if proposals and not a.auto_confirm:
         print(render_proposals(proposals, a_label=al, b_label=bl))
         print()
-    print(render_report(summary, exc, a_label=al, b_label=bl, title=p.get("label", "Reconciliation")))
+    print(render_report(summary, exc, a_label=al, b_label=bl, title=p.get("label", "Reconciliation"),
+                        balances=summary.get("balance_checks")))
     if a.out:
         write_workpaper(res, exc, summary, a.out, a_label=al, b_label=bl)
         print(f"\nworking paper -> {a.out}")
