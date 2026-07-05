@@ -59,6 +59,21 @@ compatible (default mode stays permissive).
 Multi-tab `.xlsx`? Pass `sheet_a=` / `sheet_b=` (CLI `--sheet-a/--sheet-b`); otherwise ingest
 auto-picks the single data sheet, or asks you to choose.
 
+**Day-to-day bank/GL conveniences** (column names resolve case-insensitively, so `amount`
+finds a bank CSV's `Amount`):
+- **Separate Debit / Credit columns** (the usual bank/GL export layout): `--debit <col>
+  --credit <col>` — signed amount = debit − credit; a side without those columns just uses
+  its amount column, so a debit/credit file reconciles against a signed-amount file.
+- **Opposite sign conventions** (bank statement vs the GL cash account): `--flip-b` negates
+  B's amounts before comparing.
+- **Statement completeness**: `--opening-a/--closing-a` (and `-b`) checks opening + net
+  movement = stated closing — catching a truncated or filtered export *before* it silently
+  "reconciles". Result is reported in the header of the working paper.
+- **Ageing**: `--as-of <date>` ages every one-sided exception with a parsed date
+  (`age_days`), so stale unbanked receipts / uncleared payments rank visibly.
+- An `amount_mismatch` whose gap is a common GST/VAT/WHT rate of the smaller side gets an
+  advisory *net-vs-gross* hint in its probable cause (never a category change).
+
 Messy inputs? Tidy them with **data-tidy** first, then reconcile the clean outputs.
 
 ### 3. Run it

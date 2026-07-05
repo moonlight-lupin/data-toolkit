@@ -28,6 +28,13 @@ non-zero on any failure.
 | `code_target` currency split | currency code emitted into its own column |
 | categorical value-map | clustering proposes the right canonical (+ master snap) |
 | PDF table scoring | best-engine selection (pdfplumber vs PyMuPDF), ties to pdfplumber; + a guarded read smoke test |
+| Debit/Credit columns | signed amount = debit − credit; reconciles against a signed-amount side |
+| case-insensitive columns | `amount` finds a bank CSV's `Amount` per side |
+| `--flip-b` sign flip | opposite sign conventions (bank vs GL cash) reconcile explicitly |
+| balance completeness | opening + movement = closing; a truncated extract does not tie |
+| ageing (`--as-of`) | one-sided items gain `age_days`; no `as_of` → no ageing (deterministic) |
+| GST/net-vs-gross hint | 9%-shaped mismatch gets an advisory note; non-tax gaps don't |
+| per-currency summary | mixed-currency recon reports per-currency values, not just a blind total |
 
 ## Notes
 

@@ -20,7 +20,10 @@ brandable (colours, font, logo).
 - **data-reconcile** — reconcile any two record sets (A vs B), match line-by-line on a key
   or heuristically on amount + date (within a hard date window), and triage every unmatched
   item into a reconciliation working paper (`.xlsx`). **Currency-aware** (100 USD ≠ 100 SGD;
-  optional strict mode for audit work). Never force-fits a match; never posts an adjustment.
+  optional strict mode for audit work). Handles the daily bank/GL realities: separate
+  Debit/Credit columns, opposite sign conventions (`--flip-b`), statement-completeness
+  balance checks, ageing of open items, and GST/net-vs-gross hints on amount mismatches.
+  Never force-fits a match; never posts an adjustment.
 - **data-visualise** — turn data into a self-contained, brandable **HTML dashboard** (KPI
   cards, bar/line/donut charts as inline SVG, RAG tables) that opens in a browser, prints to
   PDF, and doubles as a live HTML Artifact in Cowork / Claude.ai.

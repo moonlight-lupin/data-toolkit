@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.2.1 — 2026-07-05
+
+Day-to-day finance strengthening (reconciliation):
+
+- **Separate Debit / Credit columns.** `match(..., debit=, credit=)` (CLI `--debit/--credit`)
+  builds the signed amount as debit − credit — the standard bank/GL export layout. A side
+  without those columns falls back to its amount column, so a debit/credit file reconciles
+  directly against a signed-amount file.
+- **Case-insensitive column resolution.** Configured column names now resolve against each
+  side's actual headers case- and whitespace-insensitively (`amount` finds `Amount `), per
+  side — no more everything-lands-in-a_only because a bank CSV capitalises its headers.
+- **Opposite sign conventions.** `flip_b=True` (CLI `--flip-b`) negates B's amounts before
+  comparing, for pairs that book the same money with opposite signs (bank statement vs the
+  GL cash account).
+- **Statement completeness check.** `check_balance()` (CLI `--opening-a/--closing-a`,
+  `--opening-b/--closing-b`) verifies opening + net movement = stated closing and reports
+  TIES / DOES NOT TIE in the working paper header — catching truncated/filtered extracts
+  before they silently "reconcile".
+- **Ageing of open items.** `triage(..., as_of=)` (CLI `--as-of`) stamps `age_days` on every
+  one-sided exception with a parsed date, surfaced in the report and the Exceptions sheet.
+- **GST/VAT/WHT hint.** An `amount_mismatch` whose gap is a common tax rate (5/7/8/9/10/15/20%)
+  of the smaller side gains an advisory net-vs-gross note in its probable cause. Advisory
+  only — never a category or materiality change.
+- **Per-currency summary.** `summarise()` adds `by_currency`; a mixed-currency recon renders
+  a per-currency value table and marks the cross-currency headline totals as indicative.
+  The Exceptions sheet gains Currency and Age (days) columns.
+
 ## 0.2.0 — 2026-06-22
 
 Finance-grade hardening (correctness fixes across the shared engine):

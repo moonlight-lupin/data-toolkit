@@ -399,6 +399,85 @@ def test_pii_egress_nric_pattern():
 
 
 # --------------------------------------------------------------------------- #
+# Day-to-day finance strengthening (v0.2.1): debit/credit columns, case-insensitive
+# column names, flip_b, balance completeness, ageing, tax hint, per-currency summary
+# --------------------------------------------------------------------------- #
+def test_column_names_resolved_case_insensitively():
+    # a bank CSV says "Amount" / "Date"; the config says amount/date — must still match
+    A = [{"Amount": "100.00", "Date": "01/06/2026"}]
+    B = [{"amount": "100.00", "date": "01/06/2026"}]
+    res = reconcile.match(A, B, amount="amount", date="date", mode="amount_date")
+    assert len(res["matched"]) == 1, res
+
+
+def test_debit_credit_columns_make_signed_amount():
+    # bank export splits Debit/Credit; ledger holds one signed amount — they must reconcile
+    bank = [{"Date": "01/06/2026", "Debit": "", "Credit": "1,000.00"},
+            {"Date": "02/06/2026", "Debit": "250.00", "Credit": ""}]
+    ledger = [{"date": "01/06/2026", "amount": "-1,000.00"},
+              {"date": "02/06/2026", "amount": "250.00"}]
+    res = reconcile.match(bank, ledger, amount="amount", debit="debit", credit="credit",
+                          date="date", mode="amount_date")
+    assert len(res["matched"]) == 2, res
+
+
+def test_flip_b_reconciles_opposite_sign_conventions():
+    A = [{"k": "1", "amount": "100.00"}]
+    B = [{"k": "1", "amount": "-100.00"}]
+    assert not reconcile.match(A, B, key="k", amount="amount")["matched"]
+    res = reconcile.match(A, B, key="k", amount="amount", flip_b=True)
+    assert len(res["matched"]) == 1, res
+
+
+def test_balance_completeness_check():
+    rows = [{"amount": "1,000.00"}, {"amount": "-250.00"}]
+    ok = reconcile.check_balance(rows, amount="amount", opening="100.00", closing="850.00")
+    assert ok["ties"] is True and ok["movement"] == Decimal("750.00")
+    # a truncated extract must NOT tie
+    bad = reconcile.check_balance(rows[:1], amount="amount", opening="100.00", closing="850.00")
+    assert bad["ties"] is False
+    assert "DOES NOT TIE" in reconcile.render_balance_check(bad, "Bank")
+
+
+def test_aging_of_one_sided_items():
+    res = reconcile.match([{"amount": "500.00", "date": "01 Jun 2026"}], [],
+                          amount="amount", date="date", mode="amount_date")
+    exc = reconcile.triage(res, as_of="30 Jun 2026")
+    assert exc[0]["age_days"] == 29
+    assert "aged 29d" in exc[0]["probable_cause"]
+    # no as_of -> no ageing (deterministic default)
+    assert reconcile.triage(res)[0]["age_days"] is None
+
+
+def test_tax_hint_on_net_vs_gross_mismatch():
+    res = reconcile.match([{"k": "1", "amount": "1000.00"}],
+                          [{"k": "1", "amount": "1090.00"}], key="k", amount="amount")
+    exc = reconcile.triage(res)
+    assert exc[0]["category"] == "amount_mismatch"
+    assert "GST/VAT/WHT" in exc[0]["probable_cause"]
+    # a non-tax-shaped difference gets no hint
+    res2 = reconcile.match([{"k": "1", "amount": "1000.00"}],
+                           [{"k": "1", "amount": "1234.00"}], key="k", amount="amount")
+    assert "GST/VAT/WHT" not in reconcile.triage(res2)[0]["probable_cause"]
+
+
+def test_summary_per_currency_breakdown():
+    A = [{"ref": "R1", "amount": "100.00", "ccy": "USD"},
+         {"ref": "R2", "amount": "50.00", "ccy": "SGD"},
+         {"ref": "R3", "amount": "70.00", "ccy": "SGD"}]
+    B = [{"ref": "R1", "amount": "100.00", "ccy": "USD"},
+         {"ref": "R2", "amount": "50.00", "ccy": "SGD"}]
+    res = reconcile.match(A, B, key="ref", amount="amount", currency="ccy")
+    exc = reconcile.triage(res)
+    s = reconcile.summarise(res, exc)
+    assert s["by_currency"]["USD"]["matched_val"] == Decimal("100.00")
+    assert s["by_currency"]["SGD"]["matched_val"] == Decimal("50.00")
+    assert s["by_currency"]["SGD"]["exception_val"] == Decimal("70.00")
+    report = reconcile.render_report(s, exc)
+    assert "Mixed currencies" in report
+
+
+# --------------------------------------------------------------------------- #
 # Standalone runner (no pytest needed)
 # --------------------------------------------------------------------------- #
 def _run_all():
