@@ -63,9 +63,9 @@ def extract_fields(source, fields, text=None):
             record[f["name"]] = ""
             flags.append({"field": f["name"], "issue": "label not found"})
             continue
-        val, note, kept_raw = dataclean._convert(raw, {"type": f.get("type", "text"),
-                                                        "currency": f.get("currency"),
-                                                        "dayfirst": f.get("dayfirst", True)})
+        val, note, kept_raw = dataclean.convert_value(raw, {"type": f.get("type", "text"),
+                                                            "currency": f.get("currency"),
+                                                            "dayfirst": f.get("dayfirst", True)})
         record[f["name"]] = val
         if note:
             flags.append({"field": f["name"], "issue": note,
@@ -150,11 +150,11 @@ def list_tables(path: str):
     return []
 
 
-def get_table(path: str, page: int = 0, index: int = 0):
+def get_table(path: str, page: int = 0, index: int = 0, engine=None):
     """Pull one specific table (from list_tables coordinates) -> rows."""
     ext = pathlib.Path(path).suffix.lower()
     if ext == ".pdf":
-        return ingest.extract_pdf_table(path, page, index)
+        return ingest.extract_pdf_table(path, page, index, engine=engine)
     if ext == ".docx":
         from docx import Document
         tbl = Document(path).tables[index]
@@ -172,8 +172,13 @@ def render_fields_report(records, flags_list):
             out.append(f"\n## ⚑ Document {i + 1}")
             out.append("| Field | Issue | Value |\n|---|---|---|")
             for fl in flags:
-                out.append(f"| {fl['field']} | {fl['issue']} | {fl.get('value', '')} |")
+                out.append(f"| {_md_escape(fl['field'])} | {_md_escape(fl['issue'])} | "
+                           f"{_md_escape(fl.get('value', ''))} |")
     return "\n".join(out)
+
+
+def _md_escape(v):
+    return str("" if v is None else v).replace("|", "\\|").replace("\r\n", "<br>").replace("\n", "<br>")
 
 
 if __name__ == "__main__":

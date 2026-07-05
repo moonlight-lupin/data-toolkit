@@ -76,7 +76,8 @@ rows = extract.get_table("report.pdf", page=1, index=0)
 ```
 
 **Scanned docs** — handled automatically: a page with no text layer falls back to **local
-Tesseract OCR** (`ingest.ocr_available()` to check). OCR'd content is lower-fidelity and flagged.
+Tesseract OCR** (`ingest.ocr_available()` to check). OCR use is noted in the ingest/read_text
+note as lower-fidelity; it is not tagged per row.
 
 ### 3 — Normalise, output, report
 For tables, pass the rows through the shared recipe just like tidy

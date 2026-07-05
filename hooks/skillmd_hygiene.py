@@ -32,8 +32,15 @@ if b"\r\n" in raw:
 txt = raw.decode("utf-8", errors="ignore")
 if not txt.startswith("---\n"):
     issues.append("first line must be '---' (YAML frontmatter opener)")
-elif txt.count("---") >= 2:
-    fm = txt.split("---", 2)[1]
+else:
+    lines = txt.splitlines()
+    close = next((i for i, line in enumerate(lines[1:], start=1) if line.strip() == "---"), None)
+    if close is not None:
+        fm = "\n".join(lines[1:close])
+    else:
+        fm = ""
+        issues.append("frontmatter closing '---' not found")
+if txt.startswith("---\n") and "fm" in locals() and fm:
     keys = re.findall(r"^([A-Za-z_]+):", fm, re.M)
     extra = [k for k in keys if k not in ("name", "description")]
     if extra:

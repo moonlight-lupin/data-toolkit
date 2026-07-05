@@ -358,10 +358,11 @@ def read_docx(path: str):
     except ImportError:
         return [], "python-docx not installed — cannot read .docx tables"
     rows = []
-    for tbl in Document(path).tables:
+    doc = Document(path)
+    for tbl in doc.tables:
         for row in tbl.rows:
             rows.append([c.text for c in row.cells])
-    return rows, f"docx, {len(rows)} table rows from {len(Document(path).tables)} table(s)"
+    return rows, f"docx, {len(rows)} table rows from {len(doc.tables)} table(s)"
 
 
 def read_msg(path: str):
@@ -457,6 +458,9 @@ def extract_pdf_table(path: str, page: int, index: int = 0, engine=None):
         chosen = mu
     else:
         chosen, _ = _choose_tables(pp, mu)
+    if index < 0 or index >= len(chosen):
+        raise IndexError(f"extract_pdf_table: requested table index {index}, "
+                         f"but page {page} has {len(chosen)} table(s)")
     return chosen[index]
 
 

@@ -58,8 +58,9 @@ _CURRENCY_SIGN_ORDER = ("US$", "S$", "A$", "HK$", "NZ$", "C$", "R$",
 # A bare "$" still SIGNALS "this is money" for type inference, even though its code is unknown.
 CURRENCY_DETECT = set(CURRENCY_SIGNS) | {"$"}
 
-_DATE_FORMATS = ["%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%d %b %Y", "%d %B %Y",
-                 "%b %d, %Y", "%B %d, %Y", "%d/%m/%y", "%Y/%m/%d"]
+_DATE_FORMATS = ["%Y-%m-%d", "%Y%m%d", "%d/%m/%Y", "%d-%m-%Y", "%d-%b-%Y", "%d.%m.%Y",
+                 "%d %b %Y", "%d %B %Y", "%b %d, %Y", "%B %d, %Y", "%d/%m/%y",
+                 "%Y/%m/%d"]
 _AMBIGUOUS = re.compile(r"^\s*(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})\s*$")
 
 
@@ -87,6 +88,8 @@ def parse_number(v):
     s = _s(v)
     if s == "":
         return None, "empty"
+    if re.search(r"-?\d{1,3}(\.\d{3})+,\d+", s):
+        return None, f"ambiguous European number format: {s!r}"
     neg = s.startswith("(") and s.endswith(")")
     s2 = s.strip("()")
     mult = 1
@@ -121,8 +124,9 @@ def parse_currency(v):
     if s == "":
         return None, "empty"
     code = None
+    su = s.upper()
     for sign in _CURRENCY_SIGN_ORDER:
-        if sign in s:
+        if sign.upper() in su:
             code = CURRENCY_SIGNS[sign]
             break
     amt, note = parse_number(s)
@@ -139,7 +143,11 @@ def _excel_serial(s):
     if re.fullmatch(r"\d{5}(\.\d+)?", s):
         try:
             base = dt.date(1899, 12, 30)
-            return base + dt.timedelta(days=int(float(s)))
+            whole, _, frac = s.partition(".")
+            note = "parsed from Excel serial"
+            if frac and int(frac) != 0:
+                note += "; date-time truncated to date"
+            return base + dt.timedelta(days=int(whole)), note
         except (ValueError, OverflowError):
             return None
     return None
@@ -155,7 +163,7 @@ def parse_date(v, dayfirst=True):
         return None, "empty"
     ser = _excel_serial(s)
     if ser:
-        return ser, "parsed from Excel serial"
+        return ser
     m = _AMBIGUOUS.match(s)
     note = ""
     if m:
@@ -390,13 +398,17 @@ def render_quality_report(q, title="Data quality report"):
 # Apply a recipe (deterministic) -> (header, rows, log)
 # --------------------------------------------------------------------------- #
 def _col_index(header, name):
-    norm = [_s(h).lower() for h in header]
-    n = _s(name).lower()
+    exact = [_s(h) for h in header]
+    n_raw = _s(name)
+    if n_raw in exact:
+        return exact.index(n_raw)
+    norm = [h.strip().lower() for h in exact]
+    n = n_raw.strip().lower()
     if n in norm:
         return norm.index(n)
-    for i, h in enumerate(norm):  # loose contains-match
-        if n and (n in h or h in n):
-            return i
+    matches = [i for i, h in enumerate(norm) if n and (n in h or h in n)]
+    if len(matches) == 1:
+        return matches[0]
     return None
 
 
@@ -406,6 +418,11 @@ def apply_recipe(raw_rows, recipe, masters=None):
     masters = masters or {}
     log = {"header": None, "dropped": {}, "transforms": [], "flagged": [],
            "duplicates": [], "validation": [], "rows_in": len(raw_rows), "rows_out": 0}
+    if not raw_rows:
+        log["header"] = None
+        log["dropped"] = {"blank": 0, "totals": 0}
+        log["message"] = "empty input: no rows to clean"
+        return [], [], log
 
     hr = recipe.get("header_row")
     if hr is None:
@@ -657,8 +674,18 @@ def _convert(raw, spec):
             return _s(raw), note, True
         return d.strftime(spec.get("format", DATE_OUT)), note, False
     if t == "bool":
-        return (_s(raw).lower() in ("yes", "true", "y", "1")), "", False
+        low = _s(raw).lower()
+        if low in ("yes", "true", "y", "1"):
+            return True, "", False
+        if low in ("no", "false", "n", "0"):
+            return False, "", False
+        return _s(raw), f"unrecognised bool: {_s(raw)!r}", True
     return _s(raw), "", False
+
+
+def convert_value(raw, spec):
+    """Public wrapper around the deterministic cell converter."""
+    return _convert(raw, spec)
 
 
 def _norm_key(v):
@@ -692,15 +719,19 @@ def _validate_rule(header, rows, rule, masters):
         return [{"col": rule["col"], "issue": "column not found"}]
     fails = []
     seen = set()
-    rgx = re.compile(rule["regex"]) if rule.get("regex") else None
+    try:
+        rgx = re.compile(rule["regex"]) if rule.get("regex") else None
+    except re.error as e:
+        return [{"col": rule["col"], "issue": f"invalid regex {rule['regex']!r}: {e}"}]
     master = masters.get(rule.get("in_master"))
+    master_norm = {_norm_key(m) for m in master} if master is not None else None
     for ri, r in enumerate(rows):
         v = _s(r[j]) if j < len(r) else ""
         if rule.get("required") and v == "":
             fails.append({"row": ri + 1, "col": rule["col"], "issue": "required, empty"})
         if v and rgx and not rgx.search(v):
             fails.append({"row": ri + 1, "col": rule["col"], "issue": f"fails regex {rule['regex']}"})
-        if v and master is not None and _norm_key(v) not in {_norm_key(m) for m in master}:
+        if v and master_norm is not None and _norm_key(v) not in master_norm:
             fails.append({"row": ri + 1, "col": rule["col"], "issue": "not in master list"})
         if rule.get("unique"):
             if v in seen and v:
@@ -729,6 +760,8 @@ def render_report(log):
            f"- Header row used: index {log['header']}",
            f"- Dropped: {log['dropped'].get('blank', 0)} blank, "
            f"{log['dropped'].get('totals', 0)} total/subtotal"]
+    if log.get("message"):
+        out.append(f"- Note: {_md_escape(log['message'])}")
     if log["duplicates"]:
         ex = sum(1 for d in log["duplicates"] if d["kind"] == "exact")
         pos = len(log["duplicates"]) - ex
@@ -736,21 +769,25 @@ def render_report(log):
     out.append("\n## Column transforms")
     out.append("| Column | Converted | Flagged |\n|---|---|---|")
     for t in log["transforms"]:
-        out.append(f"| {t['column']} | {t['converted']} | {t['flagged']} |")
+        out.append(f"| {_md_escape(t['column'])} | {t['converted']} | {t['flagged']} |")
     if log["flagged"]:
         out.append(f"\n## ⚑ Cells flagged for review ({len(log['flagged'])}) — "
                    "hard failures kept raw; warnings converted, please verify")
         out.append("| Row | Column | Value | Reason |\n|---|---|---|---|")
         for f in log["flagged"][:50]:
-            out.append(f"| {f['row']} | {f['column']} | {f['value']} | {f['reason']} |")
+            out.append(f"| {f['row']} | {_md_escape(f['column'])} | {_md_escape(f['value'])} | {_md_escape(f['reason'])} |")
         if len(log["flagged"]) > 50:
             out.append(f"_…and {len(log['flagged']) - 50} more_")
     if log["validation"]:
         out.append(f"\n## ⚑ Validation failures ({len(log['validation'])})")
         out.append("| Row | Column | Issue |\n|---|---|---|")
         for v in log["validation"][:50]:
-            out.append(f"| {v.get('row', '-')} | {v.get('col', '-')} | {v['issue']} |")
+            out.append(f"| {v.get('row', '-')} | {_md_escape(v.get('col', '-'))} | {_md_escape(v['issue'])} |")
     return "\n".join(out)
+
+
+def _md_escape(v):
+    return str("" if v is None else v).replace("|", "\\|").replace("\r\n", "<br>").replace("\n", "<br>")
 
 
 # --------------------------------------------------------------------------- #

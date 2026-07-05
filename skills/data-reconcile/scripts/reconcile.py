@@ -54,6 +54,9 @@ TRIAGE = {
     "currency_unknown": ("Amounts tie but at least one side's currency is unknown — can't confirm "
                          "it's the same money (strict-currency mode)",
                          "Establish the currency on both sides, then re-run"),
+    "parse_error":      ("A matched item has a missing or unparseable amount/date, so it cannot be "
+                         "reconciled safely",
+                         "Fix the source value, then re-run"),
 }
 
 # --------------------------------------------------------------------------- #
@@ -130,8 +133,8 @@ def to_date(x):
     if isinstance(x, _dt.date):
         return x
     s = str(x).strip()
-    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d %b %Y", "%d %B %Y",
-                "%m/%d/%Y", "%Y/%m/%d", "%d.%m.%Y"):
+    for fmt in ("%Y-%m-%d", "%Y%m%d", "%d/%m/%Y", "%d-%m-%Y", "%d-%b-%Y",
+                "%d %b %Y", "%d %B %Y", "%m/%d/%Y", "%Y/%m/%d", "%d.%m.%Y"):
         try:
             return _dt.datetime.strptime(s, fmt).date()
         except ValueError:
@@ -225,6 +228,7 @@ def match(rows_a, rows_b, *, key=None, amount="amount", date=None, currency=None
     A, B = _mk(rows_a), _mk(rows_b)
 
     res = {"matched": [], "value_diffs": [], "currency_diffs": [], "currency_unknown": [],
+           "parse_errors": [],
            "a_only": [], "b_only": [], "dup_a": [], "dup_b": [], "ambiguous": []}
 
     if mode == "key":
@@ -252,7 +256,10 @@ def match(rows_a, rows_b, *, key=None, amount="amount", date=None, currency=None
             if cand:
                 b = cand[0]
                 usedb.add(id(b))
-                da = (a["amt"] or 0) - (b["amt"] or 0)
+                if a["amt"] is None or b["amt"] is None:
+                    res["parse_errors"].append({"a": a, "b": b, "issue": "missing/unparseable amount"})
+                    continue
+                da = a["amt"] - b["amt"]
                 rel = _ccy_relation(a["ccy"], b["ccy"], strict_currency)
                 if rel == "mismatch":               # same key, different currency — not comparable
                     res["currency_diffs"].append({"a": a, "b": b, "diff": da})
@@ -274,9 +281,14 @@ def match(rows_a, rows_b, *, key=None, amount="amount", date=None, currency=None
             if a["amt"] is None:
                 res["a_only"].append({"a": a})
                 continue
+            if date and a["dt"] is None:
+                res["a_only"].append({"a": a})
+                continue
             best_in = best_out = best_unknown = None   # in-window / out-of-window / strict-unknown
             for b in bidx:
                 if id(b) in usedb or b["amt"] is None:
+                    continue
+                if date and b["dt"] is None:
                     continue
                 if abs(a["amt"] - b["amt"]) > tol:
                     continue
@@ -358,6 +370,13 @@ def triage(res, *, a_label="A", b_label="B", material=1000.0, escalate=10000.0,
         c, act = cause_action("currency_unknown")
         c = f"{c} ({a['ccy'] or '?'} vs {b['ccy'] or '?'})"
         out.append(_exc("currency_unknown", a, b, a["amt"], "confirm", c, act, material, escalate))
+    for d in res.get("parse_errors", []):
+        a, b = d.get("a"), d.get("b")
+        c, act = cause_action("parse_error")
+        if d.get("issue"):
+            c = f"{c} ({d['issue']})"
+        mag = (a or {}).get("amt") or (b or {}).get("amt")
+        out.append(_exc("parse_error", a, b, mag, "correct", c, act, material, escalate))
     for d in res["value_diffs"]:
         diff = d["diff"]
         a, b = d["a"], d["b"]
@@ -402,6 +421,7 @@ def _exc(cat, a, b, magnitude, action, cause, action_text, material, escalate):
         "probable_cause": cause, "suggested_action": action_text, "action": action,
         "a": (a or {}).get("row") if a else None,
         "b": (b or {}).get("row") if b else None,
+        "currency": (a or {}).get("ccy") or (b or {}).get("ccy"),
         "status": "open",
     }
 
@@ -432,6 +452,12 @@ def _compat(t, c, group_col, party_col, date_window):
     if party_col and not _same(t["row"], c["row"], party_col):
         return False
     return _within(t, c, date_window)
+
+
+def _currency_compatible(items):
+    """True when known currencies in the proposed aggregation do not conflict."""
+    known = [x.get("ccy") for x in items if x.get("ccy") is not None]
+    return all(_ccy_relation(a, b) != "mismatch" for i, a in enumerate(known) for b in known[i + 1:])
 
 
 def _subset_sum(target_amt, cands, tol, max_subset):
@@ -494,6 +520,8 @@ def propose_aggregations(res, *, group_col=None, party_col=None, date_window=Non
             A, B = ga[k], gb[k]
             if len(A) + len(B) < 3:            # a 1:1 within a group isn't an aggregation
                 continue
+            if not _currency_compatible(A + B):
+                continue
             if abs(sum(x["amt"] or 0 for x in A) - sum(x["amt"] or 0 for x in B)) <= tol:
                 label = "+".join(str(v) for v in k)
                 proposals.append(_proposal("many_to_many", A, B,
@@ -508,7 +536,10 @@ def propose_aggregations(res, *, group_col=None, party_col=None, date_window=Non
             if id(t) in used or t["amt"] is None:
                 continue
             cands = [c for c in pool if id(c) not in used and _compat(t, c, group_col, party_col, date_window)]
+            cands = [c for c in cands if _currency_compatible([t, c])]
             hit = _subset_sum(t["amt"], cands, tol, max_subset)
+            if hit and not _currency_compatible([t] + hit):
+                hit = None
             if hit:
                 A, B = ([t], hit) if side == "A" else (hit, [t])
                 proposals.append(_proposal(kind, A, B, basis))
@@ -578,28 +609,45 @@ def summarise(res, exceptions, *, amount="amount"):
     }
 
 
+CURRENCY_DP = {"JPY": 0}
+
+
+def _quantize_money(v, ccy=None):
+    q = Decimal(1).scaleb(-CURRENCY_DP.get(ccy, 2))
+    return Decimal(str(v or 0)).quantize(q)
+
+
+def _money(v, ccy=None):
+    return f"{_quantize_money(v, ccy):,}"
+
+
+def _md_escape(v):
+    return str("" if v is None else v).replace("|", "\\|").replace("\r\n", "<br>").replace("\n", "<br>")
+
+
 def render_report(summary, exceptions, *, a_label="A", b_label="B", title="Reconciliation"):
-    L = [f"# {title}: {a_label} vs {b_label}", ""]
+    L = [f"# {_md_escape(title)}: {_md_escape(a_label)} vs {_md_escape(b_label)}", ""]
     s = summary
     agg = f", {s['aggregated']} aggregation(s)" if s.get("aggregated") else ""
     L.append(f"**{s['rag']}** — {s['pct_reconciled']}% of items reconciled "
              f"({s['matched']} matched 1:1{agg}); {s['exceptions']} exception(s), "
              f"{s['material_or_escalate']} material/escalate.")
-    L.append(f"Value matched: {s['value_matched']:,} · value in exception: {s['value_in_exception']:,}")
+    L.append(f"Value matched: {_money(s['value_matched'])} · value in exception: {_money(s['value_in_exception'])}")
     L.append("")
     if s["by_category"]:
         L.append("| Category | # | Value |")
         L.append("|---|---|---|")
         for c, d in sorted(s["by_category"].items(), key=lambda kv: -kv[1]["val"]):
-            L.append(f"| {c} | {d['n']} | {round(d['val'], 2):,} |")
+            L.append(f"| {_md_escape(c)} | {d['n']} | {_money(d['val'])} |")
         L.append("")
     if exceptions:
         L.append("## Exceptions (triaged — highest first)")
         L.append("| Category | Magnitude | Materiality | Probable cause | Action |")
         L.append("|---|---|---|---|---|")
         for e in exceptions[:50]:
-            L.append(f"| {e['category']} | {round(e['magnitude'] or 0, 2):,} | {e['materiality']} "
-                     f"| {e['probable_cause']} | {e['suggested_action']} |")
+            L.append(f"| {_md_escape(e['category'])} | {_money(e['magnitude'], e.get('currency'))} "
+                     f"| {_md_escape(e['materiality'])} | {_md_escape(e['probable_cause'])} "
+                     f"| {_md_escape(e['suggested_action'])} |")
     L.append("")
     L.append("> Working paper for review by a qualified person — not a posting; "
              "no adjustment is made. Unmatched items are flagged, never force-fitted.")
@@ -620,13 +668,14 @@ def write_workpaper(res, exceptions, summary, out_path, *, a_label="A", b_label=
               [], ["Category", "#", "Value"]]:
         ws.append(r)
     for c, d in sorted(s["by_category"].items(), key=lambda kv: -kv[1]["val"]):
-        ws.append([c, d["n"], round(d["val"], 2)])
+        ws.append([c, d["n"], _quantize_money(d["val"])])
 
     we = wb.create_sheet("Exceptions")
     we.append(["Category", "Magnitude", "Materiality", "Probable cause", "Suggested action",
                f"{a_label} row", f"{b_label} row", "Status"])
     for e in exceptions:
-        we.append([e["category"], e["magnitude"], e["materiality"], e["probable_cause"],
+        we.append([e["category"], _quantize_money(e["magnitude"], e.get("currency")),
+                   e["materiality"], e["probable_cause"],
                    e["suggested_action"], str(e["a"]) if e["a"] else "", str(e["b"]) if e["b"] else "",
                    e["status"]])
 
@@ -666,14 +715,22 @@ def _load_engine():
 
 def _records(raw):
     """ingest.read_any returns (list-of-lists, note). Turn it into list[dict] using the
-    first non-blank row as the header. (Messy inputs should be tidied with data-tidy first.)"""
+    detected header where possible. (Messy inputs should be tidied with data-tidy first.)"""
     rows = raw[0] if isinstance(raw, tuple) else raw
     rows = [r for r in rows if any(str(c).strip() for c in r)]
     if not rows:
         return []
-    header = [str(h).strip() for h in rows[0]]
+    try:
+        import dataclean  # type: ignore
+    except ImportError:
+        try:
+            _, dataclean = _load_engine()
+        except Exception:  # noqa: BLE001
+            dataclean = None
+    hr = dataclean.detect_header(rows) if dataclean and hasattr(dataclean, "detect_header") else 0
+    header = [str(h).strip() for h in rows[hr]]
     out = []
-    for r in rows[1:]:
+    for r in rows[hr + 1:]:
         r = list(r) + [None] * (len(header) - len(r))
         out.append({header[i]: r[i] for i in range(len(header))})
     return out
@@ -834,8 +891,8 @@ def main(argv=None):
                     help="audit/finance mode: don't match when a side's currency is unknown "
                          "(routes to currency_unknown instead of assuming compatibility)")
     ap.add_argument("--mode", choices=["key", "amount_date"])
-    ap.add_argument("--material", type=float, default=1000.0)
-    ap.add_argument("--escalate", type=float, default=10000.0)
+    ap.add_argument("--material", type=str, default="1000.0")
+    ap.add_argument("--escalate", type=str, default="10000.0")
     ap.add_argument("--aggregate", action="store_true", help="propose sum-to-one / sum-to-sum matches")
     ap.add_argument("--group-col", help="shared reference/batch column bounding aggregation")
     ap.add_argument("--party-col", help="counterparty/account column bounding aggregation")

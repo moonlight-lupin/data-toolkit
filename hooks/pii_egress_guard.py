@@ -1,12 +1,12 @@
 #!/usr/bin/env python
-"""Data-handling guard — a PreToolUse hook on external tools (WebFetch / WebSearch /
+"""Data-handling reminder — a PreToolUse hook on external tools (WebFetch / WebSearch /
 any MCP connector). It operationalises the toolkit's #1 rule: keep sensitive or confidential
 business RELATIONSHIPS off external services ("search the name, not the relationship").
 
 Deliberately CONSERVATIVE so it doesn't nag during ordinary public research: it stays silent
 unless the outbound payload contains a clear relationship leak (e.g. "our LP", "we're
 acquiring X"), in which case it asks the user to confirm. It NEVER hard-blocks — it's a
-reminder/confirm, guidance-not-gate. Tune the patterns below to taste. Reads the tool call on
+reminder/confirm, guidance-not-gate, not a DLP control. Tune the patterns below to taste. Reads the tool call on
 stdin; emits a decision on stdout; exit 0 always.
 
 Docs: stdin = {tool_name, tool_input, ...}; for a confirm we return
@@ -45,6 +45,12 @@ STRONG = [
     r"\bwe(?:'re|\s+are|\s+have|\s+will|\s+ll)?\s+(?:investing|acquiring|buying|selling|"
     r"divesting|funding|onboarding|considering)\b",
     r"\b(?:our|the)\s+(?:fund|deal|spv)\s+(?:is\s+)?(?:investing|acquiring|buying)\b",
+    r"\b[stfg]\d{7}[a-z]\b",                         # NRIC/FIN-like
+    r"\b(?:\d{8,9}[a-z]|\d{4}\d{5}[a-z]|[a-z]\d{2}[a-z]{2}\d{4}[a-z])\b",  # UEN-like
+    r"\b\d{3,4}-\d{4,6}-\d{3,4}\b",                 # bank account-like
+    r"\b(?:counterparty|vendor|tenant|investor|payee|beneficiary)\b.{0,80}"
+    r"\b(?:amount|balance|commitment|invoice|payment|schedule)\b.{0,80}"
+    r"\b\d{1,3}(?:,\d{3})+(?:\.\d{2})?\b",          # financial schedule row-like
 ]
 # Sensitive holding data → a soft reminder (more ambiguous, so don't confirm)
 HOLDING = [r"\b\d{1,3}\s?%\s?(?:stake|holding|interest|ownership)\b"]

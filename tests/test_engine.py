@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import sys
 import tempfile
+import json
+import subprocess
 from decimal import Decimal
 from pathlib import Path
 
@@ -271,6 +273,129 @@ def test_pdf_read_smoke():
     rows, note = ingest.read_pdf(str(pdf))
     flat = " ".join(str(c) for r in rows for c in r)
     assert "Acme" in flat and "1000" in flat, (note, rows)
+
+
+def test_amount_date_missing_dates_do_not_match():
+    A = [{"amount": "100.00", "date": ""}]
+    B = [{"amount": "100.00", "date": "01 Jun 2026"}]
+    res = reconcile.match(A, B, amount="amount", date="date", mode="amount_date")
+    assert not res["matched"] and not res["ambiguous"]
+    assert len(res["a_only"]) == 1 and len(res["b_only"]) == 1
+
+    bad = reconcile.match([{"amount": "100.00", "date": "not a date"}], B,
+                          amount="amount", date="date", mode="amount_date")
+    assert not bad["matched"] and len(bad["a_only"]) == 1 and len(bad["b_only"]) == 1
+
+
+def test_key_mode_missing_amount_flagged():
+    res = reconcile.match([{"ref": "R1", "amount": ""}],
+                          [{"ref": "R1", "amount": "0.00"}],
+                          key="ref", amount="amount")
+    assert not res["matched"] and not res["value_diffs"]
+    assert len(res["parse_errors"]) == 1
+    assert any(e["category"] == "parse_error" for e in reconcile.triage(res))
+
+
+def test_aggregation_currency_mismatch_rejected():
+    one = {
+        "matched": [], "value_diffs": [], "currency_diffs": [], "currency_unknown": [],
+        "parse_errors": [], "dup_a": [], "dup_b": [], "ambiguous": [],
+        "a_only": [{"a": {"row": {"batch": "B1"}, "amt": Decimal("100"), "dt": None, "ccy": "USD"}}],
+        "b_only": [{"b": {"row": {"batch": "B1"}, "amt": Decimal("40"), "dt": None, "ccy": "USD"}},
+                   {"b": {"row": {"batch": "B1"}, "amt": Decimal("60"), "dt": None, "ccy": "SGD"}}],
+    }
+    assert reconcile.propose_aggregations(one, group_col="batch") == []
+
+    many = {
+        "matched": [], "value_diffs": [], "currency_diffs": [], "currency_unknown": [],
+        "parse_errors": [], "dup_a": [], "dup_b": [], "ambiguous": [],
+        "a_only": [{"a": {"row": {"batch": "B2"}, "amt": Decimal("100"), "dt": None, "ccy": "USD"}}],
+        "b_only": [{"b": {"row": {"batch": "B2"}, "amt": Decimal("100"), "dt": None, "ccy": "SGD"}},
+                   {"b": {"row": {"batch": "B2"}, "amt": Decimal("0"), "dt": None, "ccy": "SGD"}}],
+    }
+    assert reconcile.propose_aggregations(many, group_col="batch") == []
+
+
+def test_apply_recipe_empty_input():
+    header, rows, log = dataclean.apply_recipe([], {"columns": []})
+    assert header == [] and rows == []
+    assert log["rows_out"] == 0 and "empty input" in log["message"]
+
+
+def test_col_index_ambiguous_short_name():
+    assert dataclean._col_index(["Invoice date", "Payment date"], "date") is None
+    assert dataclean._col_index(["Amount", "Payment date"], "date") == 1
+
+
+def test_bool_unrecognised_kept_raw():
+    raw = [["Active"], ["maybe"], ["N/A"], ["yes"], ["0"]]
+    recipe = {"columns": [{"source": "Active", "target": "Active", "type": "bool"}]}
+    _, rows, log = dataclean.apply_recipe(raw, recipe)
+    assert rows == [["maybe"], ["N/A"], [True], [False]]
+    assert [f["value"] for f in log["flagged"]] == ["maybe", "N/A"]
+
+
+def test_md_escape_pipe_in_value():
+    log = {"header": 0, "dropped": {"blank": 0, "totals": 0}, "transforms": [],
+           "flagged": [{"row": 1, "column": "A|B", "value": "x|y", "reason": "bad|value"}],
+           "duplicates": [], "validation": [], "rows_in": 1, "rows_out": 1}
+    report = dataclean.render_report(log)
+    assert "A\\|B" in report and "x\\|y" in report and "bad\\|value" in report
+
+    rreport = reconcile.render_report(
+        {"rag": "AMBER", "pct_reconciled": 0, "matched": 0, "aggregated": 0,
+         "exceptions": 1, "material_or_escalate": 0, "value_matched": Decimal("0"),
+         "value_in_exception": Decimal("1"), "by_category": {"x|y": {"n": 1, "val": Decimal("1")}}},
+        [{"category": "x|y", "magnitude": Decimal("1"), "materiality": "immaterial",
+          "probable_cause": "a|b", "suggested_action": "c|d"}])
+    assert "x\\|y" in rreport and "a\\|b" in rreport
+
+
+def test_currency_code_case_insensitive():
+    assert dataclean.parse_currency("sgd 100")[0] == dataclean.parse_currency("SGD 100")[0]
+    assert dataclean.parse_currency("sgd 100")[0][1] == "SGD"
+    assert reconcile.to_currency("sgd 100") == "SGD"
+
+
+def test_european_number_format_flagged():
+    n, note = dataclean.parse_number("1.234,56")
+    assert n is None and "European" in note
+    res, cnote = dataclean.parse_currency("EUR 1.234,56")
+    assert res is None and "European" in cnote
+
+
+def test_get_table_engine_param():
+    old = ingest.extract_pdf_table
+    calls = []
+
+    def fake(path, page, index=0, engine=None):
+        calls.append((path, page, index, engine))
+        return [["ok"]]
+
+    ingest.extract_pdf_table = fake
+    try:
+        assert extract.get_table("sample.pdf", page=2, index=3, engine="pdfplumber") == [["ok"]]
+        assert calls == [("sample.pdf", 2, 3, "pdfplumber")]
+    finally:
+        ingest.extract_pdf_table = old
+
+
+def test_logo_restricted_to_images():
+    d = tempfile.mkdtemp()
+    txt = Path(d) / "logo.txt"
+    txt.write_text("not image", encoding="utf-8")
+    html = viz._logo_for({"logo_path": str(txt), "brand_name": "Acme"})
+    assert "<img" not in html and "Acme" in html
+
+
+def test_pii_egress_nric_pattern():
+    hook = _ROOT / "hooks" / "pii_egress_guard.py"
+    payload = {"tool_input": {"query": "Can you search S1234567D payment status?"}}
+    proc = subprocess.run([sys.executable, str(hook)], input=json.dumps(payload),
+                          text=True, capture_output=True, check=False)
+    assert proc.returncode == 0
+    out = json.loads(proc.stdout)
+    assert out["hookSpecificOutput"]["permissionDecision"] == "ask"
 
 
 # --------------------------------------------------------------------------- #

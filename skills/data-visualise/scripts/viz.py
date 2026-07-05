@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import base64 as _b64
 import datetime as dt
+from decimal import Decimal
 import html as _html
 import os
 import sys
@@ -129,13 +130,14 @@ def apply_theme(theme: dict | None) -> dict:
     afterwards pick up the brand. Returns the fully-resolved theme. Pass None to
     reset to the neutral default. Call this BEFORE composing blocks if you want a
     firm's colours in the charts; dashboard() also accepts `theme=` for the shell."""
-    global BRAND, FONT, BRAND_NAME, LOGO_PATH, _SERIES
+    global BRAND, FONT, BRAND_NAME, LOGO_PATH, _SERIES, _STATUS_COLOUR
     rt = _resolve_theme(theme)
     BRAND = rt["colours"]
     FONT = rt["font"]
     BRAND_NAME = rt["brand_name"]
     LOGO_PATH = Path(rt["logo_path"]) if rt["logo_path"] else None
     _SERIES = _series_palette()
+    _STATUS_COLOUR = _status_colour_map()
     return rt
 
 
@@ -154,7 +156,17 @@ def _logo_for(rt: dict) -> str:
     name = rt.get("brand_name", "")
     try:
         if path:
-            uri = "data:image/png;base64," + _b64.b64encode(Path(path).read_bytes()).decode()
+            p = Path(path)
+            allowed = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                       ".gif": "image/gif", ".svg": "image/svg+xml"}
+            mime = allowed.get(p.suffix.lower())
+            if not mime:
+                sys.stderr.write(f"[WARN] logo ignored: unsupported image type {p.suffix or '(none)'}\n")
+                return f'<span class="mark">{_e(name)}</span>'
+            if p.stat().st_size > 1_000_000:
+                sys.stderr.write("[WARN] logo ignored: file exceeds 1MB\n")
+                return f'<span class="mark">{_e(name)}</span>'
+            uri = f"data:{mime};base64," + _b64.b64encode(p.read_bytes()).decode()
             return f'<img class="logo" src="{uri}" alt="{_e(name)}">'
     except Exception:
         pass
@@ -163,13 +175,17 @@ def _logo_for(rt: dict) -> str:
 # Sequence used to colour multi-series charts / donut slices.
 _SERIES = _series_palette()
 
-_STATUS_COLOUR = {
-    "green": BRAND["green"], "ok": BRAND["green"], "done": BRAND["green"],
-    "amber": BRAND["amber"], "warn": BRAND["amber"], "due": BRAND["amber"],
-    "red": BRAND["red"], "bad": BRAND["red"], "overdue": BRAND["red"],
-    "brand": BRAND["burgundy"], "info": BRAND["burgundy"],
-    "grey": BRAND["grey"], "neutral": BRAND["grey"], None: BRAND["grey"],
-}
+def _status_colour_map():
+    return {
+        "green": BRAND["green"], "ok": BRAND["green"], "done": BRAND["green"],
+        "amber": BRAND["amber"], "warn": BRAND["amber"], "due": BRAND["amber"],
+        "red": BRAND["red"], "bad": BRAND["red"], "overdue": BRAND["red"],
+        "brand": BRAND["burgundy"], "info": BRAND["burgundy"],
+        "grey": BRAND["grey"], "neutral": BRAND["grey"], None: BRAND["grey"],
+    }
+
+
+_STATUS_COLOUR = _status_colour_map()
 
 
 _UID = [0]
@@ -194,6 +210,8 @@ def _fmt_num(v) -> str:
     """Thousands-separate plain numbers; leave pre-formatted strings alone."""
     if isinstance(v, bool):
         return _e(v)
+    if isinstance(v, Decimal):
+        return f"{v:,}".rstrip("0").rstrip(".") if "." in f"{v:f}" else f"{v:,}"
     if isinstance(v, int):
         return f"{v:,}"
     if isinstance(v, float):
@@ -258,7 +276,8 @@ def _nice_ticks(lo, hi, n=5):
 
 
 def bar_chart(data, title=None, height=220, unit="") -> str:
-    """A horizontal-axis bar chart as inline SVG. data: [(label, value)] or dicts."""
+    """A horizontal-axis bar chart as inline SVG. data: [(label, value)] or dicts.
+    Geometry uses float coordinates; labels preserve Decimal formatting where supplied."""
     pairs = _norm_pairs(data)
     if not pairs:
         return _empty_block(title, "No data")
@@ -270,16 +289,16 @@ def bar_chart(data, title=None, height=220, unit="") -> str:
     gap = 10
     bw = (W - pad_l) / n - gap
     bars = []
-    for i, ((lab, _), v) in enumerate(zip(pairs, vals)):
+    for i, ((lab, raw_v), v) in enumerate(zip(pairs, vals)):
         h = (v / vmax) * plot_h
         x = pad_l + i * (bw + gap)
         y = pad_t + (plot_h - h)
         col = _SERIES[i % len(_SERIES)] if n <= len(_SERIES) else BRAND["burgundy"]
         bars.append(
             f'<rect x="{x:.1f}" y="{y:.1f}" width="{bw:.1f}" height="{h:.1f}" '
-            f'rx="3" fill="{col}"><title>{_e(lab)}: {_fmt_num(_strip(v))}{_e(unit)}</title></rect>'
+            f'rx="3" fill="{col}"><title>{_e(lab)}: {_fmt_num(raw_v)}{_e(unit)}</title></rect>'
             f'<text x="{x + bw/2:.1f}" y="{y - 4:.1f}" text-anchor="middle" '
-            f'class="v">{_fmt_num(_strip(v))}</text>'
+            f'class="v">{_fmt_num(raw_v)}</text>'
             f'<text x="{x + bw/2:.1f}" y="{height - 9:.1f}" text-anchor="middle" '
             f'class="x">{_e(lab)}</text>')
     svg = (f'<svg viewBox="0 0 {W} {height}" class="chart" '

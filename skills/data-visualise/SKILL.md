@@ -6,8 +6,8 @@ description: >-
   "visualise this", "make a chart / KPI cards / scorecard", "a one-pager of these
   numbers", "turn this spreadsheet into a dashboard", "RAG status board", or wants a
   shareable visual summary of tasks, compliance, pipeline, finance or any tabular data.
-  Composes KPI cards, bar / line / donut charts (inline SVG — no JavaScript, no CDN, no
-  remote images), tables with RAG conditional formatting, status pills, sections and
+  Composes KPI cards, bar / line / donut charts (inline SVG — no external JS/chart
+  libraries, no CDN, no remote images; optional inline JS for sorting/filtering), tables with RAG conditional formatting, status pills, sections and
   grids into a single HTML file. Ships with a clean, neutral default theme and is fully
   brandable (colours, font, logo). Output is an internal draft for review, not advice;
   nothing is auto-distributed. NOT for PowerPoint decks or letters; for cleaning /

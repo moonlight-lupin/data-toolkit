@@ -32,7 +32,8 @@ The three data-prep skills share one local engine in **`scripts/`**:
 - `ingest.py` — read CSV / `.xlsx` (multi-sheet aware) / PDF / `.docx` / `.msg` / pasted text
   (optional libs per source). PDF tables use the best of pdfplumber + PyMuPDF per page.
 - `dataclean.py` — deterministic normalisation (dates → DD MMM YYYY; amounts as exact
-  **`Decimal`**; currency → amount + separable code; dedupe, type coercion) with a change log.
+  **`Decimal`**; currency amounts, with a separable code when `code_target` is configured;
+  dedupe, type coercion) with a change log.
 - `extract.py` — locate and pull fields/tables out of documents.
 - `envcheck.py` — environment prober: reports OS, Python libraries, OCR availability, and a
   per-skill readiness line.
@@ -71,9 +72,9 @@ See [`COMPATIBILITY.md`](COMPATIBILITY.md) for the per-skill mode/environment ma
 
 ## Tests
 
-A regression suite locks in the finance-grade behaviours (exact Decimal amounts, currency
-comparison, the date window, multi-sheet selection, form-layout extraction, PDF engine
-scoring, …). Each engine script also has an inline self-test.
+A focused regression suite locks in the highest-risk behaviours (exact Decimal amounts,
+currency comparison, the date window, multi-sheet selection, form-layout extraction, PDF
+engine scoring, and recent review fixes). Each engine script also has an inline self-test.
 
 ```
 python tests/test_engine.py     # standalone, no pytest needed
