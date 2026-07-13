@@ -1,0 +1,8 @@
+# Pin LF in the working tree on every platform (overrides core.autocrlf), so the
+# toolkit's text files ship with the LF endings the host expects and `bin/data-lint`
+# passes regardless of who checked the repo out.
+* text=auto eol=lf
+*.png binary
+*.xlsx binary
+*.pdf binary
+*.msg binary

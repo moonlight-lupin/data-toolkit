@@ -1,0 +1,13 @@
+{
+  "name": "data-toolkit",
+  "owner": {
+    "name": "moonlight-lupin"
+  },
+  "plugins": [
+    {
+      "name": "data-toolkit",
+      "source": "./",
+      "description": "Extract, tidy, reconcile, analyse and visualise messy data — fully local."
+    }
+  ]
+}
