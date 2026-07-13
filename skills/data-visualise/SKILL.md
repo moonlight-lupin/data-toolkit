@@ -174,11 +174,11 @@ the common case: a clean, branded, printable dashboard that also opens as a live
 This skill is **local and offline** — it embeds whatever data you pass directly into the
 HTML and never calls out (no CDN/remote images), which is exactly why it suits sensitive or
 confidential business/financial data. Keep the rendered `.html`/PDF on **your synced or
-shared file store**. If the dashboard contains **sensitive or confidential business or
-financial data** (e.g. counterparty/asset data tied to a deal, named parties with holdings,
-tenant/valuation data, personal data), treat the file as gated — don't send it to any
-external tool, and only share with entitled recipients. A firm-level operations/compliance
-board with no such data is not gated. Full rule: `../../DATA-HANDLING.md`.
+shared file store**. If the dashboard contains **personal data or confidential business/
+financial data** (e.g. named individuals with contact details or IDs, customer/supplier
+lists, pricing, unpublished financials), treat the file as gated — don't send it to any
+external tool, and only share with entitled recipients. A board built purely from
+non-sensitive, aggregated numbers is not gated. Full rule: `../../DATA-HANDLING.md`.
 
 ## Feedback
 

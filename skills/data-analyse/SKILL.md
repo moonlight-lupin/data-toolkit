@@ -151,8 +151,8 @@ calibration, plain speech, action boundary.
 ## Data handling
 
 Analysis runs **fully local** — the data, the metrics and the brief stay on your synced
-or shared file store; nothing is uploaded. Findings that name counterparties/holders with
-deal linkage are gated on any egress. Full rule: `../../DATA-HANDLING.md`.
+or shared file store; nothing is uploaded. A brief that names individuals or quotes
+confidential figures is gated on any egress. Full rule: `../../DATA-HANDLING.md`.
 
 ## Feedback
 

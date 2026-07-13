@@ -60,7 +60,7 @@ not vibes — so they can be checked.
 10. **Data handling and confidentiality.** Follow `DATA-HANDLING.md` for what is gated and
     when to tokenise on egress. Separately, when an artefact **leaves its entitled use**
     (feedback to a skill author, a shared example), **de-identify it first** — strip real
-    counterparties, parties, assets, holder codes and amounts. Worked examples in skills
+    names, identifiers, contact details and confidential figures. Worked examples in skills
     are **fictional**, never real matters.
 
 ## Negative examples (exact phrasings/behaviours to avoid)
