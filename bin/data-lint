@@ -155,11 +155,32 @@ def lint_plugin(problems, warnings):
             problems.append(f"plugin.json: skills path '{sp}' does not exist")
 
 
+def _ignored_skills(skills):
+    """Best-effort: the subset of skills git reports as ignored (so WIP kept out of the
+    plugin isn't linted as if it ships). Empty if git is absent or this isn't a repo —
+    then nothing is skipped and everything on disk is linted."""
+    if not skills:
+        return set()
+    try:
+        r = subprocess.run(["git", "-C", _ROOT, "check-ignore", *[f"skills/{s}" for s in skills]],
+                           capture_output=True, text=True, timeout=30)
+    except Exception:                              # noqa: BLE001 — no git / not a repo → skip nothing
+        return set()
+    if r.returncode not in (0, 1):                 # 0 = some ignored, 1 = none, else error
+        return set()
+    return {os.path.basename(line.strip().replace("\\", "/").rstrip("/"))
+            for line in r.stdout.splitlines() if line.strip()}
+
+
 def lint_skills(problems, warnings):
     skills_dir = os.path.join(_ROOT, "skills")
     skills = sorted(d for d in os.listdir(skills_dir)
                     if os.path.isfile(os.path.join(skills_dir, d, "SKILL.md"))) \
         if os.path.isdir(skills_dir) else []
+    ignored = _ignored_skills(skills)
+    if ignored:
+        skills = [s for s in skills if s not in ignored]
+        warnings.append(f"skipped {len(ignored)} git-ignored skill(s): {', '.join(sorted(ignored))}")
     for s in skills:
         p = os.path.join(skills_dir, s, "SKILL.md")
         raw = open(p, "rb").read()
@@ -177,9 +198,10 @@ def lint_skills(problems, warnings):
         _check_description(f"{s}/SKILL.md", _parsed_description(fm), problems, warnings)
         for h in _empty_h2_sections(text):
             problems.append(f"{s}/SKILL.md: empty / truncated section {h!r}")
-    for md in glob.glob(os.path.join(skills_dir, "**", "*.md"), recursive=True):
-        if TAG_RE.search(open(md, encoding="utf-8").read()):
-            problems.append(f"{os.path.relpath(md, _ROOT)}: stray closing tag (</content> etc.)")
+    for s in skills:                               # only shipped skills (ignored ones skipped above)
+        for md in glob.glob(os.path.join(skills_dir, s, "**", "*.md"), recursive=True):
+            if TAG_RE.search(open(md, encoding="utf-8").read()):
+                problems.append(f"{os.path.relpath(md, _ROOT)}: stray closing tag (</content> etc.)")
     return len(skills)
 
 
