@@ -94,6 +94,15 @@ def main():
             else "all input adapters available"
     add("data-reconcile", "any (portable); fully local", s, n)
 
+    # data-analyse — openpyxl core (xlsx in / metrics workbook out); other inputs optional
+    s, n = libs_ok("openpyxl")
+    if s == OK:
+        opt = [lib for lib, mod in [("PyMuPDF/PDF", "fitz"), ("pdfplumber/messy-PDF-tables", "pdfplumber"),
+                                    (".docx", "docx"), (".msg", "extract_msg")] if not has(mod)]
+        n = "xlsx/csv ready; optional inputs missing: " + ", ".join(opt) if opt \
+            else "all input adapters available"
+    add("data-analyse", "any (portable); fully local", s, n)
+
     # data-visualise — pure stdlib HTML/SVG; openpyxl only to read an .xlsx source
     n = "ready (stdlib HTML/SVG)" + ("" if has("openpyxl")
         else "; add openpyxl to read .xlsx sources") + "; preview needs a browser only"
