@@ -75,6 +75,6 @@ the actual control**, and it applies in **every** mode regardless of the hook.
 ## Data handling (applies to every skill)
 
 Every skill carries a **`## Data handling`** section pointing to the plugin-root
-**`DATA-HANDLING.md`** — the standing PII rule: de-identify / tokenise deal-specific and
-holder-specific PII before it crosses to any external/third-party tool, keep a local token
+**`DATA-HANDLING.md`** — the standing PII rule: de-identify / tokenise personal data and
+confidential business/financial data before it crosses to any external/third-party tool, keep a local token
 map, re-identify locally. It applies in **all modes**.
