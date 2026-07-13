@@ -1,0 +1,240 @@
+#!/usr/bin/env python3
+"""data-lint — fast static lint for the Data Toolkit source (no packaging, no deps).
+
+Catches at AUTHORING time the things a host would only reject at load time — an over-long or
+multi-line skill description, a stray tag, a truncated section, a broken plugin manifest — so
+you find them instantly instead of after a failed install. Two check groups:
+
+  SOURCE  the plugin manifest (`.claude-plugin/plugin.json`) parses; has name / version /
+          description; name matches the repo folder; the plugin **description** is a non-empty
+          single line <= 1024 chars; the skills path(s) it points to exist. Then every
+          `skills/<skill>/SKILL.md`: front-matter parses; name == folder; the **description** is
+          a non-empty single-line scalar <= 1024 chars; LF (no CRLF); no stray </...> tags in any
+          skill .md; no empty / truncated `## ` section (the silent-truncation guard).
+
+  ENGINE  the bundled engines still self-test green — `scripts/dataclean.py --self-test` and
+          `skills/data-analyse/scripts/analyse.py --self-test` — a fast "the maths still holds"
+          gate without running the full pytest suite.
+
+  $ python bin/data-lint            # lint everything
+  $ python bin/data-lint --source   # source / description checks only
+  $ python bin/data-lint --engine   # engine self-tests only
+
+Exit 0 = clean · 1 = problems found (printed) · 3 = bad usage.
+Dependency-free (no PyYAML required — falls back to a quote-stripping heuristic) so it runs
+anywhere and fast. Warnings (advisory, e.g. a suspiciously short description) print but never
+fail the run.
+"""
+import glob
+import json
+import os
+import re
+import subprocess
+import sys
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.normpath(os.path.join(_HERE, ".."))
+TAG_RE = re.compile(r"</(content|invoke|parameter|function_calls|antml)>")
+MAX_DESC = 1024                                    # host limit for a skill description
+MIN_DESC = 40                                      # advisory floor — shorter reads as a stub
+
+
+def _frontmatter(text):
+    if not text.startswith("---"):
+        return None
+    parts = text.split("\n", 1)
+    if len(parts) < 2:
+        return None
+    end = parts[1].find("\n---")
+    return parts[1][:end] if end >= 0 else None
+
+
+def _parsed_description(fm):
+    """The description as a YAML parser sees it: a real parse where PyYAML is present, else a
+    quote-stripping heuristic that also folds a `>-` / `|` block scalar to a single line."""
+    try:
+        import yaml
+        d = yaml.safe_load(fm)
+        if isinstance(d, dict) and isinstance(d.get("description"), str):
+            return d["description"].strip()
+    except Exception:
+        pass
+    m = re.search(r"^description:\s*(.*)$", fm, re.MULTILINE)
+    if not m:
+        return None
+    raw = m.group(1).strip()
+    if raw in (">", "|", ">-", "|-", ">+", "|+"):  # block scalar — gather the indented body
+        body, started = [], False
+        for line in fm.splitlines():
+            if not started:
+                started = re.match(r"^description:\s*[>|]", line) is not None
+                continue
+            if line.strip() and not line.startswith((" ", "\t")):
+                break
+            body.append(line.strip())
+        return " ".join(b for b in body if b).strip()
+    if len(raw) >= 2 and raw[0] in "\"'" and raw[-1] == raw[0]:
+        raw = raw[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+    return raw
+
+
+def _strip_code_fences(text):
+    """Blank out fenced code blocks (``` or ~~~) so their contents — which often include
+    example `## ` lines or `</tag>` snippets — don't trip the heading / tag scanners."""
+    out, fence = [], None
+    for line in text.split("\n"):
+        stripped = line.lstrip()
+        marker = stripped[:3] if stripped[:3] in ("```", "~~~") else None
+        if fence is None and marker:
+            fence = marker
+            out.append("")
+        elif fence is not None and stripped.startswith(fence):
+            fence = None
+            out.append("")
+        else:
+            out.append("" if fence is not None else line)
+    return "\n".join(out)
+
+
+def _empty_h2_sections(text):
+    """`## ` headings with no non-blank body before the next heading or EOF — the silent-
+    truncation signature (an empty section, or a heading cut off at end-of-file). Code
+    fences are stripped first so an example template inside ``` isn't mistaken for headings."""
+    lines = _strip_code_fences(text).split("\n")
+    heads = [i for i, l in enumerate(lines) if l.startswith("## ")]
+    bad = []
+    for k, i in enumerate(heads):
+        end = heads[k + 1] if k + 1 < len(heads) else len(lines)
+        if not [l for l in lines[i + 1:end] if l.strip()]:
+            bad.append(lines[i].strip())
+    return bad
+
+
+def _check_description(label, desc, problems, warnings):
+    """Shared rules for a skill OR the plugin description."""
+    if desc is None:
+        problems.append(f"{label}: no description")
+        return
+    if not desc.strip():
+        problems.append(f"{label}: description is empty")
+        return
+    if "\n" in desc:
+        problems.append(f"{label}: description is multi-line (must be a single-line scalar)")
+    if len(desc) > MAX_DESC:
+        problems.append(f"{label}: description {len(desc)} chars (> {MAX_DESC})")
+    if len(desc) < MIN_DESC:
+        warnings.append(f"{label}: description only {len(desc)} chars — likely too terse to trigger well")
+
+
+def lint_plugin(problems, warnings):
+    """The plugin manifest + its description."""
+    mpath = os.path.join(_ROOT, ".claude-plugin", "plugin.json")
+    if not os.path.isfile(mpath):
+        problems.append(".claude-plugin/plugin.json: missing")
+        return
+    try:
+        manifest = json.load(open(mpath, encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        problems.append(f".claude-plugin/plugin.json: invalid JSON ({e})")
+        return
+    if not manifest.get("name"):
+        problems.append("plugin.json: no name")
+    else:
+        folder = os.path.basename(_ROOT)
+        if manifest["name"] != folder:
+            problems.append(f"plugin.json: name '{manifest['name']}' != repo folder '{folder}'")
+    if not manifest.get("version"):
+        problems.append("plugin.json: no version")
+    elif not re.match(r"^\d+\.\d+\.\d+", str(manifest["version"])):
+        warnings.append(f"plugin.json: version '{manifest['version']}' is not semver-like")
+    _check_description("plugin.json", manifest.get("description"), problems, warnings)
+    # The skills path(s) the manifest advertises must exist.
+    skills_entry = manifest.get("skills", [])
+    for sp in (skills_entry if isinstance(skills_entry, list) else [skills_entry]):
+        if isinstance(sp, str) and not os.path.exists(os.path.join(_ROOT, sp)):
+            problems.append(f"plugin.json: skills path '{sp}' does not exist")
+
+
+def lint_skills(problems, warnings):
+    skills_dir = os.path.join(_ROOT, "skills")
+    skills = sorted(d for d in os.listdir(skills_dir)
+                    if os.path.isfile(os.path.join(skills_dir, d, "SKILL.md"))) \
+        if os.path.isdir(skills_dir) else []
+    for s in skills:
+        p = os.path.join(skills_dir, s, "SKILL.md")
+        raw = open(p, "rb").read()
+        if b"\r\n" in raw:
+            problems.append(f"{s}/SKILL.md: CRLF line endings (must be LF)")
+        text = raw.decode("utf-8")
+        fm = _frontmatter(text)
+        if fm is None:
+            problems.append(f"{s}/SKILL.md: no YAML front-matter")
+            continue
+        mname = re.search(r"^name:\s*(.+)$", fm, re.M)
+        name = mname.group(1).strip().strip("'\"") if mname else None
+        if name != s:
+            problems.append(f"{s}/SKILL.md: name '{name}' != folder '{s}'")
+        _check_description(f"{s}/SKILL.md", _parsed_description(fm), problems, warnings)
+        for h in _empty_h2_sections(text):
+            problems.append(f"{s}/SKILL.md: empty / truncated section {h!r}")
+    for md in glob.glob(os.path.join(skills_dir, "**", "*.md"), recursive=True):
+        if TAG_RE.search(open(md, encoding="utf-8").read()):
+            problems.append(f"{os.path.relpath(md, _ROOT)}: stray closing tag (</content> etc.)")
+    return len(skills)
+
+
+def lint_engine(problems):
+    """Run the bundled self-tests as a fast 'the maths still holds' gate."""
+    checks = [
+        ("dataclean", [sys.executable, os.path.join(_ROOT, "scripts", "dataclean.py"), "--self-test"]),
+        ("analyse", [sys.executable, os.path.join(_ROOT, "skills", "data-analyse", "scripts", "analyse.py"), "--self-test"]),
+    ]
+    for name, cmd in checks:
+        if not os.path.isfile(cmd[1]):
+            problems.append(f"engine: {name} self-test script not found ({os.path.relpath(cmd[1], _ROOT)})")
+            continue
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        except Exception as e:                     # noqa: BLE001 — report any launch failure
+            problems.append(f"engine: {name} self-test could not run ({e})")
+            continue
+        if r.returncode != 0:
+            tail = (r.stderr or r.stdout or "").strip().splitlines()[-1:] or ["(no output)"]
+            problems.append(f"engine: {name} self-test FAILED — {tail[0]}")
+
+
+def main(argv):
+    if "-h" in argv or "--help" in argv:
+        print(__doc__.strip())
+        return 3
+    unknown = [a for a in argv if a not in ("--source", "--engine")]
+    if unknown:
+        print(f"data-lint: unknown argument(s): {' '.join(unknown)}\n\n{__doc__.strip()}")
+        return 3
+    do_source = "--engine" not in argv
+    do_engine = "--source" not in argv
+    problems, warnings, n = [], [], None
+    if do_source:
+        lint_plugin(problems, warnings)
+        n = lint_skills(problems, warnings)
+    if do_engine:
+        lint_engine(problems)
+
+    for w in warnings:
+        print("  ! " + w)
+    if problems:
+        print("data-lint: FAIL")
+        for p in problems:
+            print("  - " + p)
+        return 1
+    bits = []
+    if do_source and n is not None:
+        bits.append(f"plugin + {n} skills source-clean")
+    if do_engine:
+        bits.append("engines self-test green")
+    print("data-lint: OK — " + ", ".join(bits))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

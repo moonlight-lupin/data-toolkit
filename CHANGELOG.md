@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.3.0 — 2026-07-13
+
+New skill, generic data-handling, and toolkit tooling:
+
+- **New skill `data-analyse`.** Analyse a dataset into an insight brief — headline findings,
+  key metrics tailored to the data type (trends, breakdowns/concentration, outliers, ageing),
+  honest caveats. Compute-then-interpret: every quoted figure comes from a deterministic local
+  engine (`skills/data-analyse/scripts/analyse.py`, exact `Decimal`, currency-aware); the
+  narrative only interprets. Benchmarked 100% vs 83% against a no-skill baseline over four
+  evals (incl. a 4,042-row messy mixed-currency stress file), with zero numeric errors.
+- **Generic PII data-handling.** `DATA-HANDLING.md` now gates the two classes a white-label
+  toolkit should gate — personal data (PII) and confidential business/financial data —
+  instead of a firm-specific model. The egress architecture (tokenise-on-egress, local token
+  map, deliberate-purpose carve-out) is unchanged; the egress-guard hook was generalised to
+  match (adds email/phone/ID detection).
+- **`bin/data-lint`.** A fast, dependency-free authoring gate: checks the plugin manifest and
+  every skill description (single-line, non-empty, ≤ 1024 chars), guards against truncated
+  sections and stray tags, and runs the engine self-tests.
+- **Installable as a plugin.** Added `.claude-plugin/marketplace.json` so the repo is its own
+  marketplace — `/plugin marketplace add moonlight-lupin/data-toolkit` then
+  `/plugin install data-toolkit@data-toolkit`. Pinned LF via `.gitattributes`.
+
 ## 0.2.1 — 2026-07-05
 
 Day-to-day finance strengthening (reconciliation):
