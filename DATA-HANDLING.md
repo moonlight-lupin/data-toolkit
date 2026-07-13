@@ -63,6 +63,7 @@ place or goes to a recipient entitled to it:
 | `data-tidy` | Processes data **locally** — gated PII never leaves the machine. Tokenise only if a downstream step (a different skill) would push a value to an external tool. |
 | `data-extract` | Same: extraction runs **locally**; the clean `.xlsx` + audit report stay on the local/synced store. |
 | `data-reconcile` | Same: matching/triage runs **locally** and produces a working paper for review — no egress, nothing posted. |
+| `data-analyse` | Same: metrics and the insight brief are computed **locally**; brief + metrics workbook stay on the local/synced store. A brief naming counterparties/holders with deal linkage is gated on any egress. |
 | `data-visualise` | Embeds data directly into a self-contained `.html` and never calls out (no CDN/remote images). Keep the file on the local/synced store; if it carries deal-specific / holder-specific data, treat it as gated — only share with entitled recipients. A firm-level board with no such data is not gated. |
 
 > **General rule for any handoff:** if a value would cross to an external/third-party tool

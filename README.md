@@ -9,7 +9,7 @@ on your synced or shared file store.
 White-label by design: neutral defaults throughout, and the dashboard layer is fully
 brandable (colours, font, logo).
 
-## The four skills
+## The five skills
 
 - **data-extract** — pull *structured* data **out of documents** (PDFs incl.
   multi-table/scanned via local OCR, Word, Outlook `.msg`) into a clean `.xlsx` + an audit
@@ -24,13 +24,18 @@ brandable (colours, font, logo).
   Debit/Credit columns, opposite sign conventions (`--flip-b`), statement-completeness
   balance checks, ageing of open items, and GST/net-vs-gross hints on amount mismatches.
   Never force-fits a match; never posts an adjustment.
+- **data-analyse** — analyse a dataset and deliver an **insight brief**: headline
+  findings, key metrics tailored to the data type (trends, breakdowns/concentration,
+  outliers, ageing), with honest caveats. Intent-first (what question should the data
+  answer?); every quoted number is computed deterministically by a local engine (exact
+  `Decimal`, currency-aware) — the narrative interprets, it never generates figures.
 - **data-visualise** — turn data into a self-contained, brandable **HTML dashboard** (KPI
   cards, bar/line/donut charts as inline SVG, RAG tables) that opens in a browser, prints to
   PDF, and doubles as a live HTML Artifact in Cowork / Claude.ai.
 
 ## Shared engine
 
-The three data-prep skills share one local engine in **`scripts/`**:
+The data-prep skills share one local engine in **`scripts/`**:
 
 - `ingest.py` — read CSV / `.xlsx` (multi-sheet aware) / PDF / `.docx` / `.msg` / pasted text
   (optional libs per source). PDF tables use the best of pdfplumber + PyMuPDF per page.
@@ -41,8 +46,11 @@ The three data-prep skills share one local engine in **`scripts/`**:
 - `envcheck.py` — environment prober: reports OS, Python libraries, OCR availability, and a
   per-skill readiness line.
 
-`data-visualise` carries its own engine (`skills/data-visualise/scripts/viz.py`) — pure
-stdlib HTML/SVG, no third-party library needed to render.
+`data-analyse` adds a metric engine on top (`skills/data-analyse/scripts/analyse.py` —
+numeric summaries, breakdowns/concentration, period trends, ageing, IQR outliers), reusing
+the shared parsers. `data-visualise` carries its own engine
+(`skills/data-visualise/scripts/viz.py`) — pure stdlib HTML/SVG, no third-party library
+needed to render.
 
 ## Local-first data posture
 
