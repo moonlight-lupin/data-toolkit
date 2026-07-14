@@ -1,0 +1,8 @@
+# Hard dependency for .xlsx I/O (tidy / reconcile / extract / analyse / visualise inputs).
+openpyxl>=3.1.0
+
+# Optional — install only for the inputs you use:
+#   PyMuPDF          PDF (incl. OCR path with Tesseract)
+#   pdfplumber       messy / borderless PDF tables
+#   python-docx      Word .docx
+#   extract-msg      Outlook .msg

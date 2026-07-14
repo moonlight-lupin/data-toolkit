@@ -2,8 +2,9 @@
 
 Turns any tabular data — a list of dicts, or an existing .xlsx — into a
 self-contained HTML artefact that opens in a browser and prints cleanly to PDF.
-Ships with a clean, neutral default theme (a slate + blue palette) and lets any
-firm drop in its own brand (name, colours, logo) without touching the code.
+Ships with **Phronesis Applied** defaults (mark + teal/bronze/paper palette from
+phronesis-applied.com) and lets any firm drop in its own brand (name, colours,
+logo) without touching the code.
 
 Design principles
 -----------------
@@ -12,14 +13,14 @@ Design principles
   This keeps sensitive/confidential data off any cloud (the toolkit's
   data-handling rule) and makes the file print reliably and travel as a single
   attachment.
-* **Brandable.** A neutral default theme is built in; pass a `theme` dict (brand
-  name, primary/accent colours, optional logo path) to re-skin every artefact.
-  See DEFAULT_THEME below.
+* **Brandable.** Phronesis Applied defaults are built in; pass a `theme` dict
+  (brand name, primary/accent colours, optional logo path) to re-skin every
+  artefact. See DEFAULT_THEME below.
 * **Composable.** Small building blocks (kpi_card, bar_chart, line_chart,
   donut_chart, table, status_pill, section, grid) each return an HTML string;
   `dashboard(...)` assembles them into a full page with a header, an "as-of"
   stamp, a print stylesheet and a footer disclaimer.
-* **Drafts, not advice.** Output is an internal artefact for a qualified person
+* **Drafts, not advice.** Output is a draft artefact for a qualified person
   to review — never auto-distributed.
 
 Quick start
@@ -34,7 +35,7 @@ Quick start
     dashboard("Operations dashboard", blocks, subtitle="Weekly", as_of="14 Jun 2026",
               out_path="dashboard.html")
 
-To apply your own brand, pass a theme (any subset overrides the neutral default):
+To apply your own brand, pass a theme (any subset overrides the Phronesis default):
     my_theme = {"brand_name": "Acme Co",
                 "colours": {"burgundy": "#0B3D91", "rose": "#1565C0"},
                 "logo_path": "assets/acme-logo.png"}
@@ -62,31 +63,31 @@ except Exception:
 
 
 # --------------------------------------------------------------------------- #
-# Theme — a neutral, brandable default. The colour-token *names* (burgundy / rose
-# / pink …) are kept for stability across the rendering code, but the default hex
-# values are a clean slate + blue palette with NO firm branding. A firm re-skins
-# every artefact by passing a `theme` dict to dashboard() (or calling apply_theme
-# before building blocks). See references/brand.md for the theming guide.
+# Theme — Phronesis Applied defaults (from www.phronesis-applied.com), fully
+# white-labelable. Colour-token *names* (burgundy / rose / pink …) stay stable
+# across the rendering code; hex values follow the Phronesis palette. A firm
+# re-skins every artefact by passing a `theme` dict to dashboard() (or calling
+# apply_theme before building blocks). See references/brand.md.
 # --------------------------------------------------------------------------- #
 DEFAULT_THEME = {
-    # A short brand / firm name shown in the header wordmark fallback and footer.
-    "brand_name": "Data Toolkit",
-    # Optional path to a logo PNG (transparent bg). Ships with a neutral sample
-    # the firm swaps for its own; if missing, the header shows a text wordmark.
+    # Shown in the header wordmark fallback and footer.
+    "brand_name": "Phronesis Applied",
+    # Default logo: Phronesis mark lockup (transparent PNG). Firms swap via
+    # theme["logo_path"]; if missing, the header shows a text wordmark.
     "logo_path": str(Path(__file__).resolve().parent.parent / "assets" / "logo-sample.png"),
-    # Font stack — a clean geometric/neutral sans. No proprietary brand face.
+    # Font stack — clean sans with safe fallbacks (site uses Inter / Fraunces).
     "font": "'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif",
-    # Palette. Token names are historical; values are a neutral slate + blue.
+    # Palette. Token names are historical; values match Phronesis Applied.
     "colours": {
-        "burgundy": "#1F3A5F",   # primary — header rule, wordmark, table heads, default accent (slate blue)
-        "rose":     "#2E6FB0",   # accent 1 — second series (blue)
-        "pink":     "#5B9BD5",   # accent 2 — third series (light blue)
-        "pink_lt":  "#A9C7E8",   # light tint
-        "pink_vlt": "#EAF1F8",   # very light tint (table zebra striping)
-        "ink":      "#1A1C1F",   # body text
-        "grey":     "#5F6571",   # muted text
-        "grey_lt":  "#E3E6EA",   # hairlines / borders
-        "bg":       "#F6F8FA",   # page background (cool neutral)
+        "burgundy": "#163F3A",   # primary — accent teal (site --accent)
+        "rose":     "#A9722F",   # accent 1 — bronze (site --bronze)
+        "pink":     "#20574F",   # accent 2 — soft teal (site --accent-soft)
+        "pink_lt":  "#D9B98A",   # light bronze tint
+        "pink_vlt": "#F1ECE2",   # paper-2 zebra (site --paper-2)
+        "ink":      "#1A1A17",   # body text (site --ink)
+        "grey":     "#55524A",   # muted text (site --ink-soft)
+        "grey_lt":  "#E4DDD0",   # hairlines (site --line)
+        "bg":       "#F7F4EE",   # page background (site --paper)
         "white":    "#FFFFFF",
         # status (RAG)
         "green":    "#2E7D57",
@@ -95,12 +96,12 @@ DEFAULT_THEME = {
     },
 }
 
-# Active module-level brand state, initialised from the neutral default. Building
+# Active module-level brand state, initialised from DEFAULT_THEME. Building
 # blocks read these; apply_theme() rebinds them so block colours follow a brand.
 BRAND = dict(DEFAULT_THEME["colours"])
 FONT = DEFAULT_THEME["font"]
 BRAND_NAME = DEFAULT_THEME["brand_name"]
-# Path to the header logo (a neutral sample placeholder; the firm replaces it).
+# Path to the header logo (Phronesis lockup by default; firms replace via theme).
 LOGO_PATH = Path(DEFAULT_THEME["logo_path"])
 
 
@@ -128,7 +129,7 @@ def apply_theme(theme: dict | None) -> dict:
     """Rebind the module-level brand state (BRAND/FONT/BRAND_NAME/LOGO_PATH and the
     chart series palette) from a (partial) `theme` dict, so building blocks built
     afterwards pick up the brand. Returns the fully-resolved theme. Pass None to
-    reset to the neutral default. Call this BEFORE composing blocks if you want a
+    reset to the Phronesis default. Call this BEFORE composing blocks if you want a
     firm's colours in the charts; dashboard() also accepts `theme=` for the shell."""
     global BRAND, FONT, BRAND_NAME, LOGO_PATH, _SERIES, _STATUS_COLOUR
     rt = _resolve_theme(theme)
@@ -486,7 +487,7 @@ def dashboard(title, blocks, subtitle=None, as_of=None, out_path=None,
     out_path  — if given, write the file and return its path; else return the HTML.
     footnote  — optional extra line in the footer (above the standard disclaimer).
     theme     — optional (partial) theme dict {brand_name, logo_path, font, colours}
-                overriding the neutral default for the page shell (header rule,
+                overriding the Phronesis default for the page shell (header rule,
                 wordmark/logo, fonts, footer brand line). To also re-skin the chart
                 colours, call apply_theme(theme) before building the blocks.
     """
@@ -604,7 +605,7 @@ color:var(--grey);font-size:11px}}
 </header>
 {body}
 <footer>{foot_extra}
- {brand_name} — internal. Generated {asof}. A draft for review by a
+ {brand_name}. Generated {asof}. A draft for review by a
  qualified person, not advice.</footer>
 </div>{script}</body></html>"""
 

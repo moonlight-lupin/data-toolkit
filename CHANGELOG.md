@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.1 — 2026-07-14
+## 0.4.3 — 2026-07-14
 
 Fixes from QIP toolkit benchmark testing (T1–T3):
 
@@ -27,6 +27,33 @@ Fixes from QIP toolkit benchmark testing (T1–T3):
   "code unknown".
 - Engine self-tests extended to cover each case (the exact T1–T3 repro scenarios); `bin/data-lint`
   green.
+
+## 0.4.2 — 2026-07-14
+
+Pre-release polish:
+
+- Changelog `0.1.0` date filled in; removed unfinished “de-branded from internal toolkit”
+  wording from history.
+- Visualise docs and footer aligned with Phronesis Applied defaults (no more “slate + blue
+  neutral” / “— internal” on public artefacts).
+- `.gitignore` tightened (`.env`, self-test workbooks); `AGENTS.md` skill count corrected;
+  minimal `requirements.txt` added for public installers.
+- Added [`SECURITY.md`](SECURITY.md), [`CONTRIBUTING.md`](CONTRIBUTING.md), and a GitHub
+  Actions CI workflow (`bin/data-lint` + `tests/test_engine.py` + quickstart smoke on
+  Python 3.10–3.12).
+
+## 0.4.1 — 2026-07-14
+
+Open lander under **Phronesis Applied** (on top of 0.4.0):
+
+- **Apache-2.0 license** (`LICENSE` + `NOTICE`) — free to use, fork, and build on commercially.
+- **Phronesis Applied branding** — marketplace/plugin author and README footer point at
+  [phronesis-applied.com](https://www.phronesis-applied.com); visualise defaults use the
+  site mark (from the published favicon geometry) and teal/bronze/paper palette. Still
+  fully white-labelable via `theme`.
+- **10-minute path** — `examples/run_quickstart.py` builds a sample recon working paper and
+  branded dashboard; committed look-first samples at `examples/sample-reconciliation.xlsx`
+  and `examples/sample-dashboard.html`.
 
 ## 0.4.0 — 2026-07-14
 
@@ -155,6 +182,6 @@ Engine improvements (borrowing sharper cleaning primitives from the `data-cleane
   (per-column completeness A–F, type consistency, severity-tagged issues, weighted overall
   score) before and after cleaning; `data-tidy` gains a quality-report-only mode.
 
-## 0.1.0 — YYYY-MM-DD
+## 0.1.0 — 2026-06-16
 
-Initial release: extract, tidy, reconcile, visualise skills + shared local data engine (de-branded from internal toolkit).
+Initial release: extract, tidy, reconcile, visualise skills + shared local data engine.

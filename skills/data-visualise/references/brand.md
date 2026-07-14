@@ -1,26 +1,27 @@
 # Theming guide — colours, font, logo
 
-The Data Toolkit's visualise engine ships with a **clean, neutral default theme** and is
-**fully brandable**: a firm sets its own colours, font and logo without touching the code.
+The Data Toolkit's visualise engine ships with **Phronesis Applied** defaults (mark and
+palette from [phronesis-applied.com](https://www.phronesis-applied.com)) and is **fully
+white-labelable**: a firm sets its own colours, font and logo without touching the code.
 Everything lives in `scripts/viz.py` as `DEFAULT_THEME` (with `BRAND` / `FONT` as the active
 module-level state). Refer to those tokens, don't hardcode hexes in a caller.
 
-## The default (neutral) palette
+## The default (Phronesis Applied) palette
 
-A cool slate + blue palette with no firm branding. The colour-token *names* are historical
-(kept stable so the rendering code doesn't churn); the **values** are neutral.
+Colour-token *names* are historical (kept stable so the rendering code doesn't churn); the
+**values** match the Phronesis Applied site.
 
 | Token | Default hex | Use |
 |---|---|---|
-| `burgundy` | `#1F3A5F` | primary — header rule, wordmark, table heads, default accent (slate blue) |
-| `rose` | `#2E6FB0` | accent 1 — second series, secondary bars (blue) |
-| `pink` | `#5B9BD5` | accent 2 — third series (light blue) |
-| `pink_lt` | `#A9C7E8` | light tint |
-| `pink_vlt` | `#EAF1F8` | very light tint — table zebra striping |
-| `ink` | `#1A1C1F` | body text |
-| `grey` | `#5F6571` | muted text / labels |
-| `grey_lt` | `#E3E6EA` | hairlines / borders |
-| `bg` | `#F6F8FA` | page background (cool neutral) |
+| `burgundy` | `#163F3A` | primary — header rule, wordmark, table heads (site accent teal) |
+| `rose` | `#A9722F` | accent 1 — bronze |
+| `pink` | `#20574F` | accent 2 — soft teal |
+| `pink_lt` | `#D9B98A` | light bronze tint |
+| `pink_vlt` | `#F1ECE2` | very light tint — table zebra striping (paper-2) |
+| `ink` | `#1A1A17` | body text |
+| `grey` | `#55524A` | muted text / labels |
+| `grey_lt` | `#E4DDD0` | hairlines / borders |
+| `bg` | `#F7F4EE` | page background (paper) |
 | `white` | `#FFFFFF` | cards |
 | `green` | `#2E7D57` | RAG — good / done / on-track |
 | `amber` | `#B26B00` | RAG — warning / due / at-risk |
@@ -48,7 +49,7 @@ The default `FONT` is a clean geometric/neutral sans with safe fallbacks:
 
 `"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif"`
 
-No proprietary brand face is assumed. A firm sets its own via the theme's `font` key.
+A firm sets its own via the theme's `font` key.
 
 ## Logo
 
@@ -58,13 +59,22 @@ the logo as a data URI, so the file stays self-contained and offline — never a
 (that would break the offline / data-handling guarantee). Use a transparent-background PNG so
 it blends onto the page.
 
-> **`assets/logo-sample.png` is a replaceable placeholder.** The toolkit ships a neutral
-> sample mark so the header renders out of the box. A firm **swaps it for its own logo** —
-> either replace that file in place, or point `theme["logo_path"]` at its own PNG.
+Shipped assets:
+
+| File | What it is |
+|---|---|
+| `assets/logo-sample.png` | Default header lockup (Phronesis mark + wordmark) — what `DEFAULT_THEME` points at |
+| `assets/logo-phronesis.png` | Same lockup, named copy |
+| `assets/logo-phronesis-mark.png` | Square mark only |
+| `assets/logo-phronesis-mark.svg` | Source SVG of the mark (from the site favicon geometry) |
+
+> **White-label:** swap `assets/logo-sample.png` or point `theme["logo_path"]` at your own
+> transparent PNG. Replacing the file for client work does not grant rights to use the
+> Phronesis Applied name or mark in your own branding — see `NOTICE`.
 
 ## How a firm sets its own brand
 
-Pass a (partial) `theme` dict — any subset overrides the neutral default:
+Pass a (partial) `theme` dict — any subset overrides the Phronesis default:
 
 ```python
 my_theme = {
@@ -86,7 +96,7 @@ Two ways to apply it:
 - **Whole render (incl. chart colours):** call `apply_theme(my_theme)` **before** building the
   blocks, then build and call `dashboard(...)`. `apply_theme` rebinds the module-level
   `BRAND` / `FONT` / series palette so the charts pick up the brand too. `apply_theme(None)`
-  resets to the neutral default.
+  resets to the Phronesis default.
 
 ```python
 from viz import apply_theme, kpi_row, bar_chart, dashboard

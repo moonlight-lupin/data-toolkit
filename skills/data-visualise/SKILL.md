@@ -8,8 +8,8 @@ description: >-
   shareable visual summary of tasks, compliance, pipeline, finance or any tabular data.
   Composes KPI cards, bar / line / donut charts (inline SVG — no external JS/chart
   libraries, no CDN, no remote images; optional inline JS for sorting/filtering), tables with RAG conditional formatting, status pills, sections and
-  grids into a single HTML file. Ships with a clean, neutral default theme and is fully
-  brandable (colours, font, logo). Output is an internal draft for review, not advice;
+  grids into a single HTML file. Ships with Phronesis Applied defaults and is fully
+  brandable (colours, font, logo). Output is a draft for review, not advice;
   nothing is auto-distributed. NOT for PowerPoint decks or letters; for cleaning /
   extracting the underlying data first, see data-tidy / data-extract.
 ---
@@ -19,9 +19,9 @@ description: >-
 Build a **self-contained HTML dashboard** from tabular data — KPI cards, charts, RAG
 tables — in **one self-contained file** that opens in a browser and prints straight to PDF.
 
-It ships with a **clean, neutral default theme** (a slate + blue palette) and is **fully
-brandable**: a firm sets its own colours, font and logo without touching the code (see
-`references/brand.md`).
+It ships with **Phronesis Applied** defaults (mark + teal/bronze/paper palette) and is
+**fully brandable**: a firm sets its own colours, font and logo without touching the code
+(see `references/brand.md`).
 
 > **Self-contained & offline by design.** Pure HTML + CSS + **inline SVG** charts —
 > no JavaScript chart libraries, no CDN, no remote images. The file works with no
@@ -103,10 +103,10 @@ open_in_browser(path)
 See `references/blocks.md` for the full cookbook and `references/brand.md` for the theming
 guide. `examples/operations-dashboard.html` is a built sample.
 
-## Theming (neutral by default, fully brandable)
+## Theming (Phronesis defaults, fully brandable)
 
-The engine ships a clean, neutral default theme — it renders out of the box with no
-branding. To apply a firm's brand, pass a `theme` dict (any subset overrides the default):
+The engine ships Phronesis Applied defaults out of the box. To apply a firm's brand, pass
+a `theme` dict (any subset overrides the default):
 
 ```python
 from viz import apply_theme, dashboard
@@ -150,8 +150,8 @@ the common case: a clean, branded, printable dashboard that also opens as a live
 ## House style & boundary
 
 - British English; dates **DD MMM YYYY**; the `as_of` stamp should be real.
-- Output is an **internal draft for a qualified person to review** — the footer says
-  so on every page. It is **not advice** and is **never auto-distributed**.
+- Output is a **draft for a qualified person to review** — the footer says so on every
+  page. It is **not advice** and is **never auto-distributed**.
 - Don't invent numbers. Visualise what you're given (or what a store holds);
   if a figure is derived, make the derivation obvious.
 
@@ -160,13 +160,14 @@ the common case: a clean, branded, printable dashboard that also opens as a live
 - `scripts/viz.py` — the engine: default theme + `apply_theme`, building blocks,
   `dashboard()`, `rows_from_xlsx`, `open_in_browser`; `python viz.py [out.html]` builds an
   offline self-test dashboard (no data, no network).
-- `references/brand.md` — the theming guide: the neutral default palette/font/logo and how
-  a firm sets its own brand.
+- `references/brand.md` — the theming guide: Phronesis defaults and how a firm sets its own
+  brand.
 - `references/blocks.md` — the building-block cookbook with worked snippets.
-- `assets/logo-sample.png` — a **neutral sample logo (placeholder)**, base64-embedded into
-  the header so the artefact stays self-contained. A firm **swaps it for its own** (replace
-  the file or point `theme["logo_path"]` at its PNG). If absent, the header shows a text
-  wordmark of the brand name.
+- `assets/logo-sample.png` — **Phronesis Applied** header lockup by default (mark from
+  phronesis-applied.com), base64-embedded so the artefact stays self-contained. Firms
+  white-label by replacing the file or pointing `theme["logo_path"]` at their PNG; if
+  absent, the header shows a text wordmark. Also shipped: `logo-phronesis.png`,
+  `logo-phronesis-mark.png`, `logo-phronesis-mark.svg`.
 - `examples/operations-dashboard.html` — a built sample (the self-test output).
 
 ## Data handling

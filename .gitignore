@@ -5,11 +5,17 @@ __pycache__/
 .venv/
 venv/
 
+# Secrets / local env
+.env
+.env.*
+
 # Built plugin bundles
 *.plugin
 
 # Self-test / generated artifacts (skills write deliverables into the USER's folders, not the repo)
 *-selftest.html
+*_selftest*.xlsx
+_selftest_clean.xlsx
 /--self-test
 
 # OS cruft
