@@ -1103,7 +1103,7 @@ if __name__ == "__main__":
 
     # --- currency code_source: a separate Currency column is carried through even when the
     # amount is UNPARSEABLE ('pending') or blank — an unparseable amount costs the row its
-    # amount, never its currency (feedback: data-tidy T1, rows P-1012 / P-1027) ---
+    # amount, never its currency ---
     raw_cs = [["Amount", "Currency"], ["£1,234.50", "GBP"], ["pending", "GBP"], ["", "GBP"]]
     rec_cs = {"columns": [
         {"source": "Amount", "target": "Amount", "type": "currency",

@@ -2,7 +2,7 @@
 
 ## 0.4.3 — 2026-07-14
 
-Fixes from QIP toolkit benchmark testing (T1–T3):
+Bug fixes and an enhancement surfaced in toolkit testing:
 
 - **`data-reconcile` — amount_date no longer matches on amount alone (Blocker).** In
   `--mode amount_date` with **no resolvable date column** the date window (the mode's safety
@@ -25,8 +25,7 @@ Fixes from QIP toolkit benchmark testing (T1–T3):
   so a blank/`"pending"` amount keeps its currency (the flag costs the row its *amount*, not its
   *currency*), and a symbol-less amount whose code comes from that column is no longer flagged
   "code unknown".
-- Engine self-tests extended to cover each case (the exact T1–T3 repro scenarios); `bin/data-lint`
-  green.
+- Engine self-tests extended to cover each case; `bin/data-lint` green.
 
 ## 0.4.2 — 2026-07-14
 
