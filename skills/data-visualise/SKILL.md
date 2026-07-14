@@ -19,9 +19,9 @@ description: >-
 Build a **self-contained HTML dashboard** from tabular data — KPI cards, charts, RAG
 tables — in **one self-contained file** that opens in a browser and prints straight to PDF.
 
-It ships with **Phronesis Applied** defaults (mark + teal/bronze/paper palette) and is
-**fully brandable**: a firm sets its own colours, font and logo without touching the code
-(see `references/brand.md`).
+It ships with **Phronesis Applied** defaults (the mark, a teal / cool-paper palette and the
+Space Grotesk / Inter pairing) and is **fully brandable**: a firm sets its own colours, fonts
+and logo without touching the code (see `references/brand.md`).
 
 > **Self-contained & offline by design.** Pure HTML + CSS + **inline SVG** charts —
 > no JavaScript chart libraries, no CDN, no remote images. The file works with no

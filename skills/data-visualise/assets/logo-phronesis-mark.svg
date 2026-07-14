@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" role="img" aria-label="Phronesis Applied">
-  <rect width="40" height="40" rx="9" fill="#163f3a"/>
-  <path fill="#f7f4ee" d="M11 11 H29 V20 H20 V29 H11 Z"/>
-  <rect x="21" y="21" width="6.5" height="6.5" rx="1.1" fill="#a9722f"/>
+  <rect width="40" height="40" rx="8" fill="#14171a"/>
+  <path fill="#f1f3f2" d="M11 11 H29 V20 H20 V29 H11 Z"/>
+  <rect x="21" y="21" width="6.5" height="6.5" rx="1" fill="#4fb3a0"/>
 </svg>

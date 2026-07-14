@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.4.5 — 2026-07-15
+
+Brand refresh — `data-visualise` defaults track the revised Phronesis Applied identity
+([phronesis-applied.com](https://www.phronesis-applied.com)):
+
+- **Palette went cool; bronze is retired.** The warm cream/bronze scheme is replaced by the
+  site's teal / cool-paper scheme. Values taken from the site's CSS custom properties:
+  `rose` → `#4FB3A0` (bright teal, was bronze `#A9722F`), `ink` → `#14171A`, `grey` →
+  `#565C63`, `grey_lt` → `#D9DEDB`, `bg` → `#F1F3F2`, `pink_vlt` → `#E7EBE9`, plus a new
+  `grey_faint` (`#8C9298`). `burgundy` (`#163F3A`) and `pink` (`#20574F`) are unchanged.
+  Token *names* are unchanged, so existing white-label themes keep working.
+- **Type pairing.** New `font_heading` theme key — Space Grotesk headings over the Inter body,
+  as on the site, applied to `h1`, section `h2`, KPI values and the text wordmark. Dashboards
+  stay self-contained (no CDN), so the faces are a progressive enhancement that falls back
+  down the stack. A theme that sets only `font` gets it for headings too, so a white-label
+  brand never inherits Space Grotesk by accident.
+- **Mark recoloured** to the current identity (dark-ink tile, cool-paper glyph, bright-teal
+  square) across `logo-phronesis-mark.svg` and the lockup/mark PNGs.
+- Committed samples (`examples/sample-dashboard.html`, the visualise example dashboard)
+  regenerated on the new brand; content unchanged, styling only. `brand.md` documents the
+  palette against the site variables.
+
 ## 0.4.4 — 2026-07-15
 
 Honest data-handling claims (correctness fix to the docs):
