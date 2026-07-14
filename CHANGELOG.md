@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.2 — 2026-07-14
+
+Pre-release polish:
+
+- Changelog `0.1.0` date filled in; removed unfinished “de-branded from internal toolkit”
+  wording from history.
+- Visualise docs and footer aligned with Phronesis Applied defaults (no more “slate + blue
+  neutral” / “— internal” on public artefacts).
+- `.gitignore` tightened (`.env`, self-test workbooks); `AGENTS.md` skill count corrected;
+  minimal `requirements.txt` added for public installers.
+- Added [`SECURITY.md`](SECURITY.md), [`CONTRIBUTING.md`](CONTRIBUTING.md), and a GitHub
+  Actions CI workflow (`bin/data-lint` + `tests/test_engine.py` + quickstart smoke on
+  Python 3.10–3.12).
+
 ## 0.4.1 — 2026-07-14
 
 Open lander under **Phronesis Applied** (on top of 0.4.0):
@@ -140,6 +154,6 @@ Engine improvements (borrowing sharper cleaning primitives from the `data-cleane
   (per-column completeness A–F, type consistency, severity-tagged issues, weighted overall
   score) before and after cleaning; `data-tidy` gains a quality-report-only mode.
 
-## 0.1.0 — YYYY-MM-DD
+## 0.1.0 — 2026-06-16
 
-Initial release: extract, tidy, reconcile, visualise skills + shared local data engine (de-branded from internal toolkit).
+Initial release: extract, tidy, reconcile, visualise skills + shared local data engine.

@@ -132,7 +132,7 @@ app-like dashboard?").
 
 ## Theming — your own colours / logo
 
-Both shown above use the neutral default theme. To brand the output, pass a `theme` dict
+Both shown above use the Phronesis Applied default theme. To brand the output, pass a `theme` dict
 (re-skins the page shell) and/or call `apply_theme(theme)` before building blocks (also
 re-skins chart colours). See `references/brand.md` for the full theming guide.
 
