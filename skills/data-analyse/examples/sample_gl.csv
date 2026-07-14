@@ -1,0 +1,19 @@
+Date,Account,Description,Journal Source,Posted By,Debit,Credit
+05/01/2026,Bank,Customer receipt,AR,system,"12,000.00",
+05/01/2026,Accounts Receivable,Customer receipt,AR,system,,"12,000.00"
+10/01/2026,Rent Expense,Office rent Jan,AP,system,"8,000.00",
+10/01/2026,Bank,Office rent Jan,AP,system,,"8,000.00"
+15/01/2026,Purchases,Stock purchase,AP,system,"15,000.00",
+15/01/2026,Accounts Payable,Stock purchase,AP,system,,"15,000.00"
+31/01/2026,Accruals,Month-end accrual,Manual,j.tan,"50,000.00",
+31/01/2026,Expenses,Month-end accrual,Manual,j.tan,,"50,000.00"
+31/01/2026,Depreciation,Monthly depreciation,Manual,j.tan,"3,000.00",
+31/01/2026,Accumulated Depreciation,Monthly depreciation,Manual,j.tan,,"3,000.00"
+01/02/2026,Expenses,Reverse Jan accrual,Manual,j.tan,"50,000.00",
+01/02/2026,Accruals,Reverse Jan accrual,Manual,j.tan,,"50,000.00"
+12/02/2026,Bank,Customer receipt,AR,system,"9,500.00",
+12/02/2026,Accounts Receivable,Customer receipt,AR,system,,"9,500.00"
+20/02/2026,Rent Expense,Office rent Feb,AP,system,"8,000.00",
+20/02/2026,Bank,Office rent Feb,AP,system,,"8,000.00"
+28/02/2026,Salaries,Payroll Feb,Manual,j.tan,"22,000.00",
+28/02/2026,Bank,Payroll Feb,Manual,j.tan,,"22,000.00"

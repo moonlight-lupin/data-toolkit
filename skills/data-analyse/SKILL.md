@@ -66,9 +66,16 @@ currency code, never sum it as-is (100 USD ≠ 100 SGD). Split by currency or as
 `analyse.suggest_playbook(header, rows)` maps columns to roles (dates, amounts,
 categories, ids) and suggests analyses. Combine that with the intent and the data-type
 playbook (`references/playbooks.md` — transactions, receivables/ageing, pipeline,
-survey/categorical, task/ops list, time series, generic) into a short plan:
+survey/categorical, task/ops list, general ledger, inventory, spend/AP, time series,
+cross-domain, generic) into a short plan:
 *"I'll look at: monthly trend of Amount, breakdown by Customer with concentration,
 outliers, and ageing from Due date as of 12 Jul 2026 — sound right?"* Show it; confirm.
+
+**Two datasets provided?** If the user hands over *two* files that share a dimension
+(sales vs competitor prices, actual vs budget), that's the **cross-domain** playbook —
+`join_on` to relate them on the shared key (report coverage), then `compare_series` to read
+position and co-movement. It **relates**, it does not match line-by-line — reconciling two
+sets to find breaks is **data-reconcile**. Nail the join key and grain before computing.
 
 ### 4 — Compute (deterministic, engine only)
 All metrics come from `scripts/analyse.py` — exact `Decimal`, dayfirst dates, reusing the
@@ -81,6 +88,8 @@ shared parsers:
 | `breakdown(header, rows, by, value=)` | groups sorted largest-first with shares, top-1/top-3 share, groups-to-80% |
 | `period_series(header, rows, date_col, value=, grain=)` | month/quarter/year totals with gap periods **filled as zero**, deltas, % change, YoY |
 | `ageing(header, rows, date_col, as_of=, value=)` | 0–30/31–60/61–90/90+ buckets (configurable); future & unparsed bucketed visibly |
+| `join_on(l_header, l_rows, r_header, r_rows, on=)` | **two-dataset** join on a shared key (case/space-folded); returns the joined table + a matched/left-only/right-only coverage report |
+| `compare_series(a, b, a_label=, b_label=)` | relate two ordered series (gap / ratio / % diff per key, Pearson correlation, ±1 lead/lag) — for cross-domain & actual-vs-budget |
 | `currency_mix(col)` / `numbers(col)` | currency codes present / parsed Decimals + skipped count |
 | `fmt` / `pct` / `render_md(...)` | house-style formatting + markdown tables for the brief |
 | `write_metrics_xlsx(sections, path)` | optional metrics workbook (one sheet per analysis) |

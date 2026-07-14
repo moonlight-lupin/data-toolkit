@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.4.0 — 2026-07-14
+
+`data-analyse` — four new playbooks and a two-dataset capability:
+
+- **Cross-domain / relational** — relate **two** datasets on a shared key (sales vs competitor
+  prices, actual vs budget, spend vs revenue). New engine primitives `join_on` (key-join with a
+  matched / left-only / right-only **coverage** report) and `compare_series` (gap / ratio / %
+  diff per key, Pearson correlation, ±1 lead/lag). Discipline: association, never cause — the
+  brief names the confounders. Distinct from `data-reconcile` (which matches to find breaks).
+- **General ledger / trial balance** — net movement & turnover by account, unusual postings
+  (large/round/period-end), posting concentration by user/source, debit=credit integrity check.
+- **Inventory / stock** — ABC concentration (80/20 by value), slow-mover ageing (write-down
+  risk), turnover, negative/zero-stock flags.
+- **Spend / AP analysis** — vendor/category concentration, duplicate-payment risk flags,
+  maverick (off-contract) spend, threshold-splitting.
+- Five synthetic example datasets (incl. the sales/competitor pair) under
+  `skills/data-analyse/examples/`, each seeded with the findings its playbook surfaces and
+  verified end-to-end against the engine.
+
 ## 0.3.0 — 2026-07-13
 
 New skill, generic data-handling, and toolkit tooling:
