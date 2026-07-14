@@ -47,6 +47,14 @@ ledger / bank statement / fund administrator). Pick the **preset** if it's a rec
   ±5 days). A small in-window gap is a **timing difference** (likely in-transit), not a true
   exception. An equal-amount pair *outside* the window is **not** reconciled — it's flagged
   `ambiguous_match` for you to confirm, so transactions weeks apart aren't passed off as timing.
+  - **Always pass `--date <col>` in this mode** — the date window is the safety rail. With no
+    resolvable date column the window can't apply, so equal-amount pairs are held as
+    `ambiguous_match` ("matched on amount alone — confirm") and the run **warns** rather than
+    matching on amount alone.
+  - A **second pass** over the one-sided residue recovers `duplicate`, `sign_flip` and
+    `amount_mismatch` (e.g. a double-entered cashbook line, a debit booked as a credit, a
+    net-vs-gross **GST** gap) that key mode gets from the key — so they're classified, not left as
+    bare `missing_in_A/B`. Conservative and confirm-first (see `references/triage-taxonomy.md`).
 
 Amounts are parsed as exact **`Decimal`** — ties don't break on binary-float dust.
 **Currencies are compared**, so 100 USD never matches 100 SGD: name a currency column with

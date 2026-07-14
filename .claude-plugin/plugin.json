@@ -1,6 +1,6 @@
 {
   "name": "data-toolkit",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Extract, tidy, reconcile, analyse and visualise messy data into clean, validated, audit-ready tables and insight briefs — fully local, nothing uploaded.",
   "skills": [
     "./skills/"

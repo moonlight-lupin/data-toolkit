@@ -20,9 +20,14 @@
 ```
 - `labels` — every phrase that might precede the value; first match wins. Add the
   variations you actually see (e.g. "Amount" as well as "Commitment").
-- `type` — `text` / `number` / `currency` (+ expected `currency` code) / `date` / `bool`,
-  parsed by the shared engine. Output house format: dates DD MMM YYYY, amounts as exact
-  `Decimal`, currency amount + code. A bare `$` is ambiguous (give the expected `currency`).
+- `type` — `text` / `number` / `currency` / `date` / `bool`, parsed by the shared engine.
+  Output house format: dates DD MMM YYYY, amounts as exact `Decimal`. A bare `$` is ambiguous
+  (give the expected `currency`).
+- **currency fields** — the amount and its ISO code are parsed separately. To keep the code, set
+  `"code_target": "<name>"` and it lands in its own key on the record (and its own column via
+  `field_columns` — see below); without `code_target` only the amount is returned. Use
+  `code_target` for **mixed-currency batches** (GBP/SGD/USD in one run); use an expected
+  `"currency"` for single-currency docs (also resolves a bare `$`). The two combine.
 - Matching handles, on the same line, `Label: value`, `Label<tab>value`, `Label   value`
   (2+ spaces) and `Label ..... value` (dotted leader); **and the next-line layout** — a label
   alone on its line with the value on the following line (common on confirmations /
@@ -35,8 +40,10 @@
 
 ### Batch (many documents, same shape)
 Run `extract_fields` per document, collect the records, then
-`fields_to_table(records, field_names)` → one `(header, rows)` → `dataclean.write_xlsx`.
-`render_fields_report(records, flags_list)` lists every flag across the batch.
+`fields_to_table(records, field_columns(FIELDS))` → one `(header, rows)` → `dataclean.write_xlsx`.
+Use `field_columns(FIELDS)` (not a bare `[f["name"] …]`) so each currency field's `code_target`
+column is included right after its amount. `render_fields_report(records, flags_list)` lists
+every flag across the batch.
 
 ## Table mode
 - `list_tables(path)` → candidates `{page, index, engine, rows, cols, preview}` (`.docx` via
