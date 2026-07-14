@@ -309,6 +309,109 @@ def ageing(header, rows, date_col, as_of, buckets=(30, 60, 90), value=None, dayf
 
 
 # --------------------------------------------------------------------------- #
+# Cross-domain — relate TWO datasets on a shared key (join + compare)
+# --------------------------------------------------------------------------- #
+def _join_key(v):
+    """Normalise a key cell for matching: numbers/dates by value, text case/space-folded.
+    So '  Widget A ' matches 'widget a', and 1,000 matches '1000'."""
+    n, _ = parse_number(v)
+    if n is not None and _s(v).replace(",", "").replace(".", "").lstrip("-").isdigit():
+        return ("n", n)
+    d, _ = parse_date(v)
+    if d is not None:
+        return ("d", d.isoformat())
+    return ("t", " ".join(_s(v).lower().split()))
+
+
+def join_on(l_header, l_rows, r_header, r_rows, on, how="inner"):
+    """Join two tables on a shared key (`on` = one column name in both, or a list for a
+    composite key). Text keys match case/whitespace-insensitively. Right-side non-key columns
+    are carried across, prefixed `r_` on a name clash. Returns (header, rows, report) where
+    report counts matched / left-only / right-only / duplicate-key rows — cross-set coverage
+    is a finding, never silently dropped. how='inner' | 'left'."""
+    keys = [on] if isinstance(on, str) else list(on)
+    li = [col_index(l_header, k) for k in keys]
+    ri = [col_index(r_header, k) for k in keys]
+
+    def keyof(row, idx):
+        return tuple(_join_key(row[j] if j < len(row) else "") for j in idx)
+
+    r_index, r_dupe = {}, 0
+    for row in r_rows:
+        kk = keyof(row, ri)
+        if kk in r_index:
+            r_dupe += 1
+        else:
+            r_index[kk] = row
+    r_carry = [j for j in range(len(r_header)) if j not in ri]      # right cols except the key(s)
+    lset = {_s(h).lower() for h in l_header}
+    out_header = list(l_header) + [
+        (f"r_{r_header[j]}" if _s(r_header[j]).lower() in lset else r_header[j]) for j in r_carry]
+
+    out_rows, matched, left_only, used = [], 0, 0, set()
+    for row in l_rows:
+        kk = keyof(row, li)
+        rr = r_index.get(kk)
+        if rr is not None:
+            matched += 1
+            used.add(kk)
+            out_rows.append(list(row) + [rr[j] if j < len(rr) else "" for j in r_carry])
+        else:
+            left_only += 1
+            if how == "left":
+                out_rows.append(list(row) + ["" for _ in r_carry])
+    right_only = sum(1 for kk in r_index if kk not in used)
+    report = {"matched": matched, "left_only": left_only, "right_only": right_only,
+              "right_dup_keys": r_dupe, "on": keys, "how": how}
+    return out_header, out_rows, report
+
+
+def _pearson(xs, ys):
+    """Pearson r on two equal-length numeric sequences. float (a coefficient, not money);
+    None if < 3 points or a side is constant."""
+    pts = [(float(a), float(b)) for a, b in zip(xs, ys) if a is not None and b is not None]
+    n = len(pts)
+    if n < 3:
+        return None
+    mx = sum(p[0] for p in pts) / n
+    my = sum(p[1] for p in pts) / n
+    sxy = sum((p[0] - mx) * (p[1] - my) for p in pts)
+    sxx = sum((p[0] - mx) ** 2 for p in pts)
+    syy = sum((p[1] - my) ** 2 for p in pts)
+    if sxx == 0 or syy == 0:
+        return None
+    return round(sxy / (sxx * syy) ** 0.5, 3)
+
+
+def compare_series(a, b, a_label="A", b_label="B"):
+    """Align two ORDERED series of (key, value) — e.g. two `period_series`, or our-price vs
+    competitor-price by week — and read the relationship. Per shared key: gap (a−b), ratio,
+    % diff. Overall: Pearson correlation, plus a ±1 lead/lag scan (does b at t−1 track a at t?).
+    Correlation is association, NOT cause — the brief must name confounders. Values stay exact;
+    only the coefficient is float."""
+    da = OrderedDict((k, v) for k, v in a)
+    db = dict(b)
+    keys = [k for k in da if k in db]
+    points = []
+    for k in keys:
+        av, bv = da[k], db[k]
+        points.append({"key": k, a_label: av, b_label: bv, "gap": av - bv,
+                       "ratio": (av / bv) if bv != 0 else None,
+                       "pct_diff": ((av - bv) / bv) if bv != 0 else None})
+    xs = [p[a_label] for p in points]
+    ys = [p[b_label] for p in points]
+    corr = _pearson(xs, ys)
+    lead_lag = {"same": corr,
+                "b_leads_1": _pearson(xs[1:], ys[:-1]),     # b at t-1 vs a at t
+                "a_leads_1": _pearson(xs[:-1], ys[1:])}
+    best = max(((k, v) for k, v in lead_lag.items() if v is not None),
+               key=lambda kv: abs(kv[1]), default=(None, None))
+    return {"a_label": a_label, "b_label": b_label, "points": points, "n": len(points),
+            "a_only": [k for k in da if k not in db], "b_only": [k for k in db if k not in da],
+            "correlation": corr, "lead_lag": lead_lag, "best_alignment": best[0]}
+
+
+# --------------------------------------------------------------------------- #
 # Shape detection (advisory — suggests the playbook, never decides silently)
 # --------------------------------------------------------------------------- #
 def suggest_playbook(header, rows):
@@ -444,6 +547,33 @@ def _self_test():
 
     mix = currency_mix(["S$100", "SGD 50", "S$ 20"])
     assert mix == {"SGD"}, mix
+
+    # join_on — cross-domain: our weekly sales vs scraped competitor prices on week x product
+    lh = ["Week", "Product", "Units", "Our price"]
+    lr = [["2026-W01", "Widget A", "100", "10.00"],
+          ["2026-W01", "Widget B", "40", "20.00"],
+          ["2026-W02", "widget a", "90", "10.50"],           # case-fold key match
+          ["2026-W03", "Widget A", "70", "11.00"]]           # no competitor row → left_only
+    rh = ["Week", "Product", "Comp price"]
+    rr = [["2026-W01", "Widget A", "9.50"],
+          ["2026-W01", "Widget B", "21.00"],
+          ["2026-W02", "Widget A", "9.80"],
+          ["2026-W04", "Widget A", "9.90"]]                  # no sales row → right_only
+    jh, jrows, rep = join_on(lh, lr, rh, rr, on=["Week", "Product"])
+    assert rep["matched"] == 3 and rep["left_only"] == 1 and rep["right_only"] == 1, rep
+    assert "Comp price" in jh
+    # our price - competitor price on the matched rows (exact Decimal)
+    gaps = [parse_number(column(jh, jrows, "Our price")[i])[0]
+            - parse_number(column(jh, jrows, "Comp price")[i])[0] for i in range(len(jrows))]
+    assert gaps == [Decimal("0.50"), Decimal("-1.00"), Decimal("0.70")], gaps
+
+    # compare_series — position + correlation + lead/lag
+    ours = [("W1", Decimal("10")), ("W2", Decimal("11")), ("W3", Decimal("12")), ("W4", Decimal("13"))]
+    comp = [("W1", Decimal("9")), ("W2", Decimal("10")), ("W3", Decimal("11")), ("W4", Decimal("12"))]
+    cmp = compare_series(ours, comp, "Ours", "Comp")
+    assert cmp["n"] == 4 and cmp["points"][0]["gap"] == Decimal("1")
+    assert cmp["correlation"] == 1.0, cmp["correlation"]      # perfectly co-moving
+    assert cmp["points"][1]["pct_diff"] == Decimal("11") / Decimal("10") - 1
 
     print("analyse.py self-test OK")
 
