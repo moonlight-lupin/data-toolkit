@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<title>Monthly Revenue &amp; Actions Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --navy: #10243e;
+    --navy-2: #1c3a5e;
+    --accent: #2f6fb0;
+    --accent-2: #7fb2df;
+    --grey-bg: #f4f6f8;
+    --grey-border: #d9dfe4;
+    --text-main: #1a2530;
+    --text-muted: #5b6b78;
+    --red: #b3261e;
+    --red-bg: #fbe9e7;
+    --amber: #8a5a00;
+    --amber-bg: #fdf1d6;
+    --green: #1e6b3a;
+    --green-bg: #e3f3e6;
+    --grey: #5b6b78;
+    --grey-bg2: #ececec;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #ffffff;
+    color: var(--text-main);
+    font-family: "Segoe UI", Arial, Helvetica, sans-serif;
+    font-size: 14px;
+  }
+
+  .page {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 28px 32px 20px 32px;
+  }
+
+  header.masthead {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    border-bottom: 3px solid var(--navy);
+    padding-bottom: 12px;
+    margin-bottom: 20px;
+  }
+
+  header.masthead h1 {
+    margin: 0 0 4px 0;
+    font-size: 22px;
+    color: var(--navy);
+    font-weight: 700;
+  }
+
+  header.masthead .subtitle {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+
+  header.masthead .stamp {
+    text-align: right;
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  header.masthead .stamp strong {
+    display: block;
+    color: var(--navy);
+    font-size: 13px;
+  }
+
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-bottom: 22px;
+  }
+
+  .kpi-card {
+    background: var(--grey-bg);
+    border: 1px solid var(--grey-border);
+    border-left: 4px solid var(--accent);
+    border-radius: 6px;
+    padding: 12px 14px;
+  }
+
+  .kpi-card .kpi-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+
+  .kpi-card .kpi-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--navy);
+    line-height: 1.15;
+  }
+
+  .kpi-card .kpi-sub {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    margin-top: 3px;
+  }
+
+  .kpi-card.mom.positive .kpi-value { color: var(--green); }
+  .kpi-card.mom.negative .kpi-value { color: var(--red); }
+  .kpi-card.overdue .kpi-value { color: var(--red); }
+
+  .chart-row {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 18px;
+    margin-bottom: 22px;
+  }
+
+  .panel {
+    border: 1px solid var(--grey-border);
+    border-radius: 6px;
+    padding: 14px 16px 8px 16px;
+  }
+
+  .panel h2 {
+    margin: 0 0 8px 0;
+    font-size: 14.5px;
+    color: var(--navy);
+    font-weight: 700;
+  }
+
+  .chart-svg {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
+
+  .gridline { stroke: var(--grey-border); stroke-width: 1; }
+  .axis-label { font-size: 10.5px; fill: var(--text-muted); font-family: "Segoe UI", Arial, sans-serif; }
+  .area-fill { fill: var(--accent-2); fill-opacity: 0.25; stroke: none; }
+  .line-stroke { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+  .dot { fill: var(--accent); stroke: #ffffff; stroke-width: 1.2; }
+  .dot-best { fill: var(--navy); }
+
+  .cat-label { font-size: 12px; fill: var(--text-main); font-family: "Segoe UI", Arial, sans-serif; }
+  .cat-value { font-size: 11px; fill: var(--text-muted); font-family: "Segoe UI", Arial, sans-serif; }
+  .cat-bar { fill: var(--accent); }
+
+  table.actions {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  table.actions caption {
+    text-align: left;
+    caption-side: top;
+  }
+
+  table.actions th {
+    text-align: left;
+    background: var(--navy);
+    color: #ffffff;
+    padding: 8px 10px;
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  table.actions td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--grey-border);
+  }
+
+  table.actions td.num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  table.actions tbody tr:nth-child(even) {
+    background: #fafbfc;
+  }
+
+  .status-pill {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 11.5px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .status-overdue { background: var(--red-bg); color: var(--red); }
+  .status-progress { background: var(--amber-bg); color: var(--amber); }
+  .status-done { background: var(--green-bg); color: var(--green); }
+  .status-notstarted { background: var(--grey-bg2); color: var(--grey); }
+
+  .legend {
+    display: flex;
+    gap: 16px;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    margin: 8px 0 4px 0;
+    flex-wrap: wrap;
+  }
+
+  .legend .swatch {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+
+  footer.draft-footer {
+    margin-top: 24px;
+    padding-top: 10px;
+    border-top: 1px solid var(--grey-border);
+    font-size: 11.5px;
+    color: var(--text-muted);
+    display: flex;
+    justify-content: space-between;
+  }
+
+  @media print {
+    body { font-size: 12px; }
+    .page { padding: 10px 14px; max-width: 100%; }
+    .kpi-row { page-break-inside: avoid; }
+    .chart-row { page-break-inside: avoid; }
+    table.actions { page-break-inside: avoid; }
+    a { text-decoration: none; color: inherit; }
+  }
+
+  @page {
+    size: A4 landscape;
+    margin: 12mm;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead">
+    <div>
+      <h1>Monthly Revenue &amp; Actions Dashboard</h1>
+      <p class="subtitle">Managing partner monthly review</p>
+    </div>
+    <div class="stamp">
+      <strong>As of: 14 Jul 2026</strong>
+      Figures in GBP (£)
+    </div>
+  </header>
+
+  <section class="kpi-row">
+    <div class="kpi-card">
+      <div class="kpi-label">Total revenue (12 months)</div>
+      <div class="kpi-value">£1,146,900</div>
+      <div class="kpi-sub">Jul 2025 &ndash; Jun 2026</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Best month</div>
+      <div class="kpi-value">£112,600</div>
+      <div class="kpi-sub">Jun 2026</div>
+    </div>
+    <div class="kpi-card mom positive">
+      <div class="kpi-label">Latest month-on-month change</div>
+      <div class="kpi-value">+4.0%</div>
+      <div class="kpi-sub">Jun 2026 vs May 2026</div>
+    </div>
+    <div class="kpi-card overdue">
+      <div class="kpi-label">Overdue actions</div>
+      <div class="kpi-value">2</div>
+      <div class="kpi-sub">of 6 tracked actions</div>
+    </div>
+  </section>
+
+  <section class="chart-row">
+    <div class="panel">
+      <h2>Monthly revenue trend</h2>
+      <svg viewBox="0 0 760 300" class="chart-svg" role="img" aria-label="Monthly revenue trend chart">
+    <line x1="60" y1="260.0" x2="740" y2="260.0" class="gridline"/><text x="52" y="264.0" class="axis-label" text-anchor="end">£0k</text>
+    <line x1="60" y1="212.0" x2="740" y2="212.0" class="gridline"/><text x="52" y="216.0" class="axis-label" text-anchor="end">£24k</text>
+    <line x1="60" y1="164.0" x2="740" y2="164.0" class="gridline"/><text x="52" y="168.0" class="axis-label" text-anchor="end">£48k</text>
+    <line x1="60" y1="116.0" x2="740" y2="116.0" class="gridline"/><text x="52" y="120.0" class="axis-label" text-anchor="end">£72k</text>
+    <line x1="60" y1="68.0" x2="740" y2="68.0" class="gridline"/><text x="52" y="72.0" class="axis-label" text-anchor="end">£96k</text>
+    <line x1="60" y1="20.0" x2="740" y2="20.0" class="gridline"/><text x="52" y="24.0" class="axis-label" text-anchor="end">£120k</text>
+    <path d="M 60.0,91.6 L 121.8,82.2 L 183.6,77.2 L 245.5,85.4 L 307.3,72.4 L 369.1,101.0 L 430.9,67.6 L 492.7,63.8 L 554.5,50.6 L 616.4,56.2 L 678.2,43.4 L 740.0,34.8 L 740.0,260.0 L 60.0,260.0 Z" class="area-fill"/>
+    <path d="M 60.0,91.6 L 121.8,82.2 L 183.6,77.2 L 245.5,85.4 L 307.3,72.4 L 369.1,101.0 L 430.9,67.6 L 492.7,63.8 L 554.5,50.6 L 616.4,56.2 L 678.2,43.4 L 740.0,34.8" class="line-stroke"/>
+    <circle cx="60.0" cy="91.6" r="3" class="dot"><title>Jul 2025: £84,200</title></circle>
+    <circle cx="121.8" cy="82.2" r="3" class="dot"><title>Aug 2025: £88,900</title></circle>
+    <circle cx="183.6" cy="77.2" r="3" class="dot"><title>Sep 2025: £91,400</title></circle>
+    <circle cx="245.5" cy="85.4" r="3" class="dot"><title>Oct 2025: £87,300</title></circle>
+    <circle cx="307.3" cy="72.4" r="3" class="dot"><title>Nov 2025: £93,800</title></circle>
+    <circle cx="369.1" cy="101.0" r="3" class="dot"><title>Dec 2025: £79,500</title></circle>
+    <circle cx="430.9" cy="67.6" r="3" class="dot"><title>Jan 2026: £96,200</title></circle>
+    <circle cx="492.7" cy="63.8" r="3" class="dot"><title>Feb 2026: £98,100</title></circle>
+    <circle cx="554.5" cy="50.6" r="3" class="dot"><title>Mar 2026: £104,700</title></circle>
+    <circle cx="616.4" cy="56.2" r="3" class="dot"><title>Apr 2026: £101,900</title></circle>
+    <circle cx="678.2" cy="43.4" r="3" class="dot"><title>May 2026: £108,300</title></circle>
+    <circle cx="740.0" cy="34.8" r="4.5" class="dot dot-best"><title>Jun 2026: £112,600</title></circle>
+    <text x="60.0" y="278" class="axis-label" text-anchor="middle">Jul 25</text>
+    <text x="121.8" y="278" class="axis-label" text-anchor="middle">Aug 25</text>
+    <text x="183.6" y="278" class="axis-label" text-anchor="middle">Sep 25</text>
+    <text x="245.5" y="278" class="axis-label" text-anchor="middle">Oct 25</text>
+    <text x="307.3" y="278" class="axis-label" text-anchor="middle">Nov 25</text>
+    <text x="369.1" y="278" class="axis-label" text-anchor="middle">Dec 25</text>
+    <text x="430.9" y="278" class="axis-label" text-anchor="middle">Jan 26</text>
+    <text x="492.7" y="278" class="axis-label" text-anchor="middle">Feb 26</text>
+    <text x="554.5" y="278" class="axis-label" text-anchor="middle">Mar 26</text>
+    <text x="616.4" y="278" class="axis-label" text-anchor="middle">Apr 26</text>
+    <text x="678.2" y="278" class="axis-label" text-anchor="middle">May 26</text>
+    <text x="740.0" y="278" class="axis-label" text-anchor="middle">Jun 26</text>
+  </svg>
+    </div>
+    <div class="panel">
+      <h2>Revenue by category</h2>
+      <svg viewBox="0 0 760 260" class="chart-svg" role="img" aria-label="Revenue by category chart">
+    <text x="120" y="38.0" class="cat-label" text-anchor="end">Advisory</text><rect x="130" y="19.6" width="540.0" height="28.8" rx="3" class="cat-bar"><title>Advisory: £412,300 (35.9%)</title></rect><text x="678.0" y="38.0" class="cat-value">£412,300 (36%)</text>
+    <text x="120" y="86.0" class="cat-label" text-anchor="end">Subscriptions</text><rect x="130" y="67.6" width="508.3" height="28.8" rx="3" class="cat-bar"><title>Subscriptions: £388,100 (33.8%)</title></rect><text x="646.3" y="86.0" class="cat-value">£388,100 (34%)</text>
+    <text x="120" y="134.0" class="cat-label" text-anchor="end">Projects</text><rect x="130" y="115.6" width="263.8" height="28.8" rx="3" class="cat-bar"><title>Projects: £201,400 (17.6%)</title></rect><text x="401.8" y="134.0" class="cat-value">£201,400 (18%)</text>
+    <text x="120" y="182.0" class="cat-label" text-anchor="end">Training</text><rect x="130" y="163.6" width="111.2" height="28.8" rx="3" class="cat-bar"><title>Training: £84,900 (7.4%)</title></rect><text x="249.2" y="182.0" class="cat-value">£84,900 (7%)</text>
+    <text x="120" y="230.0" class="cat-label" text-anchor="end">Other</text><rect x="130" y="211.6" width="78.8" height="28.8" rx="3" class="cat-bar"><title>Other: £60,200 (5.2%)</title></rect><text x="216.8" y="230.0" class="cat-value">£60,200 (5%)</text>
+  </svg>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Actions tracker</h2>
+    <div class="legend">
+      <span><span class="swatch" style="background:var(--red)"></span>Overdue</span>
+      <span><span class="swatch" style="background:var(--amber)"></span>In progress</span>
+      <span><span class="swatch" style="background:var(--green)"></span>Done</span>
+      <span><span class="swatch" style="background:var(--grey)"></span>Not started</span>
+    </div>
+    <table class="actions">
+      <thead>
+        <tr>
+          <th>Action</th>
+          <th>Owner</th>
+          <th>Due date</th>
+          <th>Status</th>
+          <th>Days overdue</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>Renew PI insurance</td><td>J Tan</td><td>05 Jul 2026</td><td><span class="status-pill status-overdue">Overdue</span></td><td class="num">9</td></tr>
+        <tr><td>Q2 VAT return</td><td>M Ross</td><td>31 Jul 2026</td><td><span class="status-pill status-progress">In progress</span></td><td class="num">-</td></tr>
+        <tr><td>Client survey</td><td>A Rahim</td><td>15 Aug 2026</td><td><span class="status-pill status-notstarted">Not started</span></td><td class="num">-</td></tr>
+        <tr><td>Archive FY25 files</td><td>J Tan</td><td>30 Jun 2026</td><td><span class="status-pill status-overdue">Overdue</span></td><td class="num">14</td></tr>
+        <tr><td>Update fee schedule</td><td>M Ross</td><td>20 Jul 2026</td><td><span class="status-pill status-progress">In progress</span></td><td class="num">-</td></tr>
+        <tr><td>ISO audit prep</td><td>A Rahim</td><td>10 Jul 2026</td><td><span class="status-pill status-done">Done</span></td><td class="num">-</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <footer class="draft-footer">
+    <span>Draft for review &mdash; prepared for the managing partner monthly review. Figures derived from t5_metrics.xlsx; please verify before external use or reliance.</span>
+    <span>As of 14 Jul 2026</span>
+  </footer>
+
+</div>
+</body>
+</html>

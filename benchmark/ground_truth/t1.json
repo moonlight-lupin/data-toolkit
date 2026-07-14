@@ -1,0 +1,35 @@
+{
+  "clean_rows_expected": 38,
+  "duplicates_planted": 2,
+  "total_row_planted": 1,
+  "unparseable_amounts": [
+    "P-1012 pending",
+    "P-1027 blank"
+  ],
+  "sum_GBP": "115173.00",
+  "sum_USD": "5803.75",
+  "usd_rows": [
+    "P-1006",
+    "P-1031"
+  ],
+  "embedded_currency_rows": [
+    "P-1008",
+    "P-1023"
+  ],
+  "country_variants": {
+    "UK": [
+      "UK",
+      "U.K.",
+      "United Kingdom"
+    ],
+    "USA": [
+      "USA",
+      "U.S.A."
+    ],
+    "Singapore": [
+      "Singapore",
+      "SINGAPORE"
+    ]
+  },
+  "junk_header_rows": 3
+}

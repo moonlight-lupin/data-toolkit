@@ -1,0 +1,7 @@
+# Regenerable large T6 scaling fixtures — recreate with scripts/make_fixtures_t6.py
+# (omitted from the repo for size; see REPORT.md §6 and README.md).
+fixtures/t6l_*
+fixtures/t6m_*
+
+# T6 scaling-run workbooks are not committed (only their metrics, in run_metrics.csv).
+runs/T6*/

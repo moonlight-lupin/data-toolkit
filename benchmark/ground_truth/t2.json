@@ -1,0 +1,47 @@
+{
+  "docs": [
+    {
+      "Investor": "Meridian Trust Pte Ltd",
+      "Fund": "Harbourline Student Living Fund II",
+      "Commitment": "GBP 1,500,000",
+      "Close Date": "30 Jun 2026",
+      "Reference": "SC-2026-001"
+    },
+    {
+      "Investor": "Calloway Family Office",
+      "Fund": "Harbourline Student Living Fund II",
+      "Commitment": "GBP 2,250,000",
+      "Close Date": "30 Jun 2026",
+      "Reference": "SC-2026-002"
+    },
+    {
+      "Investor": "Ryecroft Pension Scheme",
+      "Fund": "Harbourline Student Living Fund II",
+      "Commitment": "GBP 5,000,000",
+      "Close Date": "15 Jul 2026",
+      "Reference": "SC-2026-003"
+    },
+    {
+      "Investor": "Tanjong Vista Capital",
+      "Fund": "Harbourline Student Living Fund II",
+      "Commitment": "S$ 2,000,000",
+      "Close Date": null,
+      "Reference": "SC-2026-004"
+    },
+    {
+      "Investor": "Alder & Vane LLC",
+      "Fund": "Harbourline Student Living Fund II",
+      "Commitment": "USD 3,100,000",
+      "Close Date": "15 Jul 2026",
+      "Reference": "SC-2026-005"
+    },
+    {
+      "Investor": "Whitfield Endowment",
+      "Fund": "Harbourline Student Living Fund II",
+      "Commitment": "GBP 750,000",
+      "Close Date": "31 Jul 2026",
+      "Reference": "SC-2026-006"
+    }
+  ],
+  "missing_field": "Close Date in SC-2026-004"
+}

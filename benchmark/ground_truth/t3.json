@@ -1,0 +1,12 @@
+{
+  "exact_matches": 33,
+  "timing_difference": 3,
+  "ambiguous_beyond_window": 1,
+  "sign_flip": 1,
+  "duplicate_in_cashbook": 1,
+  "bank_only": 2,
+  "cashbook_only": 2,
+  "amount_mismatch_gst": 1,
+  "bank_rows": 42,
+  "cashbook_rows": 43
+}

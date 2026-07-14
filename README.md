@@ -123,6 +123,37 @@ python scripts/envcheck.py
 
 See [`COMPATIBILITY.md`](COMPATIBILITY.md) for the per-skill mode/environment matrix.
 
+## Benchmark
+
+We benchmarked the toolkit the honest way: the **same model (Claude Sonnet 5) with the toolkit
+vs. with plain Python**, across all five skills plus a reconciliation scaling test, against
+synthetic fixtures with planted traps and recorded ground truth. Every deliverable was scored by
+independent verification, not the agents' self-reports.
+
+- **Correctness — parity.** A well-prompted Sonnet 5 without the toolkit matched the toolkit's
+  headline numbers at ordinary sizes. The value isn't "better arithmetic."
+- **Quality — the skills win.** Standard reconciliation taxonomy with materiality/RAG, dual-lens
+  analysis disclosure, print-ready branded dashboards: **50 / 50 vs 48.5 / 50** on the rubric.
+- **The economics invert at scale.** On the same reconciliation at ~85 → ~5,000 → ~20,000
+  rows/side, the deterministic engine's cost is essentially **flat**; from ~5,000 rows the skill
+  arm is **~25% cheaper on tokens and ~3× faster** than hand-rolled code.
+- **And so does the risk.** The baseline's error surface grew with data size — a matcher that
+  began force-pairing unrelated items, a real formula bug in a delivered workbook — exactly the
+  failure class a tested deterministic engine removes.
+
+| Reconciliation, rows/side | Skill ÷ baseline tokens | Skill ÷ baseline time |
+|---|---|---|
+| ~85 | 0.96 | 0.62 |
+| ~5,000 | **0.75** | **0.31** |
+| ~20,000 | ~0.72 * | **0.38** |
+
+\* The 20k token point excludes a process anomaly (an agent turn-stop that double-counted
+context) — the raw figure is reported alongside it in the report.
+
+Full method, per-task results, cost tables, error analysis and limitations (incl. n = 1 per
+cell) — with the fixtures, ground truth, generator + verification scripts and every T1–T5
+deliverable — are in **[`benchmark/`](benchmark/)** ([report](benchmark/REPORT.md)).
+
 ## Trust & quality
 
 Two fast gates keep the toolkit honest:
