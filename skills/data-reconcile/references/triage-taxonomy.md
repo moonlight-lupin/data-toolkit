@@ -30,6 +30,17 @@ Match strategy is chosen **per run**:
   the date window** (default ±5 days). A pair within the window that differs on date is a
   **timing difference**, not a true exception. An equal-amount pair *outside* the window is held
   back as **ambiguous** (not reconciled) — so items weeks apart aren't silently tied together.
+  - **The date column is the safety rail.** If amount+date mode runs with **no resolvable date
+    column** the window can't be applied, so equal-amount pairs are **not** matched on amount
+    alone — they are held as **ambiguous** ("matched on amount alone — confirm") and the run
+    **warns**. Pass `--date <col>` to enforce the window.
+  - **Residue triage (2nd pass).** `duplicate`, `sign_flip` and `amount_mismatch` come free from
+    the key in key mode; in amount+date mode a second pass over the one-sided residue recovers
+    them so they aren't mislabelled `missing_in_A/B` — the bank-vs-cashbook staples (a double-
+    entered cashbook line, a debit booked as a credit, a net-vs-gross **GST** gap). With no key
+    it pairs **conservatively** — opposite-equal amounts (sign flip), a common net-vs-gross tax
+    ratio (amount mismatch), or an exact amount+date twin of an already-matched line (duplicate)
+    — and each is a **confirm** item, never an auto-adjustment.
 
 Amounts parse as exact **`Decimal`**, so a genuine tie is never split by binary-float dust at
 the tolerance edge.

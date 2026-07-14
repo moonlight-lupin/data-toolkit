@@ -58,19 +58,37 @@ def extract_fields(source, fields, text=None):
     all_labels = [lab for f in fields for lab in f.get("labels", [f["name"]])]
     record, flags = {}, []
     for f in fields:
+        # a currency field may emit its detected code into its own column (see field_columns)
+        ct = f.get("code_target") if f.get("type") == "currency" else None
         raw = _find_value(lines, f.get("labels", [f["name"]]), all_labels=all_labels)
         if raw is None:
             record[f["name"]] = ""
+            if ct:
+                record[ct] = ""
             flags.append({"field": f["name"], "issue": "label not found"})
             continue
-        val, note, kept_raw = dataclean.convert_value(raw, {"type": f.get("type", "text"),
-                                                            "currency": f.get("currency"),
-                                                            "dayfirst": f.get("dayfirst", True)})
+        spec = {"type": f.get("type", "text"), "currency": f.get("currency"),
+                "dayfirst": f.get("dayfirst", True)}
+        val, note, kept_raw = dataclean.convert_value(raw, spec)
         record[f["name"]] = val
+        if ct:                                       # keep the currency code (amount + code)
+            record[ct] = dataclean.currency_code(raw, spec)
         if note:
             flags.append({"field": f["name"], "issue": note,
                           "value": raw, "kept_raw": kept_raw})
     return record, flags
+
+
+def field_columns(fields):
+    """Output column order for a field list — inserts a currency field's `code_target` column
+    right after it, so `fields_to_table` keeps amount + code (mirrors the tidy recipe's
+    code_target). Use: `extract.fields_to_table(records, extract.field_columns(FIELDS))`."""
+    cols = []
+    for f in fields:
+        cols.append(f["name"])
+        if f.get("type") == "currency" and f.get("code_target"):
+            cols.append(f["code_target"])
+    return cols
 
 
 def _clean_value(s):
@@ -184,8 +202,9 @@ def _md_escape(v):
 if __name__ == "__main__":
     FIELDS = [
         {"name": "Investor", "labels": ["investor", "name of investor"], "type": "text"},
+        # code_target keeps the detected currency code beside the amount (mixed-currency batch)
         {"name": "Commitment", "labels": ["commitment", "amount"], "type": "currency",
-         "currency": "GBP"},
+         "code_target": "Commitment ccy"},
         {"name": "Close date", "labels": ["close date", "closing"], "type": "date"},
         {"name": "Settlement bank", "labels": ["settlement bank", "bank"], "type": "text"},
         {"name": "Fee", "labels": ["fee"], "type": "currency", "currency": "GBP"},
@@ -193,7 +212,7 @@ if __name__ == "__main__":
     ]
     sample = ("ABC Capital — Subscription confirmation\n"
               "Investor: Acme Pension Fund\n"
-              "Commitment : GBP 1,000,000\n"
+              "Commitment : S$ 2,000,000\n"             # a different currency to the fee
               "Close date\t12/06/2026\n"
               "Settlement bank\n"                       # label alone -> value on the next line
               "HSBC London\n"
@@ -204,6 +223,11 @@ if __name__ == "__main__":
     print("[extract_fields] flags:", flags)
     assert rec["Settlement bank"] == "HSBC London", rec       # next-line layout
     assert rec["Fee"] == Decimal("2500"), rec                 # dotted leader + currency
-    assert rec["Commitment"] == Decimal("1000000"), rec
+    assert rec["Commitment"] == Decimal("2000000"), rec
+    assert rec["Commitment ccy"] == "SGD", rec                # code_target keeps the code
+    cols = field_columns(FIELDS)
+    assert cols[1:3] == ["Commitment", "Commitment ccy"], cols  # code column follows its amount
+    hdr, rows = fields_to_table([rec], cols)
+    assert hdr == cols and rows[0][2] == "SGD", (hdr, rows)
     print()
     print(render_fields_report([rec], [flags]))

@@ -139,6 +139,19 @@ def parse_currency(v):
     return (amt, None), "no currency symbol — code unknown"
 
 
+def _detect_code(v):
+    """Normalised ISO code from a stand-alone currency cell ('GBP', 'gbp', '£', 'S$') -> code
+    or None. Same vocabulary/order as `parse_currency`, but needs NO amount — for a separate
+    Currency column carried alongside the amount (a bare '$' stays unknown, as elsewhere)."""
+    su = _s(v).upper()
+    if not su:
+        return None
+    for sign in _CURRENCY_SIGN_ORDER:
+        if sign.upper() in su:
+            return CURRENCY_SIGNS[sign]
+    return None
+
+
 def _excel_serial(s):
     if re.fullmatch(r"\d{5}(\.\d+)?", s):
         try:
@@ -449,7 +462,12 @@ def apply_recipe(raw_rows, recipe, masters=None):
         cols = [{"source": h, "target": h, "type": "text"} for h in header_src]
     # A currency column may emit its detected code into a SEPARATE column (multi-market data):
     # set "code_target" on a type:"currency" spec. The code column follows its amount column.
+    # `code_source` (optional) names a separate Currency column to read the code from when the
+    # amount cell carries no symbol — so an unparseable/symbol-less amount keeps its currency.
     code_tgt = [c.get("code_target") if c.get("type") == "currency" else None for c in cols]
+    code_src_idx = [_col_index(header_src, c.get("code_source"))
+                    if (c.get("type") == "currency" and c.get("code_source")) else None
+                    for c in cols]
     out_header = []
     for c, ct in zip(cols, code_tgt):
         out_header.append(c["target"])
@@ -461,9 +479,10 @@ def apply_recipe(raw_rows, recipe, masters=None):
     conv = {c["target"]: {"ok": 0, "flagged": 0} for c in cols}
     for ri, r in enumerate(kept):
         out = []
-        for (j, spec), ct in zip(idx, code_tgt):
+        for (j, spec), ct, csi in zip(idx, code_tgt, code_src_idx):
             raw = "" if j is None or j >= len(r) else r[j]
-            val, note, kept_raw = _convert(raw, spec)  # kept_raw=True only on hard failure
+            code_src_raw = "" if csi is None or csi >= len(r) else r[csi]
+            val, note, kept_raw = _convert(raw, spec, code_src_raw)  # kept_raw=True only on hard failure
             if _s(raw) != "":
                 if not kept_raw:
                     conv[spec["target"]]["ok"] += 1     # value converted (may also warn)
@@ -473,7 +492,7 @@ def apply_recipe(raw_rows, recipe, masters=None):
                                            "value": _s(raw), "reason": note})
             out.append(val)
             if ct:                                  # separate currency-code column
-                out.append(_currency_code(raw, spec))
+                out.append(_currency_code(raw, spec, code_src_raw))
         out_rows.append(out)
     log["transforms"] = [{"column": t, "converted": conv[t]["ok"], "flagged": conv[t]["flagged"]}
                          for t in conv]
@@ -631,17 +650,23 @@ def _apply_value_map(s, spec):
     return s, ""
 
 
-def _currency_code(raw, spec):
+def _currency_code(raw, spec, code_source_raw=""):
     """Resolve the currency code for a cell -> code string (or "" if genuinely unknown).
-    Detected code wins; a bare/unknown code falls back to the recipe's expected `currency`."""
+    Priority: a code embedded in the amount cell -> a separate `code_source` column ->
+    the recipe's expected `currency`. Independent of whether the AMOUNT parsed, so an
+    unparseable amount ('pending', blank) never costs the row its currency."""
     res, _ = parse_currency(raw)
     code = res[1] if res else None
+    if not code:
+        code = _detect_code(code_source_raw)
     return code or spec.get("currency") or ""
 
 
-def _convert(raw, spec):
+def _convert(raw, spec, code_source_raw=""):
     """-> (value, note, kept_raw). kept_raw=True means a HARD failure (raw kept for review);
-    a note with kept_raw=False is a soft WARNING (value converted, but flag it too)."""
+    a note with kept_raw=False is a soft WARNING (value converted, but flag it too).
+    `code_source_raw` is the cell of a separate Currency column (see `code_source`), used to
+    resolve — and to quiet the 'code unknown' warning on — a currency amount with no symbol."""
     if spec.get("trim", True) and isinstance(raw, str):
         raw = raw.strip()
     t = spec.get("type", "text")
@@ -666,7 +691,9 @@ def _convert(raw, spec):
                 note = (note + f"; currency {code} != expected {want}").strip("; ")
             elif code is None:
                 note = ""                          # ambiguous/unknown resolved by expected currency
-        # if no expected currency and the code is unknown/ambiguous, `note` already explains it
+        elif code is None and _detect_code(code_source_raw):
+            note = ""                              # code supplied by a separate Currency column
+        # if no expected currency and the code is truly unknown, `note` already explains it
         return amt, note, False
     if t == "date":
         d, note = parse_date(raw, dayfirst=spec.get("dayfirst", True))
@@ -683,9 +710,16 @@ def _convert(raw, spec):
     return _s(raw), "", False
 
 
-def convert_value(raw, spec):
-    """Public wrapper around the deterministic cell converter."""
-    return _convert(raw, spec)
+def convert_value(raw, spec, code_source_raw=""):
+    """Public wrapper around the deterministic cell converter. `code_source_raw` (optional) is
+    a separate Currency cell used to resolve a symbol-less currency amount's code."""
+    return _convert(raw, spec, code_source_raw)
+
+
+def currency_code(raw, spec, code_source_raw=""):
+    """Public: the currency code for a cell (amount symbol -> `code_source` cell -> expected
+    `currency`), independent of whether the amount parsed. "" when genuinely unknown."""
+    return _currency_code(raw, spec, code_source_raw)
 
 
 def _norm_key(v):
@@ -1066,4 +1100,22 @@ if __name__ == "__main__":
     assert hc == ["Amount", "Currency"], hc
     assert [r[1] for r in rc] == ["SGD", "USD", "SGD"], rc   # bare $ -> expected SGD
     assert rc[0][0] == Decimal("1000"), rc[0]
+
+    # --- currency code_source: a separate Currency column is carried through even when the
+    # amount is UNPARSEABLE ('pending') or blank — an unparseable amount costs the row its
+    # amount, never its currency (feedback: data-tidy T1, rows P-1012 / P-1027) ---
+    raw_cs = [["Amount", "Currency"], ["£1,234.50", "GBP"], ["pending", "GBP"], ["", "GBP"]]
+    rec_cs = {"columns": [
+        {"source": "Amount", "target": "Amount", "type": "currency",
+         "code_target": "Currency", "code_source": "Currency"},
+    ]}
+    hcs, rcs, lcs = apply_recipe(raw_cs, rec_cs)
+    assert hcs == ["Amount", "Currency"], hcs
+    assert [r[1] for r in rcs] == ["GBP", "GBP", "GBP"], rcs   # code preserved on every row
+    assert rcs[0][0] == Decimal("1234.50") and rcs[1][0] == "pending", rcs
+    assert sum(1 for f in lcs["flagged"] if f["column"] == "Amount") == 1, lcs["flagged"]  # only 'pending'
+    # symbol-less amount + code_source resolves the code and quiets the "unknown code" note
+    v_cs, n_cs, _ = _convert("1,500.00", {"type": "currency"}, "GBP")
+    assert v_cs == Decimal("1500.00") and n_cs == "", (v_cs, n_cs)
+    assert currency_code("1,500.00", {"type": "currency"}, "GBP") == "GBP"
     print("[self-test] Decimal + currency passed.")

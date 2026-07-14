@@ -56,11 +56,17 @@ import extract, dataclean      # extract, dataclean, ingest all live in ../../sc
 ```python
 FIELDS = [
   {"name": "Investor",   "labels": ["investor", "name of investor"], "type": "text"},
-  {"name": "Commitment", "labels": ["commitment", "amount"], "type": "currency", "currency": "GBP"},
+  # mixed-currency batch: keep the code beside the amount with code_target (amount + code)
+  {"name": "Commitment", "labels": ["commitment", "amount"], "type": "currency",
+   "code_target": "Commitment ccy"},
   {"name": "Close date", "labels": ["close date", "closing"], "type": "date"},
 ]
 record, flags = extract.extract_fields("subscription.pdf", FIELDS)
 ```
+For a **currency** field, add `code_target` to keep the detected code in its own key on the
+record (mirrors the tidy recipe) — essential for **mixed-currency batches** (GBP / SGD / USD in
+one run) so the amount isn't delivered stripped of its code. Give an expected `currency` instead
+(or as well) only when the documents are single-currency and you want a bare `$` resolved to it.
 `extract_fields` finds `Label: value` / `Label[tab]value` / `Label   value` / `Label .... value`
 (dotted leader), **and the next-line layout** (label alone, value on the line below — common on
 confirmations/certificates), stopping at the next field's label so it won't grab a neighbouring
@@ -83,10 +89,13 @@ note as lower-fidelity; it is not tagged per row.
 For tables, pass the rows through the shared recipe just like tidy
 (`dataclean.apply_recipe`). For batched forms:
 ```python
-header, rows = extract.fields_to_table(records, [f["name"] for f in FIELDS])
+header, rows = extract.fields_to_table(records, extract.field_columns(FIELDS))
 dataclean.write_xlsx(header, rows, "extracted.xlsx")
 print(extract.render_fields_report(records, flags_list))
 ```
+`extract.field_columns(FIELDS)` gives the column order and inserts each currency field's
+`code_target` column right after its amount — so the workbook keeps *amount + code*. (A plain
+`[f["name"] for f in FIELDS]` would drop the code columns.)
 Deliver the `.xlsx` + the report (unfound / verify flags).
 
 ### 4 — Triage: a reusable runner, or just deliver?

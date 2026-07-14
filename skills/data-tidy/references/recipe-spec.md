@@ -41,6 +41,12 @@ the same recurring source). Build it from the profile + the user's intent, confi
     - `code_target`: emit the detected currency code into its **own column** (named here),
       placed right after the amount — keep the currency for multi-market data instead of
       collapsing it into a bare number.
+    - `code_source`: name a **separate source column** (e.g. a `Currency` column) to read the
+      code from when the amount cell carries no symbol. The code is then resolved independently
+      of the amount, so a **blank or unparseable amount** (`"pending"`) keeps its currency — the
+      flag costs the row its *amount*, never its *currency* — and a symbol-less amount whose code
+      comes from this column is no longer flagged "code unknown". Pair with `code_target` to emit
+      the carried code.
     - A **bare `$`** is treated as **ambiguous** (could be USD/SGD/AUD/HKD…) and is *not*
       silently assumed to be USD — it is flagged unless an expected `currency` is given.
       Disambiguated dollars (`US$`, `S$`, `A$`, `HK$`, `NZ$`, `C$`) and ISO codes resolve
