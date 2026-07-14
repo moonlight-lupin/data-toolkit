@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.3.1 — 2026-07-14
+
+Open lander under **Phronesis Applied**:
+
+- **Apache-2.0 license** (`LICENSE` + `NOTICE`) — free to use, fork, and build on commercially.
+- **Phronesis Applied branding** — marketplace/plugin author and README footer point at
+  [phronesis-applied.com](https://www.phronesis-applied.com); visualise defaults use the
+  site mark (from the published favicon geometry) and teal/bronze/paper palette. Still
+  fully white-labelable via `theme`.
+- **10-minute path** — `examples/run_quickstart.py` builds a sample recon working paper and
+  branded dashboard; committed look-first samples at `examples/sample-reconciliation.xlsx`
+  and `examples/sample-dashboard.html`.
+
 ## 0.3.0 — 2026-07-13
 
 New skill, generic data-handling, and toolkit tooling:

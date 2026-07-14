@@ -1,13 +1,15 @@
 {
   "name": "data-toolkit",
   "owner": {
-    "name": "moonlight-lupin"
+    "name": "Phronesis Applied",
+    "email": "hello@phronesis-applied.com",
+    "url": "https://www.phronesis-applied.com"
   },
   "plugins": [
     {
       "name": "data-toolkit",
       "source": "./",
-      "description": "Extract, tidy, reconcile, analyse and visualise messy data — fully local."
+      "description": "Extract, tidy, reconcile, analyse and visualise messy data — fully local. From Phronesis Applied."
     }
   ]
 }

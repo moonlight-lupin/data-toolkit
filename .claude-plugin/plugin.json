@@ -1,7 +1,22 @@
 {
   "name": "data-toolkit",
-  "version": "0.3.0",
-  "description": "Extract, tidy, reconcile, analyse and visualise messy data into clean, validated, audit-ready tables and insight briefs — fully local, nothing uploaded.",
+  "version": "0.3.1",
+  "description": "Extract, tidy, reconcile, analyse and visualise messy data into clean, validated, audit-ready tables and insight briefs — fully local, nothing uploaded. From Phronesis Applied.",
+  "author": {
+    "name": "Phronesis Applied",
+    "url": "https://www.phronesis-applied.com"
+  },
+  "keywords": [
+    "data",
+    "reconciliation",
+    "extract",
+    "tidy",
+    "analyse",
+    "visualise",
+    "finance",
+    "local-first"
+  ],
+  "license": "Apache-2.0",
   "skills": [
     "./skills/"
   ]
