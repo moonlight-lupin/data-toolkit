@@ -1,8 +1,8 @@
 # Changelog
 
-## 0.3.1 — 2026-07-14
+## 0.4.1 — 2026-07-14
 
-Open lander under **Phronesis Applied**:
+Open lander under **Phronesis Applied** (on top of 0.4.0):
 
 - **Apache-2.0 license** (`LICENSE` + `NOTICE`) — free to use, fork, and build on commercially.
 - **Phronesis Applied branding** — marketplace/plugin author and README footer point at
@@ -12,6 +12,25 @@ Open lander under **Phronesis Applied**:
 - **10-minute path** — `examples/run_quickstart.py` builds a sample recon working paper and
   branded dashboard; committed look-first samples at `examples/sample-reconciliation.xlsx`
   and `examples/sample-dashboard.html`.
+
+## 0.4.0 — 2026-07-14
+
+`data-analyse` — four new playbooks and a two-dataset capability:
+
+- **Cross-domain / relational** — relate **two** datasets on a shared key (sales vs competitor
+  prices, actual vs budget, spend vs revenue). New engine primitives `join_on` (key-join with a
+  matched / left-only / right-only **coverage** report) and `compare_series` (gap / ratio / %
+  diff per key, Pearson correlation, ±1 lead/lag). Discipline: association, never cause — the
+  brief names the confounders. Distinct from `data-reconcile` (which matches to find breaks).
+- **General ledger / trial balance** — net movement & turnover by account, unusual postings
+  (large/round/period-end), posting concentration by user/source, debit=credit integrity check.
+- **Inventory / stock** — ABC concentration (80/20 by value), slow-mover ageing (write-down
+  risk), turnover, negative/zero-stock flags.
+- **Spend / AP analysis** — vendor/category concentration, duplicate-payment risk flags,
+  maverick (off-contract) spend, threshold-splitting.
+- Five synthetic example datasets (incl. the sales/competitor pair) under
+  `skills/data-analyse/examples/`, each seeded with the findings its playbook surfaces and
+  verified end-to-end against the engine.
 
 ## 0.3.0 — 2026-07-13
 

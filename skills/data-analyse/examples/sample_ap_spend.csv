@@ -1,0 +1,21 @@
+Vendor,Category,Date,Invoice,Amount (SGD),On Contract
+Acme Supplies,IT,05/01/2026,INV-1001,"12,000.00",Yes
+Acme Supplies,IT,06/01/2026,INV-1002,"12,000.00",Yes
+Borealis,Facilities,10/01/2026,INV-2001,"4,500.00",Yes
+Cirrus Logistics,Freight,12/01/2026,INV-3001,"8,000.00",No
+Delta Print,Marketing,15/01/2026,INV-4001,"2,200.00",Yes
+Acme Supplies,IT,20/01/2026,INV-1003,"15,000.00",Yes
+Borealis,Facilities,22/01/2026,INV-2002,"3,800.00",Yes
+Evergreen Office,Office,25/01/2026,INV-5001,"9,800.00",No
+Evergreen Office,Office,26/01/2026,INV-5002,"9,700.00",No
+Evergreen Office,Office,27/01/2026,INV-5003,"9,900.00",No
+Cirrus Logistics,Freight,02/02/2026,INV-3002,"7,500.00",No
+Acme Supplies,IT,05/02/2026,INV-1004,"30,000.00",Yes
+Delta Print,Marketing,08/02/2026,INV-4002,"2,600.00",Yes
+Borealis,Facilities,10/02/2026,INV-2003,"4,200.00",Yes
+Fjord Consulting,Prof Fees,12/02/2026,INV-6001,"18,000.00",No
+Acme Supplies,IT,15/02/2026,CN-1005,"(5,000.00)",Yes
+Cirrus Logistics,Freight,18/02/2026,INV-3003,"8,200.00",No
+Delta Print,Marketing,20/02/2026,INV-4003,"2,400.00",Yes
+Evergreen Office,Office,22/02/2026,INV-5004,"9,600.00",No
+Borealis,Facilities,25/02/2026,INV-2004,"3,900.00",Yes
