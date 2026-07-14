@@ -1,0 +1,84 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sample reconciliation</title><style>
+:root{--burg:#0B3D91;--rose:#1565C0;--ink:#0F172A;
+--grey:#475569;--line:#DBE2EA;--bg:#F5F7FB}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 'Segoe UI','Helvetica Neue',Arial,sans-serif}
+.wrap{max-width:1040px;margin:0 auto;padding:0 20px 40px}
+header{display:flex;align-items:flex-end;justify-content:space-between;
+gap:16px;border-bottom:3px solid var(--burg);padding:22px 0 12px;margin-bottom:18px}
+.brand{display:flex;align-items:center;gap:13px}
+.brand .logo{height:46px;width:auto;display:block}
+.mark{font-weight:700;letter-spacing:2px;color:var(--ink);font-size:24px}
+h1{font-size:21px;margin:0;font-weight:700}
+.sub{color:var(--grey);font-size:13px;margin-top:2px}
+.asof{text-align:right;color:var(--grey);font-size:12px;white-space:nowrap}
+.asof b{display:block;color:var(--ink);font-size:13px}
+.btn{margin-top:8px;font:12px 'Segoe UI','Helvetica Neue',Arial,sans-serif;background:var(--burg);color:#fff;border:0;
+border-radius:5px;padding:6px 12px;cursor:pointer}
+.sec{margin:22px 0}
+.sec h2{font-size:15px;color:var(--burg);margin:0 0 10px;
+border-left:4px solid var(--burg);padding-left:9px}
+.block{background:#fff;border:1px solid var(--line);border-radius:9px;
+padding:14px 16px;margin:0 0 14px}
+.bt{font-size:13px;margin:0 0 10px;color:var(--ink)}
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+gap:14px;margin:0 0 14px}
+.kpi{background:#fff;border:1px solid var(--line);border-top:4px solid var(--burg);
+border-radius:9px;padding:14px 16px}
+.kpi-val{font-size:30px;font-weight:700;line-height:1.1}
+.kpi-lbl{color:var(--grey);font-size:12px;margin-top:4px;text-transform:uppercase;
+letter-spacing:.4px}
+.kpi-sub{color:var(--ink);font-size:12px;margin-top:6px}
+.lay{display:grid;gap:14px}
+.lay .block{margin:0}
+.chart{width:100%;height:auto;display:block}
+.chart .v{font:11px 'Segoe UI','Helvetica Neue',Arial,sans-serif;fill:var(--ink)}
+.chart .x{font:11px 'Segoe UI','Helvetica Neue',Arial,sans-serif;fill:var(--grey)}
+.donut-wrap{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+.donut{max-width:240px}
+.dn-c{font:700 26px 'Segoe UI','Helvetica Neue',Arial,sans-serif;fill:var(--burg)}
+.dn-l{font:11px 'Segoe UI','Helvetica Neue',Arial,sans-serif;fill:var(--grey)}
+.legend{display:flex;flex-wrap:wrap;gap:10px 16px;margin-top:8px;font-size:12px}
+.legend.col{flex-direction:column;gap:6px}
+.lg{display:inline-flex;align-items:center;gap:6px;color:var(--ink)}
+.lg i{width:11px;height:11px;border-radius:2px;display:inline-block}
+.pill{display:inline-block;padding:2px 9px;border-radius:11px;font-size:11px;
+font-weight:600}
+table.grid{border-collapse:collapse;width:100%;font-size:13px}
+table.grid th{background:var(--burg);color:#fff;text-align:left;padding:7px 9px;
+font-weight:600;font-size:12px}
+table.grid td{border-bottom:1px solid var(--line);padding:6px 9px}
+table.grid tbody tr:nth-child(even){background:#E8EEF755}
+table.grid[data-sortable] th{cursor:pointer;user-select:none}
+.so{font-size:9px;opacity:.85}
+.legend[data-toggle] .lg{cursor:pointer}
+.legend[data-toggle] .lg.off{opacity:.35}
+.filterbar{font-size:12px;color:var(--grey);margin:0 0 10px}
+.filterbar select{font:12px 'Segoe UI','Helvetica Neue',Arial,sans-serif;padding:3px 7px;border:1px solid var(--line);
+border-radius:5px;color:var(--ink);background:#fff}
+.empty{color:var(--grey);text-align:center;padding:18px;font-style:italic}
+footer{margin-top:26px;border-top:1px solid var(--line);padding-top:10px;
+color:var(--grey);font-size:11px}
+@media print{
+ body{background:#fff}
+ .btn{display:none}
+ .wrap{max-width:none;padding:0}
+ .block,.kpi,.sec{break-inside:avoid}
+ header{padding-top:0}
+}
+</style></head><body><div class="wrap">
+<header>
+ <div>
+  <div class="brand"><img class="logo" src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNjAgNDAiIHJvbGU9ImltZyIgYXJpYS1sYWJlbD0iQWNtZSBDbyI+CiAgPCEtLSBGaWN0aW9uYWwgc2FtcGxlIG1hcmsgZm9yIHRoZSB3aGl0ZS1sYWJlbCBxdWlja3N0YXJ0IC0gbm90IGEgcmVhbCBicmFuZC4gLS0+CiAgPHJlY3Qgd2lkdGg9IjQwIiBoZWlnaHQ9IjQwIiByeD0iOCIgZmlsbD0iIzBCM0Q5MSIvPgogIDxwYXRoIGZpbGw9IiNGRkZGRkYiIGQ9Ik0xMCAzMCBMMjAgMTAgTDMwIDMwIFoiLz4KICA8cmVjdCB4PSIxNy41IiB5PSIyMiIgd2lkdGg9IjUiIGhlaWdodD0iOCIgZmlsbD0iIzQyQTVGNSIvPgogIDx0ZXh0IHg9IjUyIiB5PSIyNyIgZm9udC1mYW1pbHk9IlNlZ29lIFVJLCBIZWx2ZXRpY2EgTmV1ZSwgQXJpYWwsIHNhbnMtc2VyaWYiCiAgICAgICAgZm9udC1zaXplPSIyMCIgZm9udC13ZWlnaHQ9IjcwMCIgZmlsbD0iIzBCM0Q5MSI+QWNtZSBDbzwvdGV4dD4KPC9zdmc+Cg==" alt="Acme Co"><h1>Sample reconciliation</h1></div>
+  <div class="sub">Invoice tracker vs ledger — Acme Co white-label demo</div>
+ </div>
+ <div class="asof">as of<b>14 Jul 2026</b>
+  <button class="btn" onclick="window.print()">Print / Save&nbsp;PDF</button></div>
+</header>
+<div class="kpi-row"><div class="kpi" style="border-top-color:#2E7D57"><div class="kpi-val" style="color:#2E7D57">1</div><div class="kpi-lbl">Matched (1:1)</div></div><div class="kpi" style="border-top-color:#9B2226"><div class="kpi-val" style="color:#9B2226">5</div><div class="kpi-lbl">Exceptions</div></div><div class="kpi" style="border-top-color:#0B3D91"><div class="kpi-val" style="color:#0B3D91">125,000</div><div class="kpi-lbl">Value matched</div></div><div class="kpi" style="border-top-color:#B26B00"><div class="kpi-val" style="color:#B26B00">43,000.5</div><div class="kpi-lbl">Value in exception</div></div></div><section class="sec"><h2>Exception mix</h2><div class="block"><h3 class="bt">Exceptions by triage category</h3><svg viewBox="0 0 640 220" class="chart" preserveAspectRatio="xMidYMid meet"><rect x="8.0" y="20.0" width="148.0" height="172.0" rx="3" fill="#0B3D91"><title>amount_mismatch: 2</title></rect><text x="82.0" y="16.0" text-anchor="middle" class="v">2</text><text x="82.0" y="211.0" text-anchor="middle" class="x">amount_mismatch</text><rect x="166.0" y="106.0" width="148.0" height="86.0" rx="3" fill="#1565C0"><title>missing_in_B: 1</title></rect><text x="240.0" y="102.0" text-anchor="middle" class="v">1</text><text x="240.0" y="211.0" text-anchor="middle" class="x">missing_in_B</text><rect x="324.0" y="106.0" width="148.0" height="86.0" rx="3" fill="#42A5F5"><title>duplicate: 1</title></rect><text x="398.0" y="102.0" text-anchor="middle" class="v">1</text><text x="398.0" y="211.0" text-anchor="middle" class="x">duplicate</text><rect x="482.0" y="106.0" width="148.0" height="86.0" rx="3" fill="#2E7D57"><title>missing_in_A: 1</title></rect><text x="556.0" y="102.0" text-anchor="middle" class="v">1</text><text x="556.0" y="211.0" text-anchor="middle" class="x">missing_in_A</text></svg></div></section><section class="sec"><h2>Top exceptions</h2><div class="block"><h3 class="bt">Highest-priority items (sample)</h3><table class="grid"><thead><tr><th>Category</th><th>Magnitude</th><th>Materiality</th><th>Action</th></tr></thead><tbody><tr><td>missing_in_B</td><td>15,000</td><td>escalate</td><td>investigate</td></tr><tr><td>duplicate</td><td>15,000</td><td>escalate</td><td>remove</td></tr><tr><td>missing_in_A</td><td>9,000</td><td>material</td><td>investigate</td></tr><tr><td>amount_mismatch</td><td>4,000</td><td>material</td><td>investigate</td></tr><tr><td>amount_mismatch</td><td>-0.5</td><td>immaterial</td><td>investigate</td></tr></tbody></table></div></section>
+<footer>
+ Acme Co. Generated 14 Jul 2026. A draft for review by a
+ qualified person, not advice.</footer>
+</div></body></html>

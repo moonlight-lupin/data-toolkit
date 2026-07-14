@@ -8,9 +8,10 @@ welcome.
 
 ## Before you start
 
-1. Read [`PRINCIPLES.md`](PRINCIPLES.md) — drafts not advice, never invent, stay in lane.
-2. Read [`DATA-HANDLING.md`](DATA-HANDLING.md) — PII / confidential data stays local.
-3. Skim [`COMPATIBILITY.md`](COMPATIBILITY.md) if you touch Claude Code vs Cowork behaviour.
+1. Skim [`ONBOARDING.md`](ONBOARDING.md) if you are new to the toolkit (incl. theme + logo).
+2. Read [`PRINCIPLES.md`](PRINCIPLES.md) — drafts not advice, never invent, stay in lane.
+3. Read [`DATA-HANDLING.md`](DATA-HANDLING.md) — PII / confidential data stays local.
+4. Skim [`COMPATIBILITY.md`](COMPATIBILITY.md) if you touch Claude Code vs Cowork behaviour.
 
 By contributing, you agree your work is licensed under the same [Apache License 2.0](LICENSE)
 as the rest of the project (see also [`NOTICE`](NOTICE)).
@@ -37,7 +38,8 @@ python scripts/envcheck.py
 ```bash
 python bin/data-lint            # plugin manifest + SKILL.md hygiene + engine self-tests
 python tests/test_engine.py     # finance-grade regression suite (no pytest required)
-python examples/run_quickstart.py   # optional smoke: recon + dashboard
+python examples/run_quickstart.py          # optional smoke: recon + Phronesis dashboard
+python examples/run_branded_dashboard.py   # optional: same data, Acme Co theme + logo
 ```
 
 CI runs the first two on every push/PR to `main`.
@@ -76,7 +78,8 @@ in any sample output.
 - Prefer small PRs over large ones
 - Do not commit `.env`, real client data, or generated `examples/out/` artefacts
 - Do not use the Phronesis Applied mark in third-party branding — white-label via `theme`
-  (see [`NOTICE`](NOTICE) and `skills/data-visualise/references/brand.md`)
+  (see [`ONBOARDING.md`](ONBOARDING.md), [`NOTICE`](NOTICE), and
+  `skills/data-visualise/references/brand.md`)
 - Feedback from using a skill in the wild can also be captured with the template in
   [`FEEDBACK.md`](FEEDBACK.md)
 
