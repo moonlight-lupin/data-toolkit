@@ -15,9 +15,11 @@ amount + code.
     clean_h, clean_rows, log = apply_recipe(raw_rows, recipe)  # source -> declared target
     write_xlsx(clean_h, clean_rows, "clean.xlsx"); print(render_report(log))
 
-DATA HANDLING: runs fully local; your data never leaves the machine. If the data is sensitive
-or confidential business/financial data, keep it on your synced or shared file store — never
-send it, or OCR of it, to an external tool. See ../DATA-HANDLING.md.
+DATA HANDLING: this engine runs on your machine and makes no network calls (no cloud OCR, no
+external APIs). But the AI agent driving it sends whatever it reads into its context to your AI
+provider — so "your data never leaves the machine" is NOT claimed. If the data is sensitive or
+confidential business/financial data, keep it on your synced or shared file store and never send
+it, or OCR of it, to a third-party tool. See ../DATA-HANDLING.md.
 """
 
 from __future__ import annotations
@@ -950,8 +952,9 @@ def _build_card(mode, doctype, title, date, pyname, spec):
           "runner — it runs standalone, with nothing else installed. Keep them together (e.g. on "
           "your synced or shared file store). Regenerating refreshes these engine copies.",
           "", "## Data handling",
-          "Runs fully local; your data (and any OCR) never leaves the machine. See the "
-          "toolkit's `DATA-HANDLING.md`.",
+          "This runner is plain Python and makes no network calls — running it sends your data "
+          "nowhere. (An AI agent that reads the data to build or check the recipe does send what it "
+          "reads to your AI provider.) See the toolkit's `DATA-HANDLING.md`.",
           "", "## Maintenance", "Regenerate if the source layout changes materially."]
     return "\n".join(L) + "\n"
 

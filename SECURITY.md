@@ -51,6 +51,10 @@ ships or we explain why we are not treating it as a vulnerability.
 - Engines read local files the user points them at and write outputs back to local folders
 - No network calls in the core path; dashboards are self-contained HTML (no CDN)
 - Shared drives are reached as **synced local paths**, not cloud connectors
+- **The AI agent driving the skills is not local**: whatever it reads into its context is sent
+  to the AI provider (see above). The toolkit does not claim your data never leaves the machine
+  — it claims the *processing* is local and that no third party beyond your AI provider sees it.
+  See [`DATA-HANDLING.md`](DATA-HANDLING.md)
 - Skills produce **drafts for a qualified person** — never post to ledgers or auto-send
 
 If you believe a shipped code path violates that summary, treat it as in-scope and email us.

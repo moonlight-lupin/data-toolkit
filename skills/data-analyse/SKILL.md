@@ -10,7 +10,7 @@ description: >-
   it says. Works INTENT-FIRST: asks what question the data should answer, profiles it,
   proposes a plan → you confirm → computes every metric deterministically (local engine,
   exact Decimal, currency-aware) → writes a calibrated brief separating observation from
-  interpretation. Fully local; sensitive data never leaves. NOT data cleaning (data-tidy),
+  interpretation. Metrics computed locally by the engine. NOT data cleaning (data-tidy),
   NOT matching two datasets (data-reconcile), NOT a dashboard (data-visualise — natural
   next step); descriptive analysis only, never financial or investment advice.
 ---
@@ -24,9 +24,10 @@ question the data should answer before computing anything) and **compute-then-in
 (every quoted number comes from the deterministic local engine; the narrative interprets,
 it never generates figures).
 
-> **Self-sufficient & local.** All computation runs on the machine via
-> `scripts/analyse.py` (+ the shared toolkit engine). Sensitive or confidential
-> business/financial data never leaves.
+> **Self-sufficient & local engine.** All computation runs on your machine via
+> `scripts/analyse.py` (+ the shared toolkit engine) — no network calls. Note the AI agent
+> driving the skill does send whatever it reads into its context to your AI provider;
+> "never leaves" is not claimed. See `../../DATA-HANDLING.md`.
 
 ## Workflow
 
@@ -158,8 +159,9 @@ calibration, plain speech, action boundary.
 
 ## Data handling
 
-Analysis runs **fully local** — the data, the metrics and the brief stay on your synced
-or shared file store; nothing is uploaded. A brief that names individuals or quotes
+Metrics are computed **on your machine** — the data, the metrics and the brief stay on your synced
+or shared file store, and the engine uploads nothing. (The AI agent driving the skill does send
+whatever it reads into its context to your AI provider.) A brief that names individuals or quotes
 confidential figures is gated on any egress. Full rule: `../../DATA-HANDLING.md`.
 
 ## Feedback

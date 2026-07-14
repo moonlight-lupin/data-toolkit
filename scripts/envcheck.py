@@ -6,7 +6,8 @@ per-skill readiness line. Run before using a skill if the environment is uncerta
 
     python scripts/envcheck.py
 
-The toolkit runs fully local; your data never leaves the machine. Most jobs
+The toolkit's engine runs on your machine and makes no network calls (the AI agent driving it
+does send whatever it reads to your AI provider — see DATA-HANDLING.md). Most jobs
 (xlsx / csv / paste / digital PDF) need only openpyxl; heavier inputs (PDF, .docx,
 .msg) and OCR add optional dependencies that degrade cleanly when absent.
 
@@ -92,7 +93,7 @@ def main():
                                     (".docx", "docx"), (".msg", "extract_msg")] if not has(mod)]
         n = "xlsx/csv ready; optional inputs missing: " + ", ".join(opt) if opt \
             else "all input adapters available"
-    add("data-reconcile", "any (portable); fully local", s, n)
+    add("data-reconcile", "any (portable); no network", s, n)
 
     # data-analyse — openpyxl core (xlsx in / metrics workbook out); other inputs optional
     s, n = libs_ok("openpyxl")
@@ -101,7 +102,7 @@ def main():
                                     (".docx", "docx"), (".msg", "extract_msg")] if not has(mod)]
         n = "xlsx/csv ready; optional inputs missing: " + ", ".join(opt) if opt \
             else "all input adapters available"
-    add("data-analyse", "any (portable); fully local", s, n)
+    add("data-analyse", "any (portable); no network", s, n)
 
     # data-visualise — pure stdlib HTML/SVG; openpyxl only to read an .xlsx source
     n = "ready (stdlib HTML/SVG)" + ("" if has("openpyxl")

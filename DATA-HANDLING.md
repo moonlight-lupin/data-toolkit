@@ -7,6 +7,27 @@ the single source of the data-handling rule; every skill's "Data handling" secti
 > Referenced by every skill's `## Data handling` section. Keep it as the one place the
 > rule lives.
 
+## What is local — and what is not
+
+Be precise about this; the toolkit does **not** claim your data never leaves your machine.
+
+- **The engine is local.** Every transform, match, metric and render is computed by the
+  toolkit's own Python on your machine. It makes **no network calls**: no cloud OCR (local
+  Tesseract only), no CDN or remote images in the dashboards, no external APIs, no connectors,
+  no third-party uploads. Nothing is sent to any service *we* chose.
+- **The AI agent is not local.** These skills are driven by an AI assistant, and **whatever
+  the agent reads into its context — file contents, samples, profiles, extracted values — is
+  sent to your AI provider** to be processed, exactly as in any AI-assisted work. That is
+  inherent to using an LLM, not something the toolkit can avoid.
+- **What that buys you anyway.** Because the deterministic engine does the heavy lifting
+  locally, the agent generally works with *samples, profiles, summaries and code* rather than
+  streaming an entire dataset through the model — so exposure is smaller than hand-processing
+  the same file in a chat window, and no **third party** beyond the AI provider you have
+  already chosen ever sees the data.
+
+The rule below governs everything *beyond* that: your AI provider is the account you are
+already working in; anything else is egress and must be tokenised.
+
 ## What is gated (and what is not)
 
 Two classes are gated — **personal data** and **confidential business/financial data**:
@@ -60,7 +81,7 @@ controlled place or goes to a recipient entitled to it:
 
 | Skill | Application |
 |---|---|
-| `data-tidy` | Processes data **locally** — gated data never leaves the machine. Tokenise only if a downstream step (a different skill) would push a value to an external tool. |
+| `data-tidy` | Transforms are computed **locally** by the engine — no external calls. Tokenise only if a downstream step (a different skill) would push a value to an external tool. |
 | `data-extract` | Same: extraction runs **locally**; the clean `.xlsx` + audit report stay on the local/synced store. |
 | `data-reconcile` | Same: matching/triage runs **locally** and produces a working paper for review — no egress, nothing posted. |
 | `data-analyse` | Same: metrics and the insight brief are computed **locally**; brief + metrics workbook stay on the local/synced store. A brief that names individuals or quotes confidential figures is gated on any egress. |

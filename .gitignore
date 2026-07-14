@@ -27,3 +27,6 @@ _workings/
 
 # Local WIP skills — kept out of the shipped plugin (data-lint skips git-ignored skills)
 skills/mcp-guide/
+
+# Environment artifact: `_rc/` copies appear next to .xlsx files wherever they're touched
+_rc/

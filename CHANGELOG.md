@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.4.4 — 2026-07-15
+
+Honest data-handling claims (correctness fix to the docs):
+
+- **Removed the "your data never leaves the machine" / "nothing uploaded" assertions.** They were
+  not defensible: these skills are driven by an AI agent, and whatever the agent reads into its
+  context is sent to the AI provider, as in any AI-assisted work. Claiming otherwise was wrong,
+  and a compliance answer built on it would have been wrong too.
+- **Replaced with what is actually true**, consistently across the README, `DATA-HANDLING.md`,
+  `SECURITY.md`, `COMPATIBILITY.md`, all five `SKILL.md` files, the plugin/marketplace
+  descriptions and the engine docstrings:
+  - the **engine** runs on your machine and makes **no network calls** — no cloud OCR (local
+    Tesseract only), no CDN or remote images, no external APIs, no credentials, no connectors,
+    no third-party uploads;
+  - the **AI agent driving it is not local** — what it reads into context goes to your AI
+    provider, and the toolkit says so plainly;
+  - no **third party** beyond the AI provider you have already chosen ever sees the data, and
+    because the deterministic engine does the heavy lifting the agent generally works with
+    samples, profiles and summaries rather than streaming whole datasets through the model.
+- `DATA-HANDLING.md` gains a "What is local — and what is not" section as the single source of
+  this rule. A generated reuse runner's card still (correctly) states that running it sends
+  nothing anywhere — it is plain Python with no model in the loop.
+
 ## 0.4.3 — 2026-07-14
 
 Bug fixes and an enhancement surfaced in toolkit testing:

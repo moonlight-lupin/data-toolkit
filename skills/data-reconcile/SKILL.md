@@ -10,7 +10,7 @@ description: >-
   "reconciliation working paper", or "discrepancy triage". Ships presets for common recurring
   reconciliations (invoice tracker vs accounting records, bank vs cashbook, fund administrator
   vs internal records, payments/PRF vs bank); generic for anything else. Deterministic and
-  local-only — it never force-fits a match and never posts an adjustment; it produces a working
+  computed locally — it never force-fits a match and never posts an adjustment; it produces a working
   paper for finance to review and sign off. NOT budget/variance analysis, and NOT deal/asset
   analysis (that is out of scope).
 ---
@@ -24,8 +24,9 @@ review and sign off.
 
 > **Working paper, not a posting.** It matches and flags; it does **not** adjust the ledger,
 > post a correction, or write to any system. Unmatched items stay flagged — **never
-> force-fitted** into a match. It runs **fully local** (no external egress), so it's safe for
-> bank, payment and sensitive account data.
+> force-fitted** into a match. Matching and triage are computed **on your machine** (the engine
+> makes no external calls) — though the AI agent driving it does send whatever it reads into its
+> context to your AI provider; see `../../DATA-HANDLING.md`.
 
 ## Workflow
 
@@ -166,8 +167,9 @@ Materiality grades each by value: **within tolerance → immaterial → material
 
 ## Data handling
 
-Runs **fully local** — A, B and the working paper stay in your synced or shared file store;
-**nothing is sent to any external tool**. Reconciliations routinely touch bank details and
+Matching and triage are computed **on your machine** — A, B and the working paper stay in your
+synced or shared file store and **nothing is sent to any external tool** by the engine. (The AI
+agent driving the skill does send whatever it reads into its context to your AI provider.) Reconciliations routinely touch bank details and
 sensitive account data (esp. the fund-administrator preset) — keep it local, and
 `redact()` parties/amounts before any reconciliation artefact leaves its entitled use. Full
 rule: `../../DATA-HANDLING.md`.
@@ -181,5 +183,5 @@ shared format — `../../FEEDBACK.md` — and save as `feedback_data-reconcile_[
 
 Pre-screen: `../../COMPATIBILITY.md` + `python ../../scripts/envcheck.py`. Python + `openpyxl`
 (for the `.xlsx` working paper and to read `.xlsx` sources); reads CSV/PDF/.docx/.msg via the
-shared engine (same optional deps as `data-tidy`). Portable, fully local — no network, no
+shared engine (same optional deps as `data-tidy`). Portable — the code needs no network, no
 MS Office, no credentials, no connector.

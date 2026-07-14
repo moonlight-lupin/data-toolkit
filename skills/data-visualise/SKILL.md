@@ -172,9 +172,9 @@ the common case: a clean, branded, printable dashboard that also opens as a live
 
 ## Data handling
 
-This skill is **local and offline** — it embeds whatever data you pass directly into the
-HTML and never calls out (no CDN/remote images), which is exactly why it suits sensitive or
-confidential business/financial data. Keep the rendered `.html`/PDF on **your synced or
+The renderer is **local and offline** — it embeds whatever data you pass directly into the
+HTML and never calls out (no CDN/remote images), so the dashboard file itself leaks nothing. (The
+AI agent driving the skill does send whatever it reads into its context to your AI provider.) Keep the rendered `.html`/PDF on **your synced or
 shared file store**. If the dashboard contains **personal data or confidential business/
 financial data** (e.g. named individuals with contact details or IDs, customer/supplier
 lists, pricing, unpublished financials), treat the file as gated — don't send it to any
