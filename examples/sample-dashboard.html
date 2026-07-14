@@ -1,0 +1,84 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sample reconciliation</title><style>
+:root{--burg:#163F3A;--rose:#A9722F;--ink:#1A1A17;
+--grey:#55524A;--line:#E4DDD0;--bg:#F7F4EE}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif}
+.wrap{max-width:1040px;margin:0 auto;padding:0 20px 40px}
+header{display:flex;align-items:flex-end;justify-content:space-between;
+gap:16px;border-bottom:3px solid var(--burg);padding:22px 0 12px;margin-bottom:18px}
+.brand{display:flex;align-items:center;gap:13px}
+.brand .logo{height:46px;width:auto;display:block}
+.mark{font-weight:700;letter-spacing:2px;color:var(--ink);font-size:24px}
+h1{font-size:21px;margin:0;font-weight:700}
+.sub{color:var(--grey);font-size:13px;margin-top:2px}
+.asof{text-align:right;color:var(--grey);font-size:12px;white-space:nowrap}
+.asof b{display:block;color:var(--ink);font-size:13px}
+.btn{margin-top:8px;font:12px 'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif;background:var(--burg);color:#fff;border:0;
+border-radius:5px;padding:6px 12px;cursor:pointer}
+.sec{margin:22px 0}
+.sec h2{font-size:15px;color:var(--burg);margin:0 0 10px;
+border-left:4px solid var(--burg);padding-left:9px}
+.block{background:#fff;border:1px solid var(--line);border-radius:9px;
+padding:14px 16px;margin:0 0 14px}
+.bt{font-size:13px;margin:0 0 10px;color:var(--ink)}
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+gap:14px;margin:0 0 14px}
+.kpi{background:#fff;border:1px solid var(--line);border-top:4px solid var(--burg);
+border-radius:9px;padding:14px 16px}
+.kpi-val{font-size:30px;font-weight:700;line-height:1.1}
+.kpi-lbl{color:var(--grey);font-size:12px;margin-top:4px;text-transform:uppercase;
+letter-spacing:.4px}
+.kpi-sub{color:var(--ink);font-size:12px;margin-top:6px}
+.lay{display:grid;gap:14px}
+.lay .block{margin:0}
+.chart{width:100%;height:auto;display:block}
+.chart .v{font:11px 'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif;fill:var(--ink)}
+.chart .x{font:11px 'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif;fill:var(--grey)}
+.donut-wrap{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+.donut{max-width:240px}
+.dn-c{font:700 26px 'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif;fill:var(--burg)}
+.dn-l{font:11px 'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif;fill:var(--grey)}
+.legend{display:flex;flex-wrap:wrap;gap:10px 16px;margin-top:8px;font-size:12px}
+.legend.col{flex-direction:column;gap:6px}
+.lg{display:inline-flex;align-items:center;gap:6px;color:var(--ink)}
+.lg i{width:11px;height:11px;border-radius:2px;display:inline-block}
+.pill{display:inline-block;padding:2px 9px;border-radius:11px;font-size:11px;
+font-weight:600}
+table.grid{border-collapse:collapse;width:100%;font-size:13px}
+table.grid th{background:var(--burg);color:#fff;text-align:left;padding:7px 9px;
+font-weight:600;font-size:12px}
+table.grid td{border-bottom:1px solid var(--line);padding:6px 9px}
+table.grid tbody tr:nth-child(even){background:#F1ECE255}
+table.grid[data-sortable] th{cursor:pointer;user-select:none}
+.so{font-size:9px;opacity:.85}
+.legend[data-toggle] .lg{cursor:pointer}
+.legend[data-toggle] .lg.off{opacity:.35}
+.filterbar{font-size:12px;color:var(--grey);margin:0 0 10px}
+.filterbar select{font:12px 'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif;padding:3px 7px;border:1px solid var(--line);
+border-radius:5px;color:var(--ink);background:#fff}
+.empty{color:var(--grey);text-align:center;padding:18px;font-style:italic}
+footer{margin-top:26px;border-top:1px solid var(--line);padding-top:10px;
+color:var(--grey);font-size:11px}
+@media print{
+ body{background:#fff}
+ .btn{display:none}
+ .wrap{max-width:none;padding:0}
+ .block,.kpi,.sec{break-inside:avoid}
+ header{padding-top:0}
+}
+</style></head><body><div class="wrap">
+<header>
+ <div>
+  <div class="brand"><img class="logo" src="data:image/png;base64,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" alt="Phronesis Applied"><h1>Sample reconciliation</h1></div>
+  <div class="sub">Invoice tracker vs ledger — quickstart demo</div>
+ </div>
+ <div class="asof">as of<b>14 Jul 2026</b>
+  <button class="btn" onclick="window.print()">Print / Save&nbsp;PDF</button></div>
+</header>
+<div class="kpi-row"><div class="kpi" style="border-top-color:#2E7D57"><div class="kpi-val" style="color:#2E7D57">1</div><div class="kpi-lbl">Matched (1:1)</div></div><div class="kpi" style="border-top-color:#9B2226"><div class="kpi-val" style="color:#9B2226">5</div><div class="kpi-lbl">Exceptions</div></div><div class="kpi" style="border-top-color:#163F3A"><div class="kpi-val" style="color:#163F3A">125,000</div><div class="kpi-lbl">Value matched</div></div><div class="kpi" style="border-top-color:#B26B00"><div class="kpi-val" style="color:#B26B00">43,000.5</div><div class="kpi-lbl">Value in exception</div></div></div><section class="sec"><h2>Exception mix</h2><div class="block"><h3 class="bt">Exceptions by triage category</h3><svg viewBox="0 0 640 220" class="chart" preserveAspectRatio="xMidYMid meet"><rect x="8.0" y="20.0" width="148.0" height="172.0" rx="3" fill="#163F3A"><title>amount_mismatch: 2</title></rect><text x="82.0" y="16.0" text-anchor="middle" class="v">2</text><text x="82.0" y="211.0" text-anchor="middle" class="x">amount_mismatch</text><rect x="166.0" y="106.0" width="148.0" height="86.0" rx="3" fill="#A9722F"><title>missing_in_B: 1</title></rect><text x="240.0" y="102.0" text-anchor="middle" class="v">1</text><text x="240.0" y="211.0" text-anchor="middle" class="x">missing_in_B</text><rect x="324.0" y="106.0" width="148.0" height="86.0" rx="3" fill="#20574F"><title>duplicate: 1</title></rect><text x="398.0" y="102.0" text-anchor="middle" class="v">1</text><text x="398.0" y="211.0" text-anchor="middle" class="x">duplicate</text><rect x="482.0" y="106.0" width="148.0" height="86.0" rx="3" fill="#2E7D57"><title>missing_in_A: 1</title></rect><text x="556.0" y="102.0" text-anchor="middle" class="v">1</text><text x="556.0" y="211.0" text-anchor="middle" class="x">missing_in_A</text></svg></div></section><section class="sec"><h2>Top exceptions</h2><div class="block"><h3 class="bt">Highest-priority items (sample)</h3><table class="grid"><thead><tr><th>Category</th><th>Magnitude</th><th>Materiality</th><th>Action</th></tr></thead><tbody><tr><td>missing_in_B</td><td>15,000</td><td>escalate</td><td>investigate</td></tr><tr><td>duplicate</td><td>15,000</td><td>escalate</td><td>remove</td></tr><tr><td>missing_in_A</td><td>9,000</td><td>material</td><td>investigate</td></tr><tr><td>amount_mismatch</td><td>4,000</td><td>material</td><td>investigate</td></tr><tr><td>amount_mismatch</td><td>-0.5</td><td>immaterial</td><td>investigate</td></tr></tbody></table></div></section>
+<footer>
+ Phronesis Applied — internal. Generated 14 Jul 2026. A draft for review by a
+ qualified person, not advice.</footer>
+</div></body></html>

@@ -163,10 +163,11 @@ the common case: a clean, branded, printable dashboard that also opens as a live
 - `references/brand.md` — the theming guide: the neutral default palette/font/logo and how
   a firm sets its own brand.
 - `references/blocks.md` — the building-block cookbook with worked snippets.
-- `assets/logo-sample.png` — a **neutral sample logo (placeholder)**, base64-embedded into
-  the header so the artefact stays self-contained. A firm **swaps it for its own** (replace
-  the file or point `theme["logo_path"]` at its PNG). If absent, the header shows a text
-  wordmark of the brand name.
+- `assets/logo-sample.png` — **Phronesis Applied** header lockup by default (mark from
+  phronesis-applied.com), base64-embedded so the artefact stays self-contained. Firms
+  white-label by replacing the file or pointing `theme["logo_path"]` at their PNG; if
+  absent, the header shows a text wordmark. Also shipped: `logo-phronesis.png`,
+  `logo-phronesis-mark.png`, `logo-phronesis-mark.svg`.
 - `examples/operations-dashboard.html` — a built sample (the self-test output).
 
 ## Data handling

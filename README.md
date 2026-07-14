@@ -15,6 +15,9 @@ Built for the people who spend their week wrestling exports into shape — accou
 bookkeepers, finance and ops analysts, consultants, and the firms that serve them — and for
 anyone who needs the numbers to be **right, reproducible, and confidential**, not just fast.
 
+**From [Phronesis Applied](https://www.phronesis-applied.com)** — practical AI and automation
+for real businesses. The open front door of the Phronesis Applied finance toolkit suite.
+
 ## Install (Claude Code plugin)
 
 The toolkit ships as a self-installing Claude Code plugin. In an interactive Claude Code
@@ -41,6 +44,21 @@ The repo is its own marketplace (`.claude-plugin/marketplace.json`), so `owner/r
 either form needs. Prefer to run the scripts directly instead? Clone the repo and skip to
 [Getting started](#getting-started) — the toolkit is happily standalone.
 
+## Try it in ~10 minutes
+
+No Claude required. From a clone of this repo:
+
+```bash
+pip install openpyxl
+python examples/run_quickstart.py
+```
+
+That writes a reconciliation working paper and a branded HTML dashboard under
+`examples/out/`. Pre-built samples are also committed as
+[`examples/sample-reconciliation.xlsx`](examples/sample-reconciliation.xlsx) and
+[`examples/sample-dashboard.html`](examples/sample-dashboard.html) if you just want to look.
+Full notes: [`examples/README.md`](examples/README.md).
+
 ## Why teams choose it
 
 - **Fully local, fully confidential.** No network calls, no cloud upload, no credentials, no
@@ -54,11 +72,11 @@ either form needs. Prefer to run the scripts directly instead? Clone the repo an
 - **Drafts, not advice.** Every output is a first draft for a qualified person to sign off —
   clearly labelled as such, never dressed up as a decision or as financial/tax/investment
   advice. See [`PRINCIPLES.md`](PRINCIPLES.md).
-- **White-label by design.** Neutral defaults throughout; the dashboard layer takes your
-  colours, font and logo without touching a line of code.
+- **White-label ready.** Phronesis Applied defaults out of the box; the dashboard layer takes
+  your colours, font and logo without touching a line of code.
 - **Standalone.** Needs nothing exotic to run — plain Python plus a couple of optional
   libraries for non-spreadsheet inputs. It also slots in as a clean data-prep front end for
-  your other toolkits, but depends on none of them.
+  the rest of the Phronesis Applied suite, but depends on none of them.
 
 ## What you can do
 
@@ -120,3 +138,13 @@ sections and stray tags, and runs the engine self-tests. The regression suite lo
 highest-risk behaviours: exact `Decimal` amounts, currency comparison, the reconciliation date
 window, multi-sheet selection, form-layout extraction, and PDF engine scoring. See
 [`tests/README.md`](tests/README.md) for the full list.
+
+## License
+
+Licensed under the [Apache License 2.0](LICENSE) — use it, fork it, build on it, commercially
+or otherwise. See [`NOTICE`](NOTICE) for attribution and brand-mark notes.
+
+---
+
+Built and maintained by **[Phronesis Applied](https://www.phronesis-applied.com)** · Singapore ·
+[hello@phronesis-applied.com](mailto:hello@phronesis-applied.com)
