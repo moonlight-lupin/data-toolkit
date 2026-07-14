@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.2 — 2026-07-14
+
+Pre-release polish:
+
+- Changelog `0.1.0` date filled in; dropped “de-branded from internal toolkit” wording.
+- Visualise docs and footer aligned with Phronesis Applied defaults (no more “slate + blue
+  neutral” / “— internal” on public artefacts).
+- `.gitignore` tightened (`.env`, self-test workbooks); `AGENTS.md` skill count corrected;
+  minimal `requirements.txt` added for public installers.
+
 ## 0.4.1 — 2026-07-14
 
 Open lander under **Phronesis Applied** (on top of 0.4.0):
@@ -140,6 +150,6 @@ Engine improvements (borrowing sharper cleaning primitives from the `data-cleane
   (per-column completeness A–F, type consistency, severity-tagged issues, weighted overall
   score) before and after cleaning; `data-tidy` gains a quality-report-only mode.
 
-## 0.1.0 — YYYY-MM-DD
+## 0.1.0 — 2026-06-16
 
-Initial release: extract, tidy, reconcile, visualise skills + shared local data engine (de-branded from internal toolkit).
+Initial release: extract, tidy, reconcile, visualise skills + shared local data engine.
