@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.4.3 — 2026-07-14
+
+Bug fixes and an enhancement surfaced in toolkit testing:
+
+- **`data-reconcile` — amount_date no longer matches on amount alone (Blocker).** In
+  `--mode amount_date` with **no resolvable date column** the date window (the mode's safety
+  rail) silently short-circuited — equal-amount pairs whose dates were weeks apart passed as
+  in-window matches. Now such pairs are held as `ambiguous_match` ("matched on amount alone —
+  confirm") and the run **warns** (surfaced in the summary/report); the window is only ever
+  applied when a date column resolves.
+- **`data-reconcile` — duplicate / sign_flip / amount_mismatch now triaged in amount_date mode.**
+  A second pass (`_refine_residues`) over the one-sided residue classifies the bank-vs-cashbook
+  staples that key mode gets for free — a double-entered cashbook line (`duplicate`), a debit
+  booked as a credit (`sign_flip`), a net-vs-gross GST gap (`amount_mismatch`) — instead of
+  leaving them as bare `missing_in_A/B`. Conservative and confirm-first (opposite-equal amounts,
+  a common tax ratio, or an exact amount+date twin of an already-matched line).
+- **`data-extract` — currency fields keep the code.** A `currency`-typed field now supports
+  `code_target`, emitting the detected ISO code into its own key on the record (and column, via
+  the new `extract.field_columns(FIELDS)` helper) — so mixed-currency batches (GBP/SGD/USD) are
+  no longer delivered as amounts stripped of their code.
+- **`data-tidy` — a separate Currency column survives an unparseable amount.** A `currency`
+  column may now name a `code_source` column; the code is resolved independently of the amount,
+  so a blank/`"pending"` amount keeps its currency (the flag costs the row its *amount*, not its
+  *currency*), and a symbol-less amount whose code comes from that column is no longer flagged
+  "code unknown".
+- Engine self-tests extended to cover each case; `bin/data-lint` green.
+
 ## 0.4.2 — 2026-07-14
 
 Pre-release polish:

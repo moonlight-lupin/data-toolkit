@@ -282,7 +282,7 @@ def match(rows_a, rows_b, *, key=None, amount="amount", date=None, currency=None
     A, B = _mk(rows_a), _mk(rows_b, flip=flip_b)
 
     res = {"matched": [], "value_diffs": [], "currency_diffs": [], "currency_unknown": [],
-           "parse_errors": [],
+           "parse_errors": [], "warnings": [],
            "a_only": [], "b_only": [], "dup_a": [], "dup_b": [], "ambiguous": []}
 
     if mode == "key":
@@ -331,6 +331,11 @@ def match(rows_a, rows_b, *, key=None, amount="amount", date=None, currency=None
         usedb = set()
         bidx = list(B)
         win = date_window_days
+        # amount_date's safety rail IS the date window. With NO date column named, the window
+        # can't be applied — so equal-amount pairs are NOT silently matched on amount alone: they
+        # are held as `ambiguous` for confirmation and a warning is raised. (A named-but-
+        # unparseable date routes each affected row to a_only via the guards below instead.)
+        no_date = not date
         for a in A:
             if a["amt"] is None:
                 res["a_only"].append({"a": a})
@@ -338,7 +343,7 @@ def match(rows_a, rows_b, *, key=None, amount="amount", date=None, currency=None
             if date and a["dt"] is None:
                 res["a_only"].append({"a": a})
                 continue
-            best_in = best_out = best_unknown = None   # in-window / out-of-window / strict-unknown
+            best_in = best_out = best_unknown = None   # in-window / out-of-window(or no-date) / strict-unknown
             for b in bidx:
                 if id(b) in usedb or b["amt"] is None:
                     continue
@@ -349,14 +354,18 @@ def match(rows_a, rows_b, *, key=None, amount="amount", date=None, currency=None
                 rel = _ccy_relation(a["ccy"], b["ccy"], strict_currency)
                 if rel == "mismatch":              # equal amount, different currency — not the same money
                     continue
-                gap = abs((a["dt"] - b["dt"]).days) if (a["dt"] and b["dt"]) else 0
+                gap = abs((a["dt"] - b["dt"]).days) if (a["dt"] and b["dt"]) else None
                 if rel == "unknown":               # strict: equal amount but currency unverifiable
-                    if best_unknown is None or gap < best_unknown[1]:
+                    if best_unknown is None or gap is None or best_unknown[1] is None \
+                            or gap < best_unknown[1]:
                         best_unknown = (b, gap)
+                elif no_date:                      # window unenforceable -> hold for confirmation
+                    if best_out is None:
+                        best_out = (b, None)
                 elif win is None or gap <= win:
                     if best_in is None or gap < best_in[1]:
                         best_in = (b, gap)
-                elif best_out is None or gap < best_out[1]:
+                elif best_out is None or best_out[1] is None or gap < best_out[1]:
                     best_out = (b, gap)
             if best_in is not None:
                 b, gap = best_in
@@ -365,10 +374,20 @@ def match(rows_a, rows_b, *, key=None, amount="amount", date=None, currency=None
                 if gap:
                     rec["date_gap"] = gap          # in-window gap -> genuine timing difference
                 res["matched"].append(rec)
-            elif best_out is not None:             # equal amount, but only OUTSIDE the window
+            elif best_out is not None:             # equal amount, but window not satisfied/enforceable
                 b, gap = best_out
                 usedb.add(id(b))                   # reserve b so it isn't also counted as b_only
-                res["ambiguous"].append({"a": a, "b": b, "date_gap": gap})
+                rec = {"a": a, "b": b}
+                if gap is None:                    # no date column -> matched on amount ALONE
+                    rec["no_date"] = True
+                    if not res["warnings"]:
+                        res["warnings"].append(
+                            "amount_date mode ran without a resolvable date column: equal-amount "
+                            "pairs are held as ambiguous (matched on amount alone), not reconciled. "
+                            "Provide a date column (--date) to enforce the matching window.")
+                else:
+                    rec["date_gap"] = gap
+                res["ambiguous"].append(rec)
             elif best_unknown is not None:         # strict: equal amount, currency unknown
                 b, gap = best_unknown
                 usedb.add(id(b))
@@ -378,6 +397,9 @@ def match(rows_a, rows_b, *, key=None, amount="amount", date=None, currency=None
         for b in bidx:
             if id(b) not in usedb:
                 res["b_only"].append({"b": b})
+        # Second pass: classify the one-sided residue (duplicate / sign_flip / amount_mismatch),
+        # which 1:1 amount+date matching alone leaves as bare missing_in_A / missing_in_B.
+        _refine_residues(res, tol=tol, win=win)
     return res
 
 
@@ -415,6 +437,93 @@ def _tax_hint(a_amt, b_amt):
     return None
 
 
+# --------------------------------------------------------------------------- #
+# Stage 1.5 — refine the amount_date residue (duplicate / sign_flip / amount_mismatch)
+# In `key` mode these come free from the shared key; amount_date matching alone leaves them
+# as bare one-sided items, so a second pass over a_only / b_only reclassifies them into the
+# SAME buckets key-mode uses (value_diffs / dup_a / dup_b) — triage then labels them.
+# --------------------------------------------------------------------------- #
+def _sig(x):
+    """Duplicate signature for a residue item (no shared key in amount_date): amount + date."""
+    return (x["amt"], x["dt"])
+
+
+def _refine_residues(res, *, tol, win, rounding=Decimal("0.05")):
+    """Reclassify the one-sided residue. Conservative — with no shared key, it pairs only on
+    defensible signals: opposite-equal amounts (sign_flip), a net-vs-gross tax ratio
+    (amount_mismatch), or an exact amount+date twin of an already-matched / prior residue item
+    (duplicate). Every result is a CONFIRM item for the reviewer, never an auto-adjustment."""
+    a_items = [d["a"] for d in res["a_only"]]
+    b_items = [d["b"] for d in res["b_only"]]
+    used_a, used_b = set(), set()
+
+    def _win_ok(x, y):
+        if win is None or not x["dt"] or not y["dt"]:
+            return True
+        return abs((x["dt"] - y["dt"]).days) <= win
+
+    # (1) sign_flip — equal magnitude, opposite sign (a + b ~ 0), currency-compatible, in window
+    for a in a_items:
+        if id(a) in used_a or a["amt"] is None or abs(a["amt"]) <= rounding:
+            continue
+        for b in b_items:
+            if id(b) in used_b or b["amt"] is None:
+                continue
+            if _ccy_relation(a["ccy"], b["ccy"]) == "mismatch":
+                continue
+            if abs(a["amt"] + b["amt"]) <= rounding and _win_ok(a, b):
+                res["value_diffs"].append({"a": a, "b": b, "diff": a["amt"] - b["amt"]})
+                used_a.add(id(a)); used_b.add(id(b))
+                break
+
+    # (2) amount_mismatch — one item mis-stated. Without a key, pair only when same sign, in
+    # window, currency-compatible AND the gap is a common net-vs-gross tax ratio; nearest date wins.
+    for a in a_items:
+        if id(a) in used_a or a["amt"] is None:
+            continue
+        best = None
+        for b in b_items:
+            if id(b) in used_b or b["amt"] is None:
+                continue
+            if (a["amt"] > 0) != (b["amt"] > 0):        # same sign only
+                continue
+            if abs(a["amt"] - b["amt"]) <= tol:         # equal -> would already have matched
+                continue
+            if _ccy_relation(a["ccy"], b["ccy"]) == "mismatch" or not _win_ok(a, b):
+                continue
+            if _tax_hint(a["amt"], b["amt"]):
+                gap = abs((a["dt"] - b["dt"]).days) if (a["dt"] and b["dt"]) else 0
+                if best is None or gap < best[1]:
+                    best = (b, gap)
+        if best is not None:
+            res["value_diffs"].append({"a": a, "b": best[0], "diff": a["amt"] - best[0]["amt"]})
+            used_a.add(id(a)); used_b.add(id(best[0]))
+
+    # (3) duplicate — an unmatched item that is an exact amount+date twin of an already-matched
+    # item (its real pair was reconciled) or of another still-unmatched item on the same side.
+    for items, side, used, bucket in (
+            (a_items, "a", used_a, "dup_a"), (b_items, "b", used_b, "dup_b")):
+        matched_sigs = {}
+        for m in res["matched"]:
+            it = m[side]
+            if it["amt"] is not None:
+                matched_sigs[_sig(it)] = matched_sigs.get(_sig(it), 0) + 1
+        seen = set()
+        for x in items:
+            if id(x) in used or x["amt"] is None:
+                continue
+            k = _sig(x)
+            if matched_sigs.get(k) or k in seen:        # twin already matched, or a prior residue twin
+                res[bucket].append(x); used.add(id(x))
+            else:
+                seen.add(k)
+
+    if used_a or used_b:
+        res["a_only"] = [d for d in res["a_only"] if id(d["a"]) not in used_a]
+        res["b_only"] = [d for d in res["b_only"] if id(d["b"]) not in used_b]
+    return res
+
+
 def triage(res, *, a_label="A", b_label="B", material=1000.0, escalate=10000.0,
            rounding=0.05, date_window_days=5, as_of=None):
     """Classify every unreconciled item. Returns a list of exception dicts.
@@ -439,7 +548,10 @@ def triage(res, *, a_label="A", b_label="B", material=1000.0, escalate=10000.0,
     for d in res.get("ambiguous", []):
         a, b = d["a"], d["b"]
         c, act = cause_action("ambiguous_match")
-        c = f"{c} (dates {d['date_gap']} days apart)"
+        if d.get("no_date"):
+            c = f"{c} (no date column — matched on amount alone; confirm it is the same item)"
+        else:
+            c = f"{c} (dates {d['date_gap']} days apart)"
         out.append(_exc("ambiguous_match", a, b, a["amt"], "confirm", c, act, material, escalate))
     for d in res.get("currency_diffs", []):
         a, b = d["a"], d["b"]
@@ -762,6 +874,7 @@ def summarise(res, exceptions, *, amount="amount"):
         "value_matched": round(mat_val, 2), "value_in_exception": round(exc_val, 2),
         "by_category": by_cat, "by_currency": by_ccy,
         "material_or_escalate": reds, "rag": rag,
+        "warnings": list(res.get("warnings", [])),
     }
 
 
@@ -790,6 +903,8 @@ def render_report(summary, exceptions, *, a_label="A", b_label="B", title="Recon
              f"({s['matched']} matched 1:1{agg}); {s['exceptions']} exception(s), "
              f"{s['material_or_escalate']} material/escalate.")
     L.append(f"Value matched: {_money(s['value_matched'])} · value in exception: {_money(s['value_in_exception'])}")
+    for w in s.get("warnings", []):
+        L.append(f"> ⚠️ **Warning** — {_md_escape(w)}")
     for label, chk in (balances or []):
         L.append(_md_escape(render_balance_check(chk, label)))
     L.append("")
@@ -1036,6 +1151,42 @@ def _self_test():
     assert len(r4["matched"]) == 1 and not r4["ambiguous"], "within window should match"
     assert r4["matched"][0].get("date_gap") == 19, r4["matched"][0]
     print("amount_date window: PASS")
+
+    # amount_date with NO date column: the window can't be enforced, so equal amounts are held as
+    # ambiguous (matched on amount ALONE), never silently reconciled — and the run WARNS.
+    And = [{"amount": "3,236.53", "date": "13/06/2026"}]       # dates present but not passed as a column
+    Bnd = [{"amount": "3,236.53", "date": "25/06/2026"}]       # 12 days apart — would be a false match
+    rnd = match(And, Bnd, amount="amount", mode="amount_date")  # NB: no date= argument
+    assert not rnd["matched"] and len(rnd["ambiguous"]) == 1, ("no-date must not match", rnd)
+    assert rnd["ambiguous"][0].get("no_date") and rnd["warnings"], rnd
+    exc_nd = triage(rnd)
+    assert exc_nd and exc_nd[0]["category"] == "ambiguous_match", exc_nd
+    assert "amount alone" in exc_nd[0]["probable_cause"], exc_nd[0]
+    assert summarise(rnd, exc_nd)["warnings"], "warning must surface in the summary"
+    print("amount_date no-date safety: PASS")
+
+    # amount_date residue triage (Stage 1.5): duplicate / sign_flip / amount_mismatch are
+    # classified, not left as bare missing_in_A / missing_in_B (a bank-vs-cashbook staple).
+    Ar = [
+        {"amount": "1000.00", "date": "01 Jun 2026"},   # matches Br[0]
+        {"amount": "1000.00", "date": "01 Jun 2026"},   # DUPLICATE of the above (cashbook double-entry)
+        {"amount": "3292.08", "date": "05 Jun 2026"},   # sign flip vs Br[1] (+ vs -)
+        {"amount": "-2400.00", "date": "07 Jun 2026"},  # net; Br[2] is gross (9% GST) -> amount_mismatch
+    ]
+    Br = [
+        {"amount": "1000.00", "date": "01 Jun 2026"},
+        {"amount": "-3292.08", "date": "05 Jun 2026"},
+        {"amount": "-2616.00", "date": "07 Jun 2026"},  # -2400 * 1.09
+    ]
+    rr = match(Ar, Br, amount="amount", date="date", mode="amount_date")
+    cats_r = sorted({e["category"] for e in triage(rr)})
+    assert len(rr["matched"]) == 1, rr["matched"]
+    assert "duplicate" in cats_r, ("expect the cashbook duplicate", cats_r)
+    assert "sign_flip" in cats_r, ("expect the sign flip", cats_r)
+    assert "amount_mismatch" in cats_r, ("expect the GST net-vs-gross mismatch", cats_r)
+    assert not any(e["category"] in ("missing_in_A", "missing_in_B") for e in triage(rr)), \
+        ("residue should be classified, not left one-sided", triage(rr))
+    print("amount_date residue triage: PASS")
 
     # Decimal exactness: amounts tie without binary-float drift (a float recon can break 0.1+0.2)
     assert to_amount("0.1") + to_amount("0.2") == to_amount("0.3"), "Decimal must be exact"
