@@ -16,3 +16,5 @@ means the regression suite.
   shows BLOCKED without `PyMuPDF`/`fitz`; the other skills are OK with just `openpyxl`
   (`data-visualise` is pure stdlib for rendering).
 - Quickstart (no Claude): `python3 examples/run_quickstart.py`.
+- CI (`.github/workflows/ci.yml`) runs `bin/data-lint`, `tests/test_engine.py`, and the
+  quickstart smoke on Python 3.10–3.12.

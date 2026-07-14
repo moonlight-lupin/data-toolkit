@@ -4,11 +4,15 @@
 
 Pre-release polish:
 
-- Changelog `0.1.0` date filled in; dropped “de-branded from internal toolkit” wording.
+- Changelog `0.1.0` date filled in; removed unfinished “de-branded from internal toolkit”
+  wording from history.
 - Visualise docs and footer aligned with Phronesis Applied defaults (no more “slate + blue
   neutral” / “— internal” on public artefacts).
 - `.gitignore` tightened (`.env`, self-test workbooks); `AGENTS.md` skill count corrected;
   minimal `requirements.txt` added for public installers.
+- Added [`SECURITY.md`](SECURITY.md), [`CONTRIBUTING.md`](CONTRIBUTING.md), and a GitHub
+  Actions CI workflow (`bin/data-lint` + `tests/test_engine.py` + quickstart smoke on
+  Python 3.10–3.12).
 
 ## 0.4.1 — 2026-07-14
 

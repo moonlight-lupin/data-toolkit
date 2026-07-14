@@ -1,0 +1,43 @@
+name: CI
+
+# Quality gate for the Data Toolkit: authoring lint + finance-grade regression suite
+# on every push and PR to main. Matches what contributors run locally
+# (bin/data-lint + tests/test_engine.py).
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Authoring lint (manifest, SKILL.md, engine self-tests)
+        run: python bin/data-lint
+
+      - name: Regression suite
+        run: python tests/test_engine.py
+
+      - name: Quickstart smoke (recon + dashboard)
+        run: python examples/run_quickstart.py

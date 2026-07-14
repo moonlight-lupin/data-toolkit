@@ -137,7 +137,14 @@ description (single-line, non-empty, within the host's length limit), guards aga
 sections and stray tags, and runs the engine self-tests. The regression suite locks in the
 highest-risk behaviours: exact `Decimal` amounts, currency comparison, the reconciliation date
 window, multi-sheet selection, form-layout extraction, and PDF engine scoring. See
-[`tests/README.md`](tests/README.md) for the full list.
+[`tests/README.md`](tests/README.md) for the full list. GitHub Actions runs the same lint +
+suite (plus the quickstart smoke) on every push/PR to `main`.
+
+## Contributing & security
+
+- How to set up, run checks, and open a PR: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- How to report a vulnerability: [`SECURITY.md`](SECURITY.md)
+- Standing behavioural / data rules: [`PRINCIPLES.md`](PRINCIPLES.md), [`DATA-HANDLING.md`](DATA-HANDLING.md)
 
 ## License
 
