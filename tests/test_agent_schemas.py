@@ -114,6 +114,7 @@ def test_extract_fields_json_path_validates_and_runs():
         source = td / "form.txt"
         fields = td / "fields.json"
         output = td / "extracted.xlsx"
+        direct_output = td / "direct-extracted.xlsx"
         source.write_text("Investor: Acme Capital\n", encoding="utf-8")
         fields.write_text(json.dumps(valid_payloads()["data-extract"]), encoding="utf-8")
         plan = {
@@ -125,11 +126,21 @@ def test_extract_fields_json_path_validates_and_runs():
             "output": str(output),
             "approval": {"confirmed": True},
         }
+        original_fields = plan["fields"]
         validation = ar.validate_plan(plan, base_dir=td)
         assert not validation["errors"], validation
+        assert plan["fields"] == original_fields, plan
+
+        direct_plan = {**plan, "output": str(direct_output)}
+        direct = ar._run_extract(direct_plan, td, dry_run=False)
+        assert direct["status"] == "success", direct
+        assert direct_output.exists(), direct
+        assert direct_plan["fields"] == original_fields, direct_plan
+
         result = ar.run_plan(plan, base_dir=td)
         assert result["status"] == "success", result
         assert output.exists(), result
+        assert plan["fields"] == original_fields, plan
 
 
 def test_cli_validate_spec_and_error_code():
