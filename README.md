@@ -30,7 +30,12 @@ toolkit suite.
 
 **Skip the pitch — open a sample:**
 [`sample-dashboard.html`](examples/sample-dashboard.html) ·
+[`sample-branded-dashboard.html`](examples/sample-branded-dashboard.html)
+(Acme Co white-label) ·
 [`sample-reconciliation.xlsx`](examples/sample-reconciliation.xlsx)
+
+New here? Start with [`ONBOARDING.md`](ONBOARDING.md) — install, quickstart, then
+**theme + logo** in one sitting.
 
 ---
 
@@ -64,11 +69,13 @@ No Claude required:
 
 ```bash
 pip install openpyxl
-python examples/run_quickstart.py
+python examples/run_quickstart.py          # neutral default dashboard
+python examples/run_branded_dashboard.py   # same data, Acme Co theme + logo
 ```
 
-That writes a reconciliation working paper and an HTML dashboard under
-`examples/out/`. Full notes: [`examples/README.md`](examples/README.md).
+That writes working papers and HTML dashboards under `examples/out/`. Full notes:
+[`examples/README.md`](examples/README.md). Step-by-step (incl. theme + logo):
+[`ONBOARDING.md`](ONBOARDING.md).
 
 ## Why teams choose it
 
@@ -93,8 +100,9 @@ That writes a reconciliation working paper and an HTML dashboard under
 - **Drafts, not advice.** Every output is a first draft for a qualified person to
   sign off — clearly labelled, never dressed up as a decision or as financial / tax /
   investment advice. See [`PRINCIPLES.md`](PRINCIPLES.md).
-- **White-label ready.** Ships unbranded — a neutral default; dashboards take your name,
-  colours, fonts and logo without touching a line of code.
+- **White-label ready.** Ships unbranded — a neutral default; pass a `theme` dict
+  (brand name, colours, fonts, local logo) to re-skin dashboards. See
+  [Onboarding §3](ONBOARDING.md#3-put-your-brand-on-a-dashboard-theme--logo).
 - **Standalone.** Plain Python plus optional libraries for non-spreadsheet inputs. It
   also slots in as a data-prep front end for the rest of the Phronesis Applied suite,
   but depends on none of them.

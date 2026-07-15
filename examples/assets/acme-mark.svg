@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 40" role="img" aria-label="Acme Co">
+  <!-- Fictional sample mark for the white-label quickstart - not a real brand. -->
+  <rect width="40" height="40" rx="8" fill="#0B3D91"/>
+  <path fill="#FFFFFF" d="M10 30 L20 10 L30 30 Z"/>
+  <rect x="17.5" y="22" width="5" height="8" fill="#42A5F5"/>
+  <text x="52" y="27" font-family="Segoe UI, Helvetica Neue, Arial, sans-serif"
+        font-size="20" font-weight="700" fill="#0B3D91">Acme Co</text>
+</svg>
