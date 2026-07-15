@@ -13,7 +13,7 @@ SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-import agent_runtime as ar
+import agent_runtime_api as ar
 
 
 def check(name, fn):
@@ -78,7 +78,6 @@ def test_all_skill_plan_shapes_validate():
 
 
 def test_convert_json_flatten_union_and_nest():
-    # Imports the real conversion engine from the repository.
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
         a = td / "a.json"
@@ -98,14 +97,14 @@ def test_convert_json_flatten_union_and_nest():
             "approval": {"confirmed": True},
         }
         result = ar.run_plan(plan, base_dir=td)
-        assert result["status"] in ("success", "success_with_warnings"), result
+        assert result["status"] == "success", result
         text = out.read_text(encoding="utf-8")
         assert "party.name" in text and "extra" in text and "A" in text and "B" in text
         assert result["metrics"]["sources"] == 2
 
         source = td / "lines.csv"
         source.write_text("id,sku,amount\n1,A,10\n1,B,20\n", encoding="utf-8")
-        nested_out = td / "nested.csv"  # runtime must report/write sibling .json
+        nested_out = td / "nested.csv"
         nest_plan = {
             "version": 1,
             "skill": "data-convert",
@@ -122,6 +121,40 @@ def test_convert_json_flatten_union_and_nest():
         assert written.suffix == ".json" and written.exists(), nested_result
         payload = json.loads(written.read_text(encoding="utf-8"))
         assert len(payload) == 1 and len(payload[0]["lines"]) == 2
+
+
+def test_multiple_conversion_inputs_require_explicit_union():
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        a = td / "a.json"
+        b = td / "b.json"
+        a.write_text('[{"x":1}]', encoding="utf-8")
+        b.write_text('[{"x":2}]', encoding="utf-8")
+        out = td / "new-output-dir" / "out.csv"
+        plan = {
+            "version": 1, "skill": "data-convert",
+            "inputs": [str(a), str(b)],
+            "spec": {"target": {"format": "csv"}},
+            "output": str(out), "approval": {"confirmed": True},
+        }
+        result = ar.run_plan(plan, base_dir=td)
+        assert result["status"] == "error", result
+        assert "explicit union" in result["errors"][0]
+        assert not out.exists()
+
+
+def test_extract_fields_validation_does_not_parse_as_table():
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        document = td / "form.pdf"
+        document.write_bytes(b"not a real PDF; validation should only check existence")
+        plan = {
+            "version": 1, "skill": "data-extract", "input": str(document),
+            "mode": "fields", "fields": [{"name": "Name", "labels": ["name"]}],
+            "output": str(td / "out.xlsx"), "approval": {"confirmed": True},
+        }
+        result = ar.validate_plan(plan, base_dir=td)
+        assert not result["errors"], result
 
 
 def test_analysis_zero_total_is_preserved():
@@ -204,7 +237,8 @@ def test_visualise_declarative_runtime():
                 "as_of": "15 Jul 2026",
                 "blocks": [
                     {"type": "kpi_row", "items": [{"label": "Open", "value": 1, "status": "amber"}]},
-                    {"type": "table", "title": "Rows", "rows": "$source"}
+                    {"type": "table", "title": "Rows", "rows": "$source",
+                     "rag": {"Status": {"Open": "amber"}}}
                 ]
             },
             "output": str(out),
@@ -213,6 +247,7 @@ def test_visualise_declarative_runtime():
         assert result["status"] == "success", result
         html = out.read_text(encoding="utf-8")
         assert "Agent runtime dashboard" in html and "Owner" in html and "Open" in html
+        assert "border-left:3px solid" in html
 
 
 def test_dry_run_writes_nothing():
@@ -220,7 +255,7 @@ def test_dry_run_writes_nothing():
         td = Path(td)
         src = td / "x.json"
         src.write_text(json.dumps([{"x": 1}]), encoding="utf-8")
-        out = td / "out.csv"
+        out = td / "new-output-dir" / "out.csv"
         plan = {
             "version": 1,
             "skill": "data-convert",
@@ -229,8 +264,9 @@ def test_dry_run_writes_nothing():
             "output": str(out),
         }
         result = ar.run_plan(plan, base_dir=td, dry_run=True)
-        assert result["status"] in ("success", "success_with_warnings"), result
+        assert result["status"] == "success", result
         assert not out.exists()
+        assert not out.parent.exists()
 
 
 def test_cli_schema_and_inspect():
@@ -252,6 +288,8 @@ def main():
         ("approval gate", test_plan_validation_approval),
         ("six skill plan shapes", test_all_skill_plan_shapes_validate),
         ("convert JSON/flatten/union/nest", test_convert_json_flatten_union_and_nest),
+        ("explicit multi-source union", test_multiple_conversion_inputs_require_explicit_union),
+        ("extract fields validation", test_extract_fields_validation_does_not_parse_as_table),
         ("analysis zero total", test_analysis_zero_total_is_preserved),
         ("tidy JSON runtime", test_tidy_json_runtime),
         ("reconcile JSON runtime", test_reconcile_json_runtime),
