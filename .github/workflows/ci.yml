@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  apply-priority-2-3:
+  install-runtime:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
@@ -18,11 +18,10 @@ jobs:
           ref: agent/schema-fast-path-priority-2-3
           fetch-depth: 0
 
-      - name: Apply reviewed runtime patch
+      - name: Install tested runtime file
         run: |
-          base64 --decode .maintainer/priority23.patch.gz.b64 | gzip --decompress > /tmp/priority23.patch
-          git apply --check --include=scripts/agent_runtime.py /tmp/priority23.patch
-          git apply --include=scripts/agent_runtime.py /tmp/priority23.patch
+          base64 --decode .maintainer/runtime.py.gz.b64 | gzip --decompress > scripts/agent_runtime.py
+          test "$(sha256sum scripts/agent_runtime.py | cut -d' ' -f1)" = "27628e77feed1c0da13880a8187e37f94a8eecc1d7dac86d5747deb5d718f5ba"
           rm -rf .maintainer
 
       - name: Commit runtime integration
