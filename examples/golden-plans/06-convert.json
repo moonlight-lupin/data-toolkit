@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "skill": "data-convert",
+  "input": "fixtures/gl.csv",
+  "spec": {
+    "name": "GL export -> journal import",
+    "source": { "format": "csv", "expected_columns": ["Date", "Account", "Debit", "Credit", "Memo"] },
+    "target": {
+      "format": "csv",
+      "contract": "journal_import",
+      "columns": [
+        { "name": "JournalDate", "required": true },
+        { "name": "AccountCode", "required": true },
+        { "name": "Amount", "required": true },
+        { "name": "Narration" }
+      ]
+    },
+    "map": {
+      "JournalDate": { "from": "Date", "type": "date", "format": "%Y-%m-%d" },
+      "AccountCode": { "from": "Account", "type": "text" },
+      "Amount": { "from": ["Debit", "Credit"], "compute": "debit_minus_credit", "dp": 2 },
+      "Narration": { "from": "Memo", "type": "text" }
+    },
+    "rules": { "on_unmapped_source": "report", "on_missing_required": "error" }
+  },
+  "output": "out/06-convert.csv",
+  "approval": { "confirmed": true }
+}

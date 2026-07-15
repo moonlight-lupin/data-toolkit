@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skill": "data-analyse",
+  "input": "fixtures/sales.csv",
+  "operations": [
+    { "op": "breakdown", "by": "Region", "value": "Amount" },
+    { "op": "outliers_iqr", "column": "Amount" }
+  ],
+  "output": "out/04-analyse.json",
+  "approval": { "confirmed": true }
+}

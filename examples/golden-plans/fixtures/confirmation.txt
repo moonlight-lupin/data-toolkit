@@ -1,0 +1,5 @@
+ABC Capital — Subscription confirmation
+Investor: Acme Pension Fund
+Commitment: GBP 1,000,000
+Close date: 12/06/2026
+Settlement bank: HSBC London

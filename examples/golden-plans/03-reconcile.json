@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skill": "data-reconcile",
+  "inputs": ["fixtures/tracker.csv", "fixtures/ledger.csv"],
+  "options": { "key": "invoice_no", "amount": "amount" },
+  "a_label": "Tracker",
+  "b_label": "Ledger",
+  "output": "out/03-reconcile.xlsx",
+  "approval": { "confirmed": true }
+}

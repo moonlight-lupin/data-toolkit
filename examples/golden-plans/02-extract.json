@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "skill": "data-extract",
+  "input": "fixtures/confirmation.txt",
+  "mode": "fields",
+  "fields": [
+    { "name": "Investor", "labels": ["investor", "name of investor"], "type": "text" },
+    { "name": "Commitment", "labels": ["commitment", "amount"], "type": "currency", "code_target": "Commitment ccy" },
+    { "name": "Close date", "labels": ["close date", "closing"], "type": "date" },
+    { "name": "Settlement bank", "labels": ["settlement bank", "bank"], "type": "text" }
+  ],
+  "output": "out/02-extract.xlsx",
+  "approval": { "confirmed": true }
+}

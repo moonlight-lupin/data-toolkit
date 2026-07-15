@@ -651,7 +651,9 @@ def _run_extract(plan: dict[str, Any], base: Path, dry_run: bool,
     artifacts = []
     warnings: list[Any] = []
     if mode == "fields":
-        fields = plan["fields"]
+        # Resolve fields here (inline list or a .json path) so a run does not depend on a
+        # validate-time cache having populated it — mirrors how _run_convert loads its spec.
+        fields = _load_json_or_inline(plan["fields"], base_dir=base)
         records, flags_list = [], []
         for source in inputs:
             p = Path(source["path"])

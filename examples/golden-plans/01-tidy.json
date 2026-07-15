@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "skill": "data-tidy",
+  "input": "fixtures/payments.csv",
+  "recipe": {
+    "columns": [
+      { "source": "Ref", "target": "Ref", "type": "text" },
+      { "source": "Payment Date", "target": "Payment date", "type": "date", "dayfirst": true },
+      { "source": "Payer", "target": "Payer", "type": "text" },
+      { "source": "Amount", "target": "Amount", "type": "number" },
+      { "source": "Currency", "target": "Currency", "type": "text" }
+    ]
+  },
+  "output": "out/01-tidy.xlsx",
+  "approval": { "confirmed": true }
+}

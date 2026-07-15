@@ -28,6 +28,31 @@ The same envelope always contains `artifacts`, `warnings`, `errors`,
 as well as stdout, including errors and approval requests, so orchestrators can retain a durable
 audit record without scraping terminal text.
 
+## Intended use and trust model
+
+This runtime is built for **attended, human-in-the-loop** use: a person driving an AI agent
+(Cowork, Claude Code and similar) who reviews and confirms what it proposes. In that setting the
+agent-facing guardrails (schema validation, plan confirmation, approval receipts) work *together
+with* the operator's judgement — they are not a substitute for it.
+
+- **The approval receipts assume separated duties.** A signed secondary approval is a real control
+  only when the signing key is held by an operator process **separate from the agent** — the
+  intended production shape. In a single attended session where the same person is both operator
+  and approver, the receipts are a convenience and an audit record, **not** a security boundary.
+- **Engines are deterministic and local, but the runtime does not sandbox the filesystem.** A plan
+  names its own input/output paths; the runtime resolves and reads/writes them with the process's
+  privileges. Confinement to a working directory, input-size limits and network isolation are the
+  **host's** responsibility, not this module's.
+- **For unattended automation, don't drive it with an agent — call the engines directly.** The
+  per-skill scripts (`scripts/*.py`, `skills/*/scripts/*.py`) are plain, deterministic Python; a
+  real pipeline should invoke them as scripts and add its own controls (a sandbox, a path
+  allow-list, size/timeout limits, least privilege). The agent runtime is the *interactive* front
+  door, not a hardened automation gateway.
+
+If a deployment needs the runtime itself to enforce a boundary — untrusted plans, or agent and
+operator sharing one shell/key — treat filesystem containment and resource limits as prerequisites
+to add before that use (see `SECURITY.md`).
+
 ## Declarative schemas
 
 The six agent-facing payload families have Draft 2020-12 schemas under `schemas/`. Normal plan

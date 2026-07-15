@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "skill": "data-visualise",
+  "input": "fixtures/tasks.csv",
+  "dashboard": {
+    "title": "Team task board",
+    "as_of": "15 Jul 2026",
+    "blocks": [
+      { "type": "kpi_row", "items": [
+        { "label": "Open", "value": 1, "status": "amber" },
+        { "label": "Overdue", "value": 1, "status": "red" },
+        { "label": "Done", "value": 1, "status": "green" }
+      ] },
+      { "type": "table", "title": "Tasks", "rows": "$source",
+        "rag": { "Status": { "Open": "amber", "Overdue": "red", "Done": "green" } } }
+    ]
+  },
+  "output": "out/05-visualise.html"
+}

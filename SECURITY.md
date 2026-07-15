@@ -46,6 +46,22 @@ ships or we explain why we are not treating it as a vulnerability.
   we will bump or document once a fix is available
 - Social-engineering / phishing that does not involve this codebase
 
+## Agent runtime — intended use
+
+`bin/data-toolkit` is built for **attended, human-in-the-loop** use (a person driving an AI
+agent who reviews and confirms each step). Its guardrails — schema validation, plan confirmation,
+signed approval receipts — assume that model.
+
+- The signed approval receipts are a real control only when the signing key is held by an
+  operator process **separate from the agent**. In a single attended session they are a
+  convenience and an audit record, not a security boundary.
+- The runtime does **not** sandbox the filesystem: a plan names its own input/output paths and
+  the engines read/write them with the process's privileges. Confinement, input-size limits and
+  network isolation are the host's responsibility.
+- For **unattended automation**, call the deterministic engines directly as scripts and add your
+  own controls; don't point the interactive agent runtime at a pipeline expecting it to be a
+  hardened gateway. See [`AGENT-RUNTIME.md`](AGENT-RUNTIME.md) → *Intended use and trust model*.
+
 ## Data handling summary
 
 - Engines read local files the user points them at and write outputs back to local folders
