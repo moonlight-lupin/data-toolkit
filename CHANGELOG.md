@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.2 — 2026-07-15
+
+Agent-runtime follow-ups (right-sized for attended, human-in-the-loop use):
+
+- **Golden-plan pack** (`examples/golden-plans/`) — six self-contained plans, one per skill, that
+  run end-to-end through the agent runtime: a worked example of the canonical plan shapes **and** a
+  smoke test (wired into `pytest`, so a runtime or engine break fails CI). Fixtures are CSV / plain
+  text (no optional dependency); outputs land in a git-ignored `out/`.
+- **Trust model documented** — `AGENT-RUNTIME.md` gains an "Intended use and trust model" section
+  (attended human-in-the-loop; the signed approval receipts assume separated duties; the runtime
+  does not sandbox the filesystem; for unattended automation, call the deterministic engines
+  directly as scripts), with a matching note in `SECURITY.md`.
+- **Fix** — `_run_extract` resolves its `fields` (an inline list or a `.json` path) at run time via
+  `_load_json_or_inline`, instead of depending on a validate-time cache; mirrors how `_run_convert`
+  loads its spec. Regression test added.
+
 ## 0.5.0 — 2026-07-15
 
 **New skill: `data-convert`** — the toolkit's sixth skill, and the **interoperability**
