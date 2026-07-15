@@ -1,7 +1,7 @@
 name: CI
 
-# Quality gate for the Data Toolkit: authoring lint + finance-grade engine and
-# agent-runtime regression suites on every push and PR to main.
+# Quality gate for the Data Toolkit: authoring lint + finance-grade engine,
+# agent-runtime and schema regression suites on every push and PR to main.
 
 on:
   push:
@@ -46,6 +46,9 @@ jobs:
           status=$?
           cat agent-runtime-test.log
           exit $status
+
+      - name: Agent schema regression suite
+        run: python tests/test_agent_schemas.py
 
       - name: Upload agent runtime failure log
         if: failure()

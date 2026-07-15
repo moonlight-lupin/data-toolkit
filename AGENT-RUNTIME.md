@@ -6,9 +6,10 @@ one result envelope so an agent does not have to improvise glue code.
 
 ```bash
 python bin/data-toolkit inspect source.xlsx
+python bin/data-toolkit validate-spec data-tidy tidy-recipe.json
 python bin/data-toolkit validate plan.json
 python bin/data-toolkit run plan.json --dry-run
-python bin/data-toolkit run plan.json
+python bin/data-toolkit run plan.json --json-report run-result.json
 # operator shell only, for a concrete secondary approval request:
 python bin/data-toolkit approve approval-request.json --by "Reviewer" --allow-drift
 ```
@@ -22,6 +23,21 @@ Every command writes JSON to stdout. `status` is one of:
 
 The same envelope always contains `artifacts`, `warnings`, `errors`,
 `approvals_required`, `metrics` and `details`.
+
+`--json-report PATH` is available on every command. It writes the complete final envelope to disk
+as well as stdout, including errors and approval requests, so orchestrators can retain a durable
+audit record without scraping terminal text.
+
+## Declarative schemas
+
+The six agent-facing payload families have Draft 2020-12 schemas under `schemas/`. Normal plan
+validation loads and validates the relevant inline or referenced payload before source processing.
+Use `validate-spec` for a faster edit/repair loop; errors include JSON pointers such as
+`/operations/0` or `/columns/2/type`. `schema` prints the catalogue, and `schema data-tidy` prints
+one full schema. Conversion-card Markdown is validated from its embedded `convert-spec` block.
+
+For routine execution, agents should start with `AGENT-FAST-PATH.md` rather than loading every
+long skill reference into context.
 
 ## Version 1 plan
 
