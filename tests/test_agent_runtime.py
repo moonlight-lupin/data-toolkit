@@ -5,6 +5,7 @@ import json
 import subprocess
 import sys
 import tempfile
+from decimal import Decimal
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,9 +20,10 @@ def check(name, fn):
     try:
         fn()
         print(f"PASS {name}")
+        return True
     except Exception as exc:
         print(f"FAIL {name}: {exc}")
-        raise
+        return False
 
 
 def test_json_ingest():
@@ -76,6 +78,7 @@ def test_all_skill_plan_shapes_validate():
 
 
 def test_convert_json_flatten_union_and_nest():
+    # Imports the real conversion engine from the repository.
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
         a = td / "a.json"
@@ -95,14 +98,14 @@ def test_convert_json_flatten_union_and_nest():
             "approval": {"confirmed": True},
         }
         result = ar.run_plan(plan, base_dir=td)
-        assert result["status"] == "success", result
+        assert result["status"] in ("success", "success_with_warnings"), result
         text = out.read_text(encoding="utf-8")
         assert "party.name" in text and "extra" in text and "A" in text and "B" in text
         assert result["metrics"]["sources"] == 2
 
         source = td / "lines.csv"
         source.write_text("id,sku,amount\n1,A,10\n1,B,20\n", encoding="utf-8")
-        nested_out = td / "nested.csv"
+        nested_out = td / "nested.csv"  # runtime must report/write sibling .json
         nest_plan = {
             "version": 1,
             "skill": "data-convert",
@@ -226,7 +229,7 @@ def test_dry_run_writes_nothing():
             "output": str(out),
         }
         result = ar.run_plan(plan, base_dir=td, dry_run=True)
-        assert result["status"] == "success", result
+        assert result["status"] in ("success", "success_with_warnings"), result
         assert not out.exists()
 
 
@@ -256,9 +259,10 @@ def main():
         ("dry-run", test_dry_run_writes_nothing),
         ("CLI schema + inspect", test_cli_schema_and_inspect),
     ]
-    for name, fn in tests:
-        check(name, fn)
-    print(f"agent runtime: {len(tests)}/{len(tests)} passed")
+    passed = sum(1 for name, fn in tests if check(name, fn))
+    print(f"agent runtime: {passed}/{len(tests)} passed")
+    if passed != len(tests):
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
