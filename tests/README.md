@@ -61,3 +61,7 @@ Both standalone runners print a PASS/FAIL line per test and exit non-zero on fai
 - The runtime suite creates temporary JSON/CSV plans and imports `agent_runtime` directly,
   so the CLI and library path exercise the same hardened implementation.
 - Approval tests use an injected test key; production keys must be withheld from the agent.
+
+## Agent schema suite
+
+`python tests/test_agent_schemas.py` validates all six Draft 2020-12 schemas, plan integration, targeted JSON-pointer errors, conversion cards, CLI schema discovery, `validate-spec`, and persistent `--json-report` output.
