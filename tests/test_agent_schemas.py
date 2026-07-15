@@ -99,6 +99,39 @@ def test_conversion_card_validation():
         assert result["status"] == "success", result
 
 
+def test_conversion_card_json_fence_validation():
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        card = td / "card.md"
+        card.write_text("# Card\n\n```json\n" + json.dumps(valid_payloads()["data-convert"]) + "\n```\n", encoding="utf-8")
+        result = ar.validate_spec_file("data-convert", card, base_dir=td)
+        assert result["status"] == "success", result
+
+
+def test_extract_fields_json_path_validates_and_runs():
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        source = td / "form.txt"
+        fields = td / "fields.json"
+        output = td / "extracted.xlsx"
+        source.write_text("Investor: Acme Capital\n", encoding="utf-8")
+        fields.write_text(json.dumps(valid_payloads()["data-extract"]), encoding="utf-8")
+        plan = {
+            "version": 1,
+            "skill": "data-extract",
+            "input": str(source),
+            "mode": "fields",
+            "fields": str(fields),
+            "output": str(output),
+            "approval": {"confirmed": True},
+        }
+        validation = ar.validate_plan(plan, base_dir=td)
+        assert not validation["errors"], validation
+        result = ar.run_plan(plan, base_dir=td)
+        assert result["status"] == "success", result
+        assert output.exists(), result
+
+
 def test_cli_validate_spec_and_error_code():
     cli = ROOT / "bin" / "data-toolkit"
     with tempfile.TemporaryDirectory() as td:
@@ -150,6 +183,8 @@ def main():
         ("unknown operation and field", test_unknown_operation_and_field_are_rejected),
         ("plan schema validation", test_plan_validation_runs_schema_before_source),
         ("conversion card", test_conversion_card_validation),
+        ("conversion card JSON fence", test_conversion_card_json_fence_validation),
+        ("extract fields JSON path", test_extract_fields_json_path_validates_and_runs),
         ("CLI validate-spec", test_cli_validate_spec_and_error_code),
         ("CLI JSON report", test_cli_json_report_is_persistent),
         ("CLI schema catalogue", test_cli_schema_catalogue_and_document),
