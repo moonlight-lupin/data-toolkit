@@ -1,8 +1,7 @@
 name: CI
 
-# Quality gate for the Data Toolkit: authoring lint + finance-grade regression suite
-# on every push and PR to main. Matches what contributors run locally
-# (bin/data-lint + tests/test_engine.py).
+# Quality gate for the Data Toolkit: authoring lint + finance-grade engine and
+# agent-runtime regression suites on every push and PR to main.
 
 on:
   push:
@@ -36,8 +35,11 @@ jobs:
       - name: Authoring lint (manifest, SKILL.md, engine self-tests)
         run: python bin/data-lint
 
-      - name: Regression suite
+      - name: Engine regression suite
         run: python tests/test_engine.py
+
+      - name: Agent runtime regression suite
+        run: python tests/test_agent_runtime.py
 
       - name: Quickstart smoke (recon + dashboard)
         run: python examples/run_quickstart.py
