@@ -168,7 +168,10 @@ def breakdown(header, rows, by, value=None, top=10):
                     **({"total": g["total"]} if value else {}),
                     "share": share, "cum_share": cum_share})
     top1_share = out[0]["share"] if out else None
-    top3_share = sum(g["share"] for g in out[:3] if g["share"] is not None) if out else None
+    if not out or not shares_valid:
+        top3_share = None
+    else:
+        top3_share = sum(g["share"] for g in out[:3] if g["share"] is not None) or None
     return {"by": by, "measure": value or "rows", "groups": out[:top],
             "n_groups": len(out), "grand_total": grand if value else sum(g["count"] for _, g in items),
             "top1_share": top1_share,

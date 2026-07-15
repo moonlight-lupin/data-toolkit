@@ -680,7 +680,7 @@ def convert_file(spec, in_path, out_path, run_dates_after=None, base_dir=None):
         kw = {k: v for k, v in nest_op.items() if k != "op"}
         nested = nest(t_header, t_rows, **kw)
         out_path_json = outp.with_suffix(".json")
-        outp.write_text(json.dumps(nested, indent=2, default=str), encoding="utf-8")
+        out_path_json.write_text(json.dumps(nested, indent=2, default=str), encoding="utf-8")
         report["written"] = [str(out_path_json)]
     elif split_op:
         parts = split(t_header, t_rows, split_op["by"])
