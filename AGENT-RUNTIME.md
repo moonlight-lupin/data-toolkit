@@ -1,7 +1,7 @@
 # Agent runtime
 
 `bin/data-toolkit` is the stable machine interface for AI agents. It does not replace the six
-skills or their engines; it gives them one entry point, one plan format, one approval gate and
+skills or their engines; it gives them one entry point, one plan format, one approval model and
 one result envelope so an agent does not have to improvise glue code.
 
 ```bash
@@ -9,6 +9,8 @@ python bin/data-toolkit inspect source.xlsx
 python bin/data-toolkit validate plan.json
 python bin/data-toolkit run plan.json --dry-run
 python bin/data-toolkit run plan.json
+# operator shell only, for a concrete secondary approval request:
+python bin/data-toolkit approve approval-request.json --by "Reviewer" --allow-drift
 ```
 
 Every command writes JSON to stdout. `status` is one of:
@@ -34,31 +36,63 @@ The same envelope always contains `artifacts`, `warnings`, `errors`,
   "spec": "convert_source_to_target.md",
   "output": {"path": "out/target.csv"},
   "options": {
-    "as_of": "2026-07-15",
-    "allow_drift": false
+    "as_of": "2026-07-15"
   },
   "approval": {
     "confirmed": true,
     "confirmed_by": "user"
-  }
+  },
+  "approval_receipts": []
 }
 ```
 
 Paths in a plan are resolved relative to the plan file. This makes a plan folder portable.
 
+### Local path trust model
+
+This is a same-user local toolkit, not a sandbox. Absolute paths and `..` traversal are allowed
+intentionally because finance workflows often span project, synced and network-mounted folders.
+The runtime does not claim filesystem isolation: run the agent under an OS account/container with
+only the access it should have.
+
 ## Approval behaviour
 
 `data-tidy`, `data-extract`, `data-reconcile`, `data-analyse` and `data-convert` require
 `approval.confirmed=true` before a normal run writes an artefact. A dry run may execute without
-approval and never writes output.
+primary approval and never creates output files or directories.
 
-Conversion-card drift is a separate gate. When expected columns, mapped columns or pinned inputs
-have drifted, the runtime returns `needs_approval`. Set `options.allow_drift=true` only after the
-user has reviewed that specific drift.
+Conversion drift and reconciliation aggregation are **secondary approvals**. Plan booleans or
+index lists do not satisfy them. The runtime returns a concrete request containing a `request_id`
+bound to the exact plan, source-file SHA-256 hashes and detected drift/proposals. A matching signed
+receipt must appear in `approval_receipts`.
 
-Aggregation proposals in reconciliation remain confirm-first. The runtime returns them under
-`approvals_required`; accepted proposal indexes are supplied as `accepted_aggregations` in a
-subsequent approved run.
+- Drift receipts sign `{"allow_drift": true}`. `options.allow_drift` is ignored.
+- Aggregation receipts sign the exact `accepted_aggregations` list. An empty list is an explicit
+  reviewed decision to reject every proposal. A legacy `accepted_aggregations` plan field may be
+  retained as an assertion, but it must match the signed receipt.
+- If no aggregation proposals are produced, no receipt is required; a supplied
+  `accepted_aggregations` field is reported as a warning.
+
+### Issuing a secondary approval receipt
+
+1. Save the `needs_approval` JSON result as `approval-request.json`.
+2. In an **operator-controlled shell**, expose a signing key that the agent process cannot read:
+
+```bash
+export DATA_TOOLKIT_APPROVAL_KEY_FILE="$HOME/.config/data-toolkit/operator.key"
+python bin/data-toolkit approve approval-request.json --by "Jane Reviewer" --allow-drift
+# or: --accept 0,2
+# or: --accept none   (reviewed rejection of every aggregation proposal)
+```
+
+3. After the interactive challenge, copy `details.receipt` from the command output into the plan's
+`approval_receipts` array and rerun. The runtime verifies the HMAC against
+`DATA_TOOLKIT_APPROVAL_KEY` or `DATA_TOOLKIT_APPROVAL_KEY_FILE`.
+
+The human-binding property depends on separation of duties: do not expose the signing key to the
+agent. In a same-user shell where the agent can read the key or impersonate the operator TTY, no
+local software-only mechanism can prove a distinct human approved the decision. Use a separate
+operator account, secret-injecting orchestrator or external signer where that distinction matters.
 
 ## Native JSON input
 

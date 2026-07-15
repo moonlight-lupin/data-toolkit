@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import copy
 import json
 import subprocess
 import sys
@@ -13,7 +14,18 @@ SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-import agent_runtime_api as ar
+import agent_runtime as ar
+
+
+APPROVAL_KEY = "operator-test-key"
+
+
+def signed_receipt(result, decision):
+    request = result["approvals_required"][0]
+    return ar.sign_approval_receipt(
+        request, decision, approved_by="Test Reviewer", key=APPROVAL_KEY,
+        issued_at="2026-07-15T08:00:00+00:00",
+    )
 
 
 def check(name, fn):
@@ -269,6 +281,130 @@ def test_dry_run_writes_nothing():
         assert not out.parent.exists()
 
 
+def test_drift_requires_bound_receipt_and_blocks_writes():
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        src = td / "source.csv"
+        src.write_text("id,new_column\n1,x\n", encoding="utf-8")
+        out = td / "new-output-dir" / "out.csv"
+        plan = {
+            "version": 1, "skill": "data-convert", "input": str(src),
+            "spec": {
+                "source": {"expected_columns": ["id"]},
+                "map": {"id": {"from": "id"}},
+                "target": {"format": "csv", "columns": [{"name": "id"}]},
+            },
+            "output": str(out), "options": {"allow_drift": True},
+            "approval": {"confirmed": True},
+        }
+        blocked = ar.run_plan(plan, base_dir=td, approval_key=APPROVAL_KEY)
+        assert blocked["status"] == "needs_approval", blocked
+        assert blocked["approvals_required"][0]["kind"] == "source_drift"
+        assert not out.exists() and not out.parent.exists()
+        assert any("allow_drift is ignored" in str(w) for w in blocked["warnings"])
+
+        bad = signed_receipt(blocked, {"allow_drift": True})
+        bad["signature"] = "0" * 64
+        bad_plan = copy.deepcopy(plan)
+        bad_plan["approval_receipts"] = [bad]
+        still_blocked = ar.run_plan(bad_plan, base_dir=td, approval_key=APPROVAL_KEY)
+        assert still_blocked["status"] == "needs_approval", still_blocked
+        assert not out.exists() and not out.parent.exists()
+
+        good_plan = copy.deepcopy(plan)
+        good_plan["approval_receipts"] = [signed_receipt(blocked, {"allow_drift": True})]
+        allowed = ar.run_plan(good_plan, base_dir=td, approval_key=APPROVAL_KEY)
+        assert allowed["status"] == "success_with_warnings", allowed
+        assert out.exists()
+
+
+def _aggregation_plan(td: Path, output_name: str = "recon.xlsx"):
+    a = td / "agg-a.json"
+    b = td / "agg-b.json"
+    a.write_text(json.dumps([
+        {"party": "Acme", "batch": "BR1", "amount": "8000", "date": "05 Jun 2026"}
+    ]), encoding="utf-8")
+    b.write_text(json.dumps([
+        {"party": "Acme", "batch": "BR1", "amount": "3000", "date": "03 Jun 2026"},
+        {"party": "Acme", "batch": "BR1", "amount": "5000", "date": "04 Jun 2026"},
+    ]), encoding="utf-8")
+    return {
+        "version": 1, "skill": "data-reconcile", "inputs": [str(a), str(b)],
+        "options": {
+            "mode": "amount_date", "amount": "amount", "date": "date",
+            "aggregate": True, "group_col": "batch", "party_col": "party",
+            "date_window": 5,
+        },
+        "output": str(td / "new-output-dir" / output_name),
+        "approval": {"confirmed": True},
+    }
+
+
+def test_aggregation_receipts_bind_selection_and_dry_run_action():
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        plan = _aggregation_plan(td)
+        dry = ar.run_plan(plan, base_dir=td, dry_run=True, approval_key=APPROVAL_KEY)
+        assert dry["status"] == "needs_approval" and dry["action"] == "dry-run", dry
+        assert dry["approvals_required"][0]["kind"] == "aggregation_proposals"
+        assert not Path(plan["output"]).parent.exists()
+
+        asserted_only = copy.deepcopy(plan)
+        asserted_only["accepted_aggregations"] = []
+        blocked = ar.run_plan(asserted_only, base_dir=td, approval_key=APPROVAL_KEY)
+        assert blocked["status"] == "needs_approval", blocked
+
+        reject_plan = copy.deepcopy(plan)
+        reject_plan["approval_receipts"] = [signed_receipt(dry, {"accepted_aggregations": []})]
+        rejected = ar.run_plan(reject_plan, base_dir=td, approval_key=APPROVAL_KEY)
+        assert rejected["status"] == "success_with_warnings", rejected
+        assert rejected["details"]["summary"].get("aggregated", 0) == 0
+        assert Path(reject_plan["output"]).exists()
+
+        accept_plan = _aggregation_plan(td, "accepted.xlsx")
+        request_result = ar.run_plan(accept_plan, base_dir=td, approval_key=APPROVAL_KEY)
+        receipt = signed_receipt(request_result, {"accepted_aggregations": [0]})
+        accept_plan["approval_receipts"] = [receipt]
+        accepted = ar.run_plan(accept_plan, base_dir=td, approval_key=APPROVAL_KEY)
+        assert accepted["status"] == "success", accepted
+        assert accepted["details"]["summary"]["aggregated"] == 1
+        assert accepted["metrics"]["exceptions"] == 0
+
+        mismatch = copy.deepcopy(accept_plan)
+        mismatch["accepted_aggregations"] = []
+        mismatch_result = ar.run_plan(mismatch, base_dir=td, approval_key=APPROVAL_KEY)
+        assert mismatch_result["status"] == "error", mismatch_result
+        assert "does not match" in mismatch_result["errors"][0]
+
+
+def test_accepted_aggregations_without_proposals_is_warning_only():
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        a = td / "same-a.json"
+        b = td / "same-b.json"
+        row = [{"invoice_no": "INV-1", "amount": "100", "date": "01 Jul 2026"}]
+        a.write_text(json.dumps(row), encoding="utf-8")
+        b.write_text(json.dumps(row), encoding="utf-8")
+        plan = {
+            "version": 1, "skill": "data-reconcile", "inputs": [str(a), str(b)],
+            "options": {"preset": "invoice_tracker_vs_ledger", "aggregate": True},
+            "accepted_aggregations": [],
+            "output": str(td / "same.xlsx"), "approval": {"confirmed": True},
+        }
+        result = ar.run_plan(plan, base_dir=td, approval_key=APPROVAL_KEY)
+        assert result["status"] == "success_with_warnings", result
+        assert any("no aggregation proposals" in str(w) for w in result["warnings"])
+        assert Path(plan["output"]).exists()
+
+
+def test_direct_breakdown_preserves_zero_total():
+    import analyse
+    result = analyse.breakdown(["Group", "Amount"], [["A", "10"], ["B", "-10"]],
+                               "Group", value="Amount")
+    assert result["grand_total"] == Decimal(0), result
+    assert result["top1_share"] is None and result["top3_share"] is None
+
+
 def test_cli_schema_and_inspect():
     cli = ROOT / "bin" / "data-toolkit"
     with tempfile.TemporaryDirectory() as td:
@@ -295,6 +431,10 @@ def main():
         ("reconcile JSON runtime", test_reconcile_json_runtime),
         ("visualise declarative runtime", test_visualise_declarative_runtime),
         ("dry-run", test_dry_run_writes_nothing),
+        ("drift signed receipt", test_drift_requires_bound_receipt_and_blocks_writes),
+        ("aggregation signed receipts", test_aggregation_receipts_bind_selection_and_dry_run_action),
+        ("aggregation no proposals", test_accepted_aggregations_without_proposals_is_warning_only),
+        ("direct zero-total breakdown", test_direct_breakdown_preserves_zero_total),
         ("CLI schema + inspect", test_cli_schema_and_inspect),
     ]
     passed = sum(1 for name, fn in tests if check(name, fn))

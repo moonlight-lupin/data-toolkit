@@ -16,6 +16,8 @@ from __future__ import annotations
 import argparse
 import copy
 import datetime as dt
+import hashlib
+import hmac
 import json
 import os
 import sys
@@ -72,6 +74,158 @@ def _json_default(value: Any):
 
 def _clean_for_json(value: Any):
     return json.loads(json.dumps(value, default=_json_default))
+
+
+def _canonical_json(value: Any) -> bytes:
+    return json.dumps(_clean_for_json(value), sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def _sha256_json(value: Any) -> str:
+    return hashlib.sha256(_canonical_json(value)).hexdigest()
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _approval_key(value: str | bytes | None = None) -> bytes | None:
+    """Resolve the verifier/signing key without putting it in the plan.
+
+    Production orchestration should expose the key only to the human/operator approval
+    process, not to the agent process. The runtime can verify with an explicitly supplied
+    key, ``DATA_TOOLKIT_APPROVAL_KEY``, or ``DATA_TOOLKIT_APPROVAL_KEY_FILE``.
+    """
+    if isinstance(value, bytes):
+        return value
+    if isinstance(value, str):
+        return value.encode("utf-8")
+    env = os.environ.get("DATA_TOOLKIT_APPROVAL_KEY")
+    if env:
+        return env.encode("utf-8")
+    key_file = os.environ.get("DATA_TOOLKIT_APPROVAL_KEY_FILE")
+    if key_file:
+        return Path(key_file).expanduser().read_bytes().strip()
+    return None
+
+
+def _resolved_source_path(source: str | dict[str, Any], base: Path) -> Path:
+    if isinstance(source, str):
+        source = {"path": source}
+    if not isinstance(source, dict) or not source.get("path"):
+        raise PlanError("each input must be a path string or an object containing path")
+    path = Path(source["path"])
+    return path if path.is_absolute() else (base / path).resolve()
+
+
+def _approval_plan_view(plan: dict[str, Any]) -> dict[str, Any]:
+    """Plan material bound into secondary approval requests.
+
+    Receipts and legacy decision booleans/lists are excluded so an agent cannot change the
+    request by merely copying the eventual signed decision into the plan.
+    """
+    view = copy.deepcopy(plan)
+    view.pop("approval_receipts", None)
+    view.pop("accepted_aggregations", None)
+    options = view.get("options")
+    if isinstance(options, dict):
+        options.pop("allow_drift", None)
+    return view
+
+
+def _source_evidence(plan: dict[str, Any], base: Path) -> list[dict[str, Any]]:
+    evidence = []
+    for source in _normalise_inputs(plan):
+        path = _resolved_source_path(source, base)
+        item = {"path": str(path), "sha256": _file_sha256(path)}
+        for key in ("sheet", "json_path"):
+            if source.get(key) is not None:
+                item[key] = source[key]
+        evidence.append(item)
+    return evidence
+
+
+def build_approval_request(*, kind: str, plan: dict[str, Any], base: Path,
+                           message: str, context: dict[str, Any],
+                           decision_schema: dict[str, Any]) -> dict[str, Any]:
+    body = {
+        "version": 1,
+        "kind": kind,
+        "message": message,
+        "plan_sha256": _sha256_json(_approval_plan_view(plan)),
+        "sources": _source_evidence(plan, base),
+        "context": context,
+        "decision_schema": decision_schema,
+    }
+    return {**body, "request_id": _sha256_json(body)}
+
+
+def sign_approval_receipt(request: dict[str, Any], decision: dict[str, Any], *,
+                          approved_by: str, key: str | bytes,
+                          issued_at: str | None = None) -> dict[str, Any]:
+    """Create a receipt for an external/operator approval process.
+
+    The signing key must be withheld from the AI agent for this to represent a human-bound
+    control. The runtime only verifies receipts; plan fields alone never satisfy a secondary
+    gate.
+    """
+    key_bytes = _approval_key(key)
+    if not key_bytes:
+        raise PlanError("approval signing key is empty")
+    receipt = {
+        "version": 1,
+        "kind": request["kind"],
+        "request_id": request["request_id"],
+        "decision": _clean_for_json(decision),
+        "approved_by": str(approved_by).strip(),
+        "issued_at": issued_at or dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat(),
+    }
+    if not receipt["approved_by"]:
+        raise PlanError("approved_by is required")
+    receipt["signature"] = hmac.new(key_bytes, _canonical_json(receipt), hashlib.sha256).hexdigest()
+    return receipt
+
+
+def verify_approval_receipt(receipt: dict[str, Any], request: dict[str, Any], *,
+                            key: str | bytes | None = None) -> tuple[bool, str]:
+    key_bytes = _approval_key(key)
+    if not key_bytes:
+        return False, "approval verification key is not configured"
+    if not isinstance(receipt, dict):
+        return False, "receipt is not an object"
+    if receipt.get("version") != 1:
+        return False, "receipt version must be 1"
+    if receipt.get("kind") != request.get("kind") or receipt.get("request_id") != request.get("request_id"):
+        return False, "receipt does not match this approval request"
+    signature = receipt.get("signature")
+    if not isinstance(signature, str):
+        return False, "receipt signature is missing"
+    unsigned = dict(receipt)
+    unsigned.pop("signature", None)
+    expected = hmac.new(key_bytes, _canonical_json(unsigned), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        return False, "receipt signature is invalid"
+    if not receipt.get("approved_by"):
+        return False, "receipt approved_by is missing"
+    return True, "verified"
+
+
+def _matching_receipt(plan: dict[str, Any], request: dict[str, Any], *,
+                      key: str | bytes | None = None) -> tuple[dict[str, Any] | None, str]:
+    receipts = plan.get("approval_receipts") or []
+    if not isinstance(receipts, list):
+        return None, "approval_receipts must be a list"
+    last_reason = "no matching approval receipt supplied"
+    for receipt in receipts:
+        if isinstance(receipt, dict) and receipt.get("request_id") == request.get("request_id"):
+            valid, reason = verify_approval_receipt(receipt, request, key=key)
+            if valid:
+                return receipt, reason
+            last_reason = reason
+    return None, last_reason
 
 
 def envelope(*, status: str, skill: str | None = None, action: str | None = None,
@@ -254,7 +408,7 @@ def validate_plan(plan: dict[str, Any], *, base_dir: str | Path | None = None,
     base = Path(base_dir) if base_dir else Path.cwd()
     errors: list[str] = []
     warnings: list[str] = []
-    approvals: list[dict[str, str]] = []
+    approvals: list[dict[str, Any]] = []
     version = plan.get("version", plan.get("schema_version"))
     if version != PLAN_VERSION:
         errors.append(f"version must be {PLAN_VERSION}")
@@ -288,9 +442,17 @@ def validate_plan(plan: dict[str, Any], *, base_dir: str | Path | None = None,
             "kind": "plan_confirmation",
             "message": "Confirm the proposed plan/spec before the engine writes an output.",
         })
+    options = plan.get("options") or {}
+    if isinstance(options, dict) and "allow_drift" in options:
+        warnings.append("options.allow_drift is ignored; source drift requires a signed approval receipt")
     if check_sources and not errors:
         for source in inputs:
             try:
+                if skill == "data-extract" and plan.get("mode", "fields") == "fields":
+                    path = _resolved_source_path(source, base)
+                    if not path.exists():
+                        raise PlanError(f"input not found: {path}")
+                    continue
                 info = read_table(source, base_dir=base)
                 if not info.header:
                     warnings.append(f"{info.path}: no columns detected")
@@ -308,31 +470,16 @@ def _output_path(plan: dict[str, Any], base: Path, default_name: str) -> Path:
     output = plan.get("output")
     if isinstance(output, dict):
         output = output.get("path")
-    output = output or default_name
-    p = Path(output)
-    if not p.is_absolute():
-        p = (base / p).resolve()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    return p
+    path = Path(output or default_name)
+    return path if path.is_absolute() else (base / path).resolve()
 
 
-def _safe_breakdown(analyse: Any, header: list[str], rows: list[list[Any]], *, by: str,
-                    value: str | None = None, top: int = 10) -> dict[str, Any]:
-    result = analyse.breakdown(header, rows, by, value=value, top=top)
-    if value:
-        actual_total = sum(analyse.numbers(analyse.column(header, rows, value))[0], Decimal(0))
-        result["grand_total"] = actual_total
-        if actual_total <= 0:
-            result["top1_share"] = None
-            result["top3_share"] = None
-            result["groups_to_80pct"] = None
-            for group in result.get("groups", []):
-                group["share"] = None
-                group["cum_share"] = None
-    return result
+def _prepare_write(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
 
 
-def _run_analyse(plan: dict[str, Any], base: Path, dry_run: bool) -> dict[str, Any]:
+def _run_analyse(plan: dict[str, Any], base: Path, dry_run: bool,
+              approval_key: str | bytes | None = None) -> dict[str, Any]:
     import analyse
     table = read_table(_normalise_inputs(plan)[0], base_dir=base)
     header = table.header
@@ -350,8 +497,8 @@ def _run_analyse(plan: dict[str, Any], base: Path, dry_run: bool) -> dict[str, A
             result = analyse.outliers_iqr(analyse.column(header, rows, op["column"]),
                                           k=Decimal(str(op.get("k", "1.5"))), cap=int(op.get("cap", 10)))
         elif name == "breakdown":
-            result = _safe_breakdown(analyse, header, rows, by=op["by"], value=op.get("value"),
-                                     top=int(op.get("top", 10)))
+            result = analyse.breakdown(header, rows, op["by"], value=op.get("value"),
+                                       top=int(op.get("top", 10)))
         elif name == "period_series":
             result = analyse.period_series(header, rows, op["date_col"], value=op.get("value"),
                                            grain=op.get("grain", "month"), dayfirst=op.get("dayfirst", True))
@@ -365,6 +512,7 @@ def _run_analyse(plan: dict[str, Any], base: Path, dry_run: bool) -> dict[str, A
         results.append({"name": op.get("name", name), "op": name, "result": result})
     output = _output_path(plan, base, "analysis.json")
     if not dry_run:
+        _prepare_write(output)
         output.write_text(json.dumps(_clean_for_json({"source": table.path, "results": results}), indent=2),
                           encoding="utf-8")
     return envelope(status="success_with_warnings" if warnings else "success", skill="data-analyse",
@@ -374,31 +522,47 @@ def _run_analyse(plan: dict[str, Any], base: Path, dry_run: bool) -> dict[str, A
                     details={"source": table.path, "results": results})
 
 
-def _run_convert(plan: dict[str, Any], base: Path, dry_run: bool) -> dict[str, Any]:
+def _run_convert(plan: dict[str, Any], base: Path, dry_run: bool,
+              approval_key: str | bytes | None = None) -> dict[str, Any]:
     import convert
     spec, spec_base = _load_convert_spec(plan.get("spec"), base_dir=base)
     inputs = _normalise_inputs(plan)
     tables = [read_table(source, base_dir=base) for source in inputs]
     if len(tables) > 1:
-        union_op = next((o for o in spec.get("reshape", []) if o.get("op") == "union"), {})
-        how = union_op.get("how", (plan.get("options") or {}).get("union", "outer"))
+        union_op = next((o for o in spec.get("reshape", []) if o.get("op") == "union"), None)
+        union_option = (plan.get("options") or {}).get("union")
+        if union_op is None and union_option is None:
+            raise PlanError("multiple conversion inputs require an explicit union operation or options.union")
+        how = (union_op or {}).get("how", union_option or "outer")
+        if how not in ("outer", "inner"):
+            raise PlanError("union mode must be 'outer' or 'inner'")
         header, rows = convert.union([(t.header, t.rows) for t in tables], how=how)
         source_note = f"union({how}) of {len(tables)} sources"
     else:
         header, rows = tables[0].header, tables[0].rows
         source_note = tables[0].note
     drift = convert.sense_check(spec, header, rows, run_dates_after=(plan.get("options") or {}).get("as_of"))
-    allow_drift = bool((plan.get("options") or {}).get("allow_drift"))
-    if drift and not allow_drift:
-        return envelope(status="needs_approval", skill="data-convert", action="dry-run" if dry_run else "run",
-                        warnings=drift, approvals_required=[{
-                            "kind": "source_drift",
-                            "message": "Source differs from the conversion card. Review drift and set options.allow_drift=true only after approval.",
-                        }], details={"source": source_note, "sense_check": drift})
+    if drift:
+        request = build_approval_request(
+            kind="source_drift", plan=plan, base=base,
+            message="Source differs from the conversion card. Approve this exact drift before writing output.",
+            context={"source": source_note, "sense_check": drift},
+            decision_schema={"allow_drift": True},
+        )
+        receipt, receipt_reason = _matching_receipt(plan, request, key=approval_key)
+        if receipt is None or receipt.get("decision") != {"allow_drift": True}:
+            return envelope(status="needs_approval", skill="data-convert",
+                            action="dry-run" if dry_run else "run", warnings=drift,
+                            approvals_required=[request],
+                            details={"source": source_note, "sense_check": drift,
+                                     "receipt_status": receipt_reason})
     lookups = convert.load_lookups(spec.get("map", {}), base_dir=str(spec_base))
     target_header, target_rows, report = convert.convert_rows(spec, header, rows, lookups=lookups)
     report["sense_check"] = drift
     issues = report.get("issues") or []
+    if not spec.get("map"):
+        issues = [x for x in issues if x.get("kind") != "unmapped_source"]
+        report["issues"] = issues
     errors = [x for x in issues if x.get("severity") == "error"]
     if errors:
         return envelope(status="error", skill="data-convert", action="dry-run" if dry_run else "run",
@@ -408,6 +572,7 @@ def _run_convert(plan: dict[str, Any], base: Path, dry_run: bool) -> dict[str, A
     output = _output_path(plan, base, "converted.csv")
     artifacts: list[dict[str, Any]] = []
     if not dry_run:
+        _prepare_write(output)
         split_op = next((o for o in spec.get("reshape", []) if o.get("op") == "split"), None)
         nest_op = next((o for o in spec.get("reshape", []) if o.get("op") == "nest"), None)
         if nest_op:
@@ -435,7 +600,8 @@ def _run_convert(plan: dict[str, Any], base: Path, dry_run: bool) -> dict[str, A
                              "sources": len(tables)}, details={"source": source_note, "report": report})
 
 
-def _run_tidy(plan: dict[str, Any], base: Path, dry_run: bool) -> dict[str, Any]:
+def _run_tidy(plan: dict[str, Any], base: Path, dry_run: bool,
+              approval_key: str | bytes | None = None) -> dict[str, Any]:
     import dataclean
     table = read_table(_normalise_inputs(plan)[0], base_dir=base)
     recipe = _load_json_or_inline(plan["recipe"], base_dir=base)
@@ -445,6 +611,7 @@ def _run_tidy(plan: dict[str, Any], base: Path, dry_run: bool) -> dict[str, Any]
     report_path = output.with_suffix(".report.md")
     artifacts = []
     if not dry_run:
+        _prepare_write(output)
         dataclean.write_xlsx(header, rows, str(output))
         report_path.write_text(dataclean.render_report(log), encoding="utf-8")
         artifacts = [{"path": str(output), "kind": "clean_table"},
@@ -455,7 +622,8 @@ def _run_tidy(plan: dict[str, Any], base: Path, dry_run: bool) -> dict[str, Any]
                     metrics={"rows_in": len(table.rows), "rows_out": len(rows)}, details={"log": log})
 
 
-def _run_extract(plan: dict[str, Any], base: Path, dry_run: bool) -> dict[str, Any]:
+def _run_extract(plan: dict[str, Any], base: Path, dry_run: bool,
+              approval_key: str | bytes | None = None) -> dict[str, Any]:
     import dataclean
     import extract
     inputs = _normalise_inputs(plan)
@@ -494,6 +662,7 @@ def _run_extract(plan: dict[str, Any], base: Path, dry_run: bool) -> dict[str, A
             rows = [[r.get(c, "") for c in header] for r in dict_rows]
             report = f"Extracted {len(rows)} row(s) from page {plan['page']}, table {plan.get('index', 0)}."
     if not dry_run:
+        _prepare_write(output)
         dataclean.write_xlsx(header, rows, str(output))
         report_path.write_text(report, encoding="utf-8")
         artifacts = [{"path": str(output), "kind": "extracted_table"},
@@ -503,7 +672,8 @@ def _run_extract(plan: dict[str, Any], base: Path, dry_run: bool) -> dict[str, A
                     metrics={"rows_out": len(rows)}, details={"report": report})
 
 
-def _run_reconcile(plan: dict[str, Any], base: Path, dry_run: bool) -> dict[str, Any]:
+def _run_reconcile(plan: dict[str, Any], base: Path, dry_run: bool,
+              approval_key: str | bytes | None = None) -> dict[str, Any]:
     import reconcile
     inputs = _normalise_inputs(plan)
     options = dict(plan.get("options") or {})
@@ -529,15 +699,37 @@ def _run_reconcile(plan: dict[str, Any], base: Path, dry_run: bool) -> dict[str,
         )
     a_label = plan.get("a_label", cfg.get("a_label", "A"))
     b_label = plan.get("b_label", cfg.get("b_label", "B"))
-    accepted = plan.get("accepted_aggregations")
-    if proposals and accepted is None:
-        return envelope(status="needs_approval", skill="data-reconcile", action="run",
-                        approvals_required=[{"kind": "aggregation_proposals",
-                                             "message": "Review and confirm aggregation proposals before they count as matched."}],
-                        details={"proposals": proposals,
-                                 "proposal_text": reconcile.render_proposals(proposals, a_label=a_label, b_label=b_label)})
-    if proposals and accepted is not None:
+    accepted_assertion = plan.get("accepted_aggregations", None)
+    aggregation_warning = None
+    if proposals:
+        public_proposals = [{k: v for k, v in proposal.items() if not str(k).startswith("_")}
+                            for proposal in proposals]
+        request = build_approval_request(
+            kind="aggregation_proposals", plan=plan, base=base,
+            message="Review the aggregation proposals and sign the exact accepted index list, including [] to reject all.",
+            context={"proposals": public_proposals, "a_label": a_label, "b_label": b_label},
+            decision_schema={"accepted_aggregations": "list[int]"},
+        )
+        receipt, receipt_reason = _matching_receipt(plan, request, key=approval_key)
+        decision = receipt.get("decision") if receipt else None
+        accepted = decision.get("accepted_aggregations") if isinstance(decision, dict) else None
+        valid_selection = (isinstance(accepted, list) and
+                           all(isinstance(i, int) and not isinstance(i, bool) for i in accepted) and
+                           len(set(accepted)) == len(accepted) and
+                           all(0 <= i < len(proposals) for i in accepted))
+        if receipt is None or not valid_selection:
+            reason = receipt_reason if receipt is None else "receipt decision must contain unique in-range integer indexes"
+            return envelope(status="needs_approval", skill="data-reconcile",
+                            action="dry-run" if dry_run else "run",
+                            approvals_required=[request],
+                            details={"proposals": public_proposals,
+                                     "proposal_text": reconcile.render_proposals(proposals, a_label=a_label, b_label=b_label),
+                                     "receipt_status": reason})
+        if accepted_assertion is not None and accepted_assertion != accepted:
+            raise PlanError("accepted_aggregations does not match the signed receipt decision")
         reconcile.apply_aggregations(result, proposals, accepted=accepted)
+    elif accepted_assertion is not None:
+        aggregation_warning = "accepted_aggregations was supplied but no aggregation proposals were generated"
     exceptions, summary = reconcile.finalize(
         result, a_label=a_label, b_label=b_label,
         material=cfg.get("material", 1000), escalate=cfg.get("escalate", 10000),
@@ -558,10 +750,13 @@ def _run_reconcile(plan: dict[str, Any], base: Path, dry_run: bool) -> dict[str,
     output = _output_path(plan, base, "reconciliation.xlsx")
     artifacts = []
     if not dry_run:
+        _prepare_write(output)
         reconcile.write_workpaper(result, exceptions, summary, str(output),
                                   a_label=a_label, b_label=b_label)
         artifacts = [{"path": str(output), "kind": "reconciliation_workpaper"}]
-    warnings = summary.get("warnings", []) if isinstance(summary, dict) else []
+    warnings = list(summary.get("warnings", [])) if isinstance(summary, dict) else []
+    if aggregation_warning:
+        warnings.append(aggregation_warning)
     return envelope(status="success_with_warnings" if warnings or exceptions else "success",
                     skill="data-reconcile", action="dry-run" if dry_run else "run",
                     artifacts=artifacts, warnings=warnings,
@@ -573,6 +768,12 @@ def _resolve_data(value: Any, source_rows: list[dict[str, Any]]) -> Any:
     if value == "$source":
         return source_rows
     return value
+
+
+def _rag_callable(rule: dict[str, Any]):
+    mapping = rule.get("map", rule)
+    default = rule.get("default") if "map" in rule else None
+    return lambda value: mapping.get(str(value), default)
 
 
 def _viz_block(viz: Any, spec: dict[str, Any], source_rows: list[dict[str, Any]]) -> str:
@@ -590,9 +791,17 @@ def _viz_block(viz: Any, spec: dict[str, Any], source_rows: list[dict[str, Any]]
         return viz.donut_chart(_resolve_data(spec.get("data", []), source_rows),
                                title=spec.get("title"), centre=spec.get("centre"))
     if kind == "table":
+        rag = {}
+        for column_name, rule in (spec.get("rag") or {}).items():
+            if callable(rule):
+                rag[column_name] = rule
+            elif isinstance(rule, dict):
+                rag[column_name] = _rag_callable(rule)
+            else:
+                raise PlanError(f"table RAG rule for {column_name!r} must be a mapping")
         return viz.table(_resolve_data(spec.get("rows", "$source"), source_rows),
                          columns=spec.get("columns"), title=spec.get("title"),
-                         rag=spec.get("rag"), sortable=spec.get("sortable", False),
+                         rag=rag, sortable=spec.get("sortable", False),
                          filter_by=spec.get("filter_by"))
     if kind == "section":
         children = [_viz_block(viz, child, source_rows) for child in spec.get("blocks", [])]
@@ -603,7 +812,8 @@ def _viz_block(viz: Any, spec: dict[str, Any], source_rows: list[dict[str, Any]]
     raise PlanError(f"unsupported dashboard block type: {kind!r}")
 
 
-def _run_visualise(plan: dict[str, Any], base: Path, dry_run: bool) -> dict[str, Any]:
+def _run_visualise(plan: dict[str, Any], base: Path, dry_run: bool,
+              approval_key: str | bytes | None = None) -> dict[str, Any]:
     import viz
     inputs = _normalise_inputs(plan)
     source_rows = read_table(inputs[0], base_dir=base).rows if inputs else []
@@ -614,6 +824,7 @@ def _run_visualise(plan: dict[str, Any], base: Path, dry_run: bool) -> dict[str,
     output = _output_path(plan, base, "dashboard.html")
     artifacts = []
     if not dry_run:
+        _prepare_write(output)
         viz.dashboard(dash.get("title", "Dashboard"), blocks,
                       subtitle=dash.get("subtitle"), as_of=dash.get("as_of"),
                       out_path=str(output), footnote=dash.get("footnote"), theme=theme)
@@ -634,7 +845,7 @@ RUNNERS = {
 
 
 def run_plan(plan: dict[str, Any], *, base_dir: str | Path | None = None,
-             dry_run: bool = False) -> dict[str, Any]:
+             dry_run: bool = False, approval_key: str | bytes | None = None) -> dict[str, Any]:
     base = Path(base_dir) if base_dir else Path.cwd()
     validation = validate_plan(plan, base_dir=base, check_sources=True)
     if validation["errors"]:
@@ -643,7 +854,12 @@ def run_plan(plan: dict[str, Any], *, base_dir: str | Path | None = None,
         return validation
     skill = plan["skill"]
     try:
-        return RUNNERS[skill](plan, base, dry_run)
+        result = RUNNERS[skill](plan, base, dry_run, approval_key=approval_key)
+        if validation.get("warnings"):
+            result["warnings"] = list(validation["warnings"]) + list(result.get("warnings") or [])
+            if result.get("status") == "success":
+                result["status"] = "success_with_warnings"
+        return result
     except Exception as exc:
         details = {"exception": type(exc).__name__}
         if os.environ.get("DATA_TOOLKIT_DEBUG"):
@@ -659,14 +875,39 @@ def plan_schema() -> dict[str, Any]:
         "inputs": [{"path": "source.json", "json_path": "records"}],
         "spec": "convert_source_to_target.md",
         "output": {"path": "out/target.csv"},
-        "options": {"as_of": "2026-07-15", "allow_drift": False},
+        "options": {"as_of": "2026-07-15"},
         "approval": {"confirmed": False, "confirmed_by": None},
+        "approval_receipts": [],
     }
 
 
 def _print(value: Any, pretty: bool = True) -> None:
     print(json.dumps(_clean_for_json(value), indent=2 if pretty else None,
                      separators=None if pretty else (",", ":")))
+
+
+def _approval_request_from_file(path: str | Path) -> dict[str, Any]:
+    value = json.loads(Path(path).read_text(encoding="utf-8-sig"))
+    if isinstance(value, dict) and value.get("request_id") and value.get("kind"):
+        return value
+    requests = value.get("approvals_required") if isinstance(value, dict) else None
+    if isinstance(requests, list):
+        concrete = [item for item in requests if isinstance(item, dict) and item.get("request_id")]
+        if len(concrete) == 1:
+            return concrete[0]
+    raise PlanError("approval request file must contain one concrete request with request_id")
+
+
+def _parse_accepted(value: str) -> list[int]:
+    if value.strip().lower() in {"none", "reject", "[]"}:
+        return []
+    try:
+        accepted = [int(part.strip()) for part in value.split(",") if part.strip()]
+    except ValueError as exc:
+        raise PlanError("--accept must be comma-separated integer indexes or 'none'") from exc
+    if len(set(accepted)) != len(accepted):
+        raise PlanError("--accept indexes must be unique")
+    return accepted
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -684,6 +925,12 @@ def main(argv: list[str] | None = None) -> int:
     p_run = sub.add_parser("run", help="run an approved agent plan")
     p_run.add_argument("plan")
     p_run.add_argument("--dry-run", action="store_true")
+    p_approve = sub.add_parser("approve", help="sign one secondary approval request in an operator shell")
+    p_approve.add_argument("request")
+    p_approve.add_argument("--by", required=True)
+    decision = p_approve.add_mutually_exclusive_group(required=True)
+    decision.add_argument("--allow-drift", action="store_true")
+    decision.add_argument("--accept", metavar="INDEXES", help="comma-separated aggregation indexes, or 'none'")
     sub.add_parser("schema", help="print an example version-1 plan")
     args = parser.parse_args(argv)
     try:
@@ -692,6 +939,28 @@ def main(argv: list[str] | None = None) -> int:
                                     sample_rows=args.sample_rows)
         elif args.command == "schema":
             result = envelope(status="success", action="schema", details={"example": plan_schema()})
+        elif args.command == "approve":
+            if not sys.stdin.isatty():
+                raise PlanError("approve requires an interactive operator TTY")
+            request = _approval_request_from_file(args.request)
+            if args.allow_drift:
+                if request.get("kind") != "source_drift":
+                    raise PlanError("--allow-drift only applies to a source_drift request")
+                decision_value = {"allow_drift": True}
+            else:
+                if request.get("kind") != "aggregation_proposals":
+                    raise PlanError("--accept only applies to an aggregation_proposals request")
+                decision_value = {"accepted_aggregations": _parse_accepted(args.accept)}
+            challenge = request["request_id"][-8:]
+            print(f"Approval: {request.get('message','')}\nRequest: {request['request_id']}", file=sys.stderr)
+            typed = input(f"Type APPROVE {challenge}: ").strip()
+            if typed != f"APPROVE {challenge}":
+                raise PlanError("approval challenge did not match")
+            key = _approval_key()
+            if not key:
+                raise PlanError("set DATA_TOOLKIT_APPROVAL_KEY or DATA_TOOLKIT_APPROVAL_KEY_FILE in the operator shell")
+            receipt = sign_approval_receipt(request, decision_value, approved_by=args.by, key=key)
+            result = envelope(status="success", action="approve", details={"receipt": receipt})
         else:
             plan, plan_path = load_plan(args.plan)
             if args.command == "validate":

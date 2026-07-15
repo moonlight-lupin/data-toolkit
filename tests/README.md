@@ -43,11 +43,14 @@ Both standalone runners print a PASS/FAIL line per test and exit non-zero on fai
 | Native JSON records + `json_path` | agents can use JSON without hand-written parsing |
 | Sole nested record-list auto-selection | common API-export wrappers work, and the selection is disclosed |
 | Versioned plan validation | malformed or wrong-skill plans fail before execution |
-| Approval gate | an agent cannot silently write confirm-first outputs |
+| Primary approval gate | an agent cannot silently write confirm-first outputs |
+| Signed drift receipt | `allow_drift` alone cannot write; tampered or stale receipts remain blocked |
+| Signed aggregation decision | exact accepted indexes, including signed `[]`, are bound to the proposal set |
+| Secondary dry-run action | aggregation approval requests correctly report `action: dry-run` |
 | Six skill plan shapes | one interface recognises every shipped skill |
 | Multi-source union + flatten | advertised conversion paths are reachable without custom glue |
 | End-to-end nested JSON output | the reported `.json` artefact is the file actually written |
-| Zero/net-zero analysis totals | zero remains zero and invalid concentration shares stay `null` |
+| Zero/net-zero analysis totals | direct engine and runtime callers both preserve zero; invalid shares stay `null` |
 | Dry-run | validation and computation do not write artefacts |
 | CLI JSON contract | `inspect` and `schema` remain machine-readable |
 
@@ -55,5 +58,6 @@ Both standalone runners print a PASS/FAIL line per test and exit non-zero on fai
 
 - Pure Python; `openpyxl` is the only hard dependency.
 - The PDF smoke test self-skips if PyMuPDF is absent; PDF scoring remains dependency-free.
-- The runtime suite creates temporary JSON/CSV plans and imports the real conversion and
-  analysis engines directly, so it catches advertised-vs-operable integration gaps.
+- The runtime suite creates temporary JSON/CSV plans and imports `agent_runtime` directly,
+  so the CLI and library path exercise the same hardened implementation.
+- Approval tests use an injected test key; production keys must be withheld from the agent.

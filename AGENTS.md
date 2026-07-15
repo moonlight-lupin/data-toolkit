@@ -15,7 +15,9 @@ the unified agent runtime, and "testing" means the regression suites.
   - `python3 bin/data-toolkit validate PLAN.json`
   - `python3 bin/data-toolkit run PLAN.json --dry-run`
   - `python3 bin/data-toolkit run PLAN.json`
-  See `AGENT-RUNTIME.md`. Do not bypass a `needs_approval` result.
+  See `AGENT-RUNTIME.md`. Do not bypass a `needs_approval` result. Secondary drift and
+  aggregation approvals require a signed receipt; never put the operator signing key in the
+  agent environment or plan.
 - Run tests with `python3 tests/test_engine.py` and `python3 tests/test_agent_runtime.py`
   (both standalone, no pytest needed), or `python3 -m pytest tests/`.
   Authoring gate: `python3 bin/data-lint`.
