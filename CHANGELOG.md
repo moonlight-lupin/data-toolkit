@@ -16,6 +16,28 @@ Agent-runtime follow-ups (right-sized for attended, human-in-the-loop use):
   `_load_json_or_inline`, instead of depending on a validate-time cache; mirrors how `_run_convert`
   loads its spec. Regression test added.
 
+## 0.5.1 — 2026-07-15
+
+**Agent runtime** — a stable, machine-facing interface so an AI agent can operate the six skills
+through one entry point instead of improvising glue. (Shipped across #14–#16; this entry is
+backfilled — the 0.5.1 version was set but its changelog note was not written at the time.)
+
+- **`bin/data-toolkit`** — a unified CLI (`inspect` / `validate` / `validate-spec` / `run` /
+  `approve` / `schema`) that emits one JSON envelope (`status`, `artifacts`, `warnings`, `errors`,
+  `approvals_required`, `metrics`, `details`) for every command; `--json-report` persists the full
+  envelope for a durable audit record. Engines stay deterministic and local — the runtime only
+  normalises plans, ingestion, approvals and reporting.
+- **Declarative schemas** — Draft 2020-12 JSON schemas for each skill's payload under `schemas/`,
+  validated with JSON-pointer error locations (`validate-spec` for a fast edit/repair loop). New
+  hard dependency: `jsonschema>=4.18.0` (alongside `openpyxl`).
+- **Approval model** — a primary plan confirmation plus HMAC-signed **secondary approval receipts**
+  for the escalations (source drift, aggregation acceptance). Receipts bind the plan hash + source
+  file hashes, are verified constant-time, and **fail closed** when no key is configured.
+- **`AGENT-FAST-PATH.md`** — the short routing/execution page an agent uses first (so it needn't
+  load every long skill reference into context); `AGENT-RUNTIME.md` documents the full interface.
+- Test coverage for the runtime and schema layers (`tests/test_agent_runtime.py`,
+  `tests/test_agent_schemas.py`).
+
 ## 0.5.0 — 2026-07-15
 
 **New skill: `data-convert`** — the toolkit's sixth skill, and the **interoperability**
