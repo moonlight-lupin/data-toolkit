@@ -150,7 +150,7 @@ def breakdown(header, rows, by, value=None, top=10):
                 g["total"] += n
     measure = "total" if value else "count"
     items = sorted(groups.items(), key=lambda kv: kv[1][measure], reverse=True)
-    grand = sum(g[measure] for _, g in items) or Decimal(1)
+    grand = sum((g[measure] for _, g in items), Decimal(0))
     has_neg = any(g[measure] < 0 for _, g in items)
     shares_valid = grand > 0 and not has_neg
     out, cum, cum80 = [], Decimal(0), None
@@ -536,6 +536,10 @@ def _self_test():
     assert all(g["share"] is None for g in b["groups"]), b
     br = breakdown(header, rows, "Region")                    # count measure + (blank) key
     assert any(g["key"] == "(blank)" for g in br["groups"])
+    bz = breakdown(["Group", "Amount"], [["A", "10"], ["B", "-10"]],
+                   "Group", value="Amount")
+    assert bz["grand_total"] == Decimal(0), bz
+    assert bz["top1_share"] is None and bz["top3_share"] is None, bz
 
     ts = period_series(header, rows, "Date", value="Amount")
     keys = [p["period"] for p in ts["periods"]]

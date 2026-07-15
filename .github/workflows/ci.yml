@@ -1,8 +1,7 @@
 name: CI
 
-# Quality gate for the Data Toolkit: authoring lint + finance-grade regression suite
-# on every push and PR to main. Matches what contributors run locally
-# (bin/data-lint + tests/test_engine.py).
+# Quality gate for the Data Toolkit: authoring lint + finance-grade engine and
+# agent-runtime regression suites on every push and PR to main.
 
 on:
   push:
@@ -36,8 +35,25 @@ jobs:
       - name: Authoring lint (manifest, SKILL.md, engine self-tests)
         run: python bin/data-lint
 
-      - name: Regression suite
+      - name: Engine regression suite
         run: python tests/test_engine.py
+
+      - name: Agent runtime regression suite
+        shell: bash
+        run: |
+          set +e
+          python tests/test_agent_runtime.py > agent-runtime-test.log 2>&1
+          status=$?
+          cat agent-runtime-test.log
+          exit $status
+
+      - name: Upload agent runtime failure log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-runtime-failure-${{ matrix.python-version }}
+          path: agent-runtime-test.log
+          retention-days: 7
 
       - name: Quickstart smoke (recon + dashboard)
         run: python examples/run_quickstart.py

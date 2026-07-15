@@ -1,0 +1,240 @@
+# Agent runtime
+
+`bin/data-toolkit` is the stable machine interface for AI agents. It does not replace the six
+skills or their engines; it gives them one entry point, one plan format, one approval model and
+one result envelope so an agent does not have to improvise glue code.
+
+```bash
+python bin/data-toolkit inspect source.xlsx
+python bin/data-toolkit validate plan.json
+python bin/data-toolkit run plan.json --dry-run
+python bin/data-toolkit run plan.json
+# operator shell only, for a concrete secondary approval request:
+python bin/data-toolkit approve approval-request.json --by "Reviewer" --allow-drift
+```
+
+Every command writes JSON to stdout. `status` is one of:
+
+- `success`
+- `success_with_warnings`
+- `needs_approval`
+- `error`
+
+The same envelope always contains `artifacts`, `warnings`, `errors`,
+`approvals_required`, `metrics` and `details`.
+
+## Version 1 plan
+
+```json
+{
+  "version": 1,
+  "skill": "data-convert",
+  "inputs": [
+    {"path": "january.json", "json_path": "records"},
+    {"path": "february.json", "json_path": "records"}
+  ],
+  "spec": "convert_source_to_target.md",
+  "output": {"path": "out/target.csv"},
+  "options": {
+    "as_of": "2026-07-15"
+  },
+  "approval": {
+    "confirmed": true,
+    "confirmed_by": "user"
+  },
+  "approval_receipts": []
+}
+```
+
+Paths in a plan are resolved relative to the plan file. This makes a plan folder portable.
+
+### Local path trust model
+
+This is a same-user local toolkit, not a sandbox. Absolute paths and `..` traversal are allowed
+intentionally because finance workflows often span project, synced and network-mounted folders.
+The runtime does not claim filesystem isolation: run the agent under an OS account/container with
+only the access it should have.
+
+## Approval behaviour
+
+`data-tidy`, `data-extract`, `data-reconcile`, `data-analyse` and `data-convert` require
+`approval.confirmed=true` before a normal run writes an artefact. A dry run may execute without
+primary approval and never creates output files or directories.
+
+Conversion drift and reconciliation aggregation are **secondary approvals**. Plan booleans or
+index lists do not satisfy them. The runtime returns a concrete request containing a `request_id`
+bound to the exact plan, source-file SHA-256 hashes and detected drift/proposals. A matching signed
+receipt must appear in `approval_receipts`.
+
+- Drift receipts sign `{"allow_drift": true}`. `options.allow_drift` is ignored.
+- Aggregation receipts sign the exact `accepted_aggregations` list. An empty list is an explicit
+  reviewed decision to reject every proposal. A legacy `accepted_aggregations` plan field may be
+  retained as an assertion, but it must match the signed receipt.
+- If no aggregation proposals are produced, no receipt is required; a supplied
+  `accepted_aggregations` field is reported as a warning.
+
+### Issuing a secondary approval receipt
+
+1. Save the `needs_approval` JSON result as `approval-request.json`.
+2. In an **operator-controlled shell**, expose a signing key that the agent process cannot read:
+
+```bash
+export DATA_TOOLKIT_APPROVAL_KEY_FILE="$HOME/.config/data-toolkit/operator.key"
+python bin/data-toolkit approve approval-request.json --by "Jane Reviewer" --allow-drift
+# or: --accept 0,2
+# or: --accept none   (reviewed rejection of every aggregation proposal)
+```
+
+3. After the interactive challenge, copy `details.receipt` from the command output into the plan's
+`approval_receipts` array and rerun. The runtime verifies the HMAC against
+`DATA_TOOLKIT_APPROVAL_KEY` or `DATA_TOOLKIT_APPROVAL_KEY_FILE`.
+
+The human-binding property depends on separation of duties: do not expose the signing key to the
+agent. In a same-user shell where the agent can read the key or impersonate the operator TTY, no
+local software-only mechanism can prove a distinct human approved the decision. Use a separate
+operator account, secret-injecting orchestrator or external signer where that distinction matters.
+
+## Native JSON input
+
+The runtime accepts `.json` anywhere its table reader is used:
+
+- a list of objects;
+- one object, treated as one record;
+- a nested list selected with `json_path`, such as `records` or `payload.items`;
+- an object with exactly one list-of-objects field, which is auto-selected and disclosed in the
+  input note.
+
+Nested values are preserved. A `data-convert` plan can then apply `flatten` deliberately rather
+than losing structure during ingestion.
+
+## Multi-source conversion
+
+Supply two or more `inputs` to `data-convert`, plus a union operation in the conversion spec:
+
+```json
+{
+  "reshape": [
+    {"op": "union", "how": "outer"},
+    {"op": "flatten"}
+  ],
+  "target": {"format": "csv"}
+}
+```
+
+`outer` retains the union of columns; `inner` retains only columns shared by every source. Union
+happens before linear reshape and mapping. The report records the number of sources and rows in/out.
+
+## Skill plan shapes
+
+### Tidy
+
+```json
+{
+  "version": 1,
+  "skill": "data-tidy",
+  "input": "messy.xlsx",
+  "recipe": "tidy-recipe.json",
+  "output": "out/clean.xlsx",
+  "approval": {"confirmed": true}
+}
+```
+
+Writes the clean workbook and a sibling `.report.md` change report.
+
+### Extract
+
+Fields mode:
+
+```json
+{
+  "version": 1,
+  "skill": "data-extract",
+  "inputs": ["confirmation-1.pdf", "confirmation-2.pdf"],
+  "mode": "fields",
+  "fields": [
+    {"name": "Investor", "labels": ["investor", "name of investor"], "type": "text"},
+    {"name": "Commitment", "labels": ["commitment"], "type": "currency", "code_target": "Currency"}
+  ],
+  "output": "out/confirmations.xlsx",
+  "approval": {"confirmed": true}
+}
+```
+
+Table mode uses one input and supplies `page`, `index`, and optionally a tidy `recipe`.
+
+### Reconcile
+
+```json
+{
+  "version": 1,
+  "skill": "data-reconcile",
+  "inputs": ["bank.csv", "cashbook.xlsx"],
+  "options": {
+    "preset": "bank_vs_ledger",
+    "date_window": 5,
+    "strict_currency": true,
+    "material": 1000,
+    "escalate": 10000
+  },
+  "output": "out/reconciliation.xlsx",
+  "approval": {"confirmed": true}
+}
+```
+
+### Analyse
+
+```json
+{
+  "version": 1,
+  "skill": "data-analyse",
+  "input": "sales.json",
+  "operations": [
+    {"op": "numeric_summary", "column": "Amount"},
+    {"op": "breakdown", "by": "Customer", "value": "Amount", "top": 10},
+    {"op": "period_series", "date_col": "Date", "value": "Amount", "grain": "month"}
+  ],
+  "output": "out/analysis.json",
+  "approval": {"confirmed": true}
+}
+```
+
+Supported operations are `numeric_summary`, `outliers_iqr`, `breakdown`, `period_series`,
+`ageing`, and `currency_mix`. Zero and net-zero totals remain zero; concentration shares are
+`null` where the denominator is not meaningful.
+
+### Visualise
+
+```json
+{
+  "version": 1,
+  "skill": "data-visualise",
+  "input": "exceptions.xlsx",
+  "dashboard": {
+    "title": "Reconciliation status",
+    "as_of": "15 Jul 2026",
+    "blocks": [
+      {"type": "kpi_row", "items": [{"label": "Open", "value": 12, "status": "amber"}]},
+      {"type": "table", "title": "Exceptions", "rows": "$source", "sortable": true}
+    ]
+  },
+  "output": "out/dashboard.html"
+}
+```
+
+Supported blocks are `kpi_row`, `bar_chart`, `line_chart`, `donut_chart`, `table`, `section`
+and `grid`. `$source` refers to rows read from the plan input.
+
+### Convert
+
+The conversion plan may use an inline spec, a JSON spec, or a Markdown conversion card. It supports
+single or multiple sources, JSON input, union, flatten, nest, split, mapping, lookups, validation,
+templates and the existing target formats.
+
+## Agent operating rule
+
+Prefer this runtime when executing a confirmed plan. The skill documents still control intent,
+plan design, interpretation, data handling and hand-off. The runtime controls mechanical execution
+and reporting.
+
+Do not convert an unresolved `needs_approval` result into success in prose. Show the user the
+approval request and wait for the corresponding decision.
