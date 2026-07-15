@@ -445,6 +445,16 @@ def validate_plan(plan: dict[str, Any], *, base_dir: str | Path | None = None,
     options = plan.get("options") or {}
     if isinstance(options, dict) and "allow_drift" in options:
         warnings.append("options.allow_drift is ignored; source drift requires a signed approval receipt")
+    spec_validation = None
+    if not errors:
+        try:
+            import agent_schemas
+            spec_validation = agent_schemas.validate_plan_payload(plan, base_dir=base)
+            errors.extend(agent_schemas.render_errors(
+                spec_validation.get("skill") or str(skill), spec_validation.get("errors") or []
+            ))
+        except Exception as exc:
+            errors.append(str(exc))
     if check_sources and not errors:
         for source in inputs:
             try:
@@ -461,9 +471,17 @@ def validate_plan(plan: dict[str, Any], *, base_dir: str | Path | None = None,
             except Exception as exc:
                 errors.append(str(exc))
     status = "error" if errors else ("needs_approval" if approvals else ("success_with_warnings" if warnings else "success"))
+    schema_details = None
+    if spec_validation:
+        schema_details = {
+            "skill": spec_validation.get("skill"),
+            "schema": spec_validation.get("schema"),
+            "errors": spec_validation.get("errors") or [],
+        }
     return envelope(status=status, skill=skill, action="validate", warnings=warnings,
                     errors=errors, approvals_required=approvals,
-                    details={"inputs": inputs, "output": output})
+                    details={"inputs": inputs, "output": output,
+                             "spec_validation": schema_details})
 
 
 def _output_path(plan: dict[str, Any], base: Path, default_name: str) -> Path:
@@ -868,6 +886,47 @@ def run_plan(plan: dict[str, Any], *, base_dir: str | Path | None = None,
                         errors=[str(exc)], details=details)
 
 
+def validate_spec_file(skill: str, spec: str | Path, *,
+                       base_dir: str | Path | None = None) -> dict[str, Any]:
+    import agent_schemas
+    base = Path(base_dir) if base_dir else Path.cwd()
+    payload = agent_schemas.load_spec_value(
+        str(spec), base_dir=base, conversion_card=(skill == "data-convert")
+    )
+    issues = agent_schemas.validate_payload(skill, payload)
+    errors = agent_schemas.render_errors(skill, issues)
+    return envelope(
+        status="error" if errors else "success", skill=skill, action="validate-spec",
+        errors=errors,
+        details={
+            "schema": str(agent_schemas.schema_path(skill).relative_to(ROOT)),
+            "spec": str(spec),
+            "issues": issues,
+        },
+    )
+
+
+def schema_catalogue() -> list[dict[str, str]]:
+    import agent_schemas
+    return agent_schemas.schema_catalogue()
+
+
+def schema_document(skill: str) -> dict[str, Any]:
+    import agent_schemas
+    return agent_schemas.load_schema(skill)
+
+
+def _write_json_report(path: str | Path, value: Any, *, pretty: bool = True) -> Path:
+    report = Path(path).expanduser()
+    report.parent.mkdir(parents=True, exist_ok=True)
+    report.write_text(
+        json.dumps(_clean_for_json(value), indent=2 if pretty else None,
+                   separators=None if pretty else (",", ":")) + "\n",
+        encoding="utf-8",
+    )
+    return report
+
+
 def plan_schema() -> dict[str, Any]:
     return {
         "version": PLAN_VERSION,
@@ -914,31 +973,53 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Unified agent-facing interface for Data Toolkit")
     parser.add_argument("--compact", action="store_true", help="emit compact JSON")
     sub = parser.add_subparsers(dest="command", required=True)
+    def add_report_arg(command_parser):
+        command_parser.add_argument(
+            "--json-report", metavar="PATH",
+            help="also write the complete result envelope to PATH",
+        )
+
     p_inspect = sub.add_parser("inspect", help="inspect one source and return structured metadata")
     p_inspect.add_argument("source")
     p_inspect.add_argument("--sheet")
     p_inspect.add_argument("--json-path")
     p_inspect.add_argument("--sample-rows", type=int, default=5)
-    p_validate = sub.add_parser("validate", help="validate an agent plan")
+    add_report_arg(p_inspect)
+    p_validate = sub.add_parser("validate", help="validate an agent plan and its declarative spec")
     p_validate.add_argument("plan")
     p_validate.add_argument("--no-source-check", action="store_true")
+    add_report_arg(p_validate)
+    p_validate_spec = sub.add_parser("validate-spec", help="validate one declarative spec against its skill schema")
+    p_validate_spec.add_argument("skill", choices=sorted(SUPPORTED_SKILLS))
+    p_validate_spec.add_argument("spec")
+    add_report_arg(p_validate_spec)
     p_run = sub.add_parser("run", help="run an approved agent plan")
     p_run.add_argument("plan")
     p_run.add_argument("--dry-run", action="store_true")
+    add_report_arg(p_run)
     p_approve = sub.add_parser("approve", help="sign one secondary approval request in an operator shell")
     p_approve.add_argument("request")
     p_approve.add_argument("--by", required=True)
     decision = p_approve.add_mutually_exclusive_group(required=True)
     decision.add_argument("--allow-drift", action="store_true")
     decision.add_argument("--accept", metavar="INDEXES", help="comma-separated aggregation indexes, or 'none'")
-    sub.add_parser("schema", help="print an example version-1 plan")
+    add_report_arg(p_approve)
+    p_schema = sub.add_parser("schema", help="print the schema catalogue or one skill schema")
+    p_schema.add_argument("skill", nargs="?", choices=sorted(SUPPORTED_SKILLS))
+    add_report_arg(p_schema)
     args = parser.parse_args(argv)
     try:
         if args.command == "inspect":
             result = inspect_source({"path": args.source, "sheet": args.sheet, "json_path": args.json_path},
                                     sample_rows=args.sample_rows)
         elif args.command == "schema":
-            result = envelope(status="success", action="schema", details={"example": plan_schema()})
+            details = {"example": plan_schema(), "catalogue": schema_catalogue()}
+            if args.skill:
+                details["skill"] = args.skill
+                details["schema"] = schema_document(args.skill)
+            result = envelope(status="success", skill=args.skill, action="schema", details=details)
+        elif args.command == "validate-spec":
+            result = validate_spec_file(args.skill, args.spec, base_dir=Path.cwd())
         elif args.command == "approve":
             if not sys.stdin.isatty():
                 raise PlanError("approve requires an interactive operator TTY")
@@ -971,6 +1052,15 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         result = envelope(status="error", action=args.command, errors=[str(exc)],
                           details={"exception": type(exc).__name__})
+    if getattr(args, "json_report", None):
+        try:
+            report = _write_json_report(args.json_report, result, pretty=not args.compact)
+            result.setdefault("details", {})["json_report"] = str(report.resolve())
+            _write_json_report(report, result, pretty=not args.compact)
+        except Exception as exc:
+            result = envelope(status="error", action=args.command,
+                              errors=[f"could not write JSON report: {exc}"],
+                              details={"exception": type(exc).__name__, "result": result})
     _print(result, pretty=not args.compact)
     return 0 if result["status"] in {"success", "success_with_warnings", "needs_approval"} else 1
 
