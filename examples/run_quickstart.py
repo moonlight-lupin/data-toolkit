@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""10-minute quickstart — one recon working paper + one branded dashboard.
+"""10-minute quickstart — one recon working paper + one dashboard.
 
 Run from the repo root:
 
@@ -59,8 +59,8 @@ def main() -> int:
     ))
     print(f"\nworking paper -> {wp}")
 
-    print("\n2/2  Building branded dashboard from the recon summary …")
-    apply_theme(None)  # Phronesis Applied defaults
+    print("\n2/2  Building dashboard from the recon summary …")
+    apply_theme(None)  # neutral default theme
     n_matched = int(summary.get("matched") or 0)
     n_exc = int(summary.get("exceptions") or len(exc or []))
     by_cat = {

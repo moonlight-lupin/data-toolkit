@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.6 — 2026-07-15
+
+Ship **unbranded by default** — the Phronesis Applied theme is no longer the toolkit's default
+(so forks/white-label users don't inherit someone else's identity):
+
+- **`data-visualise` `DEFAULT_THEME` is now neutral** — `brand_name` `"Data Toolkit"` and **no
+  default logo** (the header shows a text wordmark). The teal/paper palette and the type pairing
+  stay as a generic default; token names are unchanged, so existing white-label themes keep
+  working. `logo_path` may now be `None` (handled everywhere).
+- **Removed the Phronesis brand assets** (`logo-phronesis*.{png,svg}`, `logo-sample.png`); no
+  brand mark ships, and there is **no Phronesis theme preset** in the repo.
+- Reworded the theming docs/docstrings (`viz.py`, `brand.md`, `blocks.md`, the visualise
+  `SKILL.md`, the README white-label bullet, `NOTICE`, `CONTRIBUTING.md`) from "Phronesis
+  defaults" to the neutral-default / white-label framing.
+- **Authorship is unchanged** — "From Phronesis Applied" stays as the author/maintainer credit in
+  the README, plugin/marketplace metadata and the LICENSE/NOTICE copyright.
+- Sample dashboards regenerated on the neutral default (content unchanged; styling/wordmark only).
+
 ## 0.4.5 — 2026-07-15
 
 Brand refresh — `data-visualise` defaults track the revised Phronesis Applied identity

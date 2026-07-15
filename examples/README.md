@@ -36,7 +36,7 @@ Open the HTML file in a browser. Open the `.xlsx` in Excel / LibreOffice / Numbe
    (`skills/data-reconcile/examples/sample_invoice_tracker.csv` vs
    `sample_ledger.csv`) with the `invoice_tracker_vs_ledger` preset — deliberate
    mismatches so the triage sheet has something useful to show.
-2. **`data-visualise`** with the Phronesis Applied default theme — KPI cards from the
+2. **`data-visualise`** with the neutral default theme — KPI cards from the
    recon summary plus a small exception breakdown chart.
 
 ## Next

@@ -67,7 +67,7 @@ pip install openpyxl
 python examples/run_quickstart.py
 ```
 
-That writes a reconciliation working paper and a branded HTML dashboard under
+That writes a reconciliation working paper and an HTML dashboard under
 `examples/out/`. Full notes: [`examples/README.md`](examples/README.md).
 
 ## Why teams choose it
@@ -93,8 +93,8 @@ That writes a reconciliation working paper and a branded HTML dashboard under
 - **Drafts, not advice.** Every output is a first draft for a qualified person to
   sign off — clearly labelled, never dressed up as a decision or as financial / tax /
   investment advice. See [`PRINCIPLES.md`](PRINCIPLES.md).
-- **White-label ready.** Phronesis Applied defaults out of the box; dashboards take
-  your colours, font and logo without touching a line of code.
+- **White-label ready.** Ships unbranded — a neutral default; dashboards take your name,
+  colours, fonts and logo without touching a line of code.
 - **Standalone.** Plain Python plus optional libraries for non-spreadsheet inputs. It
   also slots in as a data-prep front end for the rest of the Phronesis Applied suite,
   but depends on none of them.
