@@ -80,7 +80,7 @@ Honest data-handling claims (correctness fix to the docs):
   context is sent to the AI provider, as in any AI-assisted work. Claiming otherwise was wrong,
   and a compliance answer built on it would have been wrong too.
 - **Replaced with what is actually true**, consistently across the README, `DATA-HANDLING.md`,
-  `SECURITY.md`, `COMPATIBILITY.md`, all five `SKILL.md` files, the plugin/marketplace
+  `SECURITY.md`, `COMPATIBILITY.md`, all six `SKILL.md` files, the plugin/marketplace
   descriptions and the engine docstrings:
   - the **engine** runs on your machine and makes **no network calls** — no cloud OCR (local
     Tesseract only), no CDN or remote images, no external APIs, no credentials, no connectors,

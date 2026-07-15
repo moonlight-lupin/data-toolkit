@@ -152,19 +152,30 @@ def breakdown(header, rows, by, value=None, top=10):
     items = sorted(groups.items(), key=lambda kv: kv[1][measure], reverse=True)
     grand = sum(g[measure] for _, g in items) or Decimal(1)
     has_neg = any(g[measure] < 0 for _, g in items)
+    shares_valid = grand > 0 and not has_neg
     out, cum, cum80 = [], Decimal(0), None
     for rank, (key, g) in enumerate(items, 1):
-        share = Decimal(g[measure]) / Decimal(grand)
-        cum += share
-        if cum80 is None and cum >= Decimal("0.8"):
-            cum80 = rank
+        if shares_valid:
+            share = Decimal(g[measure]) / Decimal(grand)
+            cum += share
+            if cum80 is None and cum >= Decimal("0.8"):
+                cum80 = rank
+            cum_share = cum
+        else:
+            share = None
+            cum_share = None
         out.append({"key": key, "count": g["count"],
                     **({"total": g["total"]} if value else {}),
-                    "share": share, "cum_share": cum})
+                    "share": share, "cum_share": cum_share})
+    top1_share = out[0]["share"] if out else None
+    if not out or not shares_valid:
+        top3_share = None
+    else:
+        top3_share = sum(g["share"] for g in out[:3] if g["share"] is not None) or None
     return {"by": by, "measure": value or "rows", "groups": out[:top],
             "n_groups": len(out), "grand_total": grand if value else sum(g["count"] for _, g in items),
-            "top1_share": out[0]["share"] if out else None,
-            "top3_share": sum(g["share"] for g in out[:3]) if out else None,
+            "top1_share": top1_share,
+            "top3_share": top3_share,
             "groups_to_80pct": cum80, "skipped": skipped,
             "has_negatives": has_neg}   # shares are unreliable when negatives net off
 
@@ -520,7 +531,9 @@ def _self_test():
     b = breakdown(header, rows, "Customer", value="Amount")
     assert b["groups"][0]["key"] == "Alpha" and b["groups"][0]["total"] == Decimal("11500"), b
     assert b["skipped"] == 1
-    assert abs(sum(g["share"] for g in b["groups"]) - 1) < Decimal("0.0001")
+    assert b["has_negatives"] is True                                     # (500) = negative
+    # shares are None when negatives are present (unreliable)
+    assert all(g["share"] is None for g in b["groups"]), b
     br = breakdown(header, rows, "Region")                    # count measure + (blank) key
     assert any(g["key"] == "(blank)" for g in br["groups"])
 

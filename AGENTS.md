@@ -3,8 +3,8 @@
 ## Cursor Cloud specific instructions
 
 This repo is a fully-local Claude Code plugin (data-prep): shared engine scripts in `scripts/`
-plus **5** skills (`data-extract`, `data-tidy`, `data-reconcile`, `data-analyse`,
-`data-visualise`). No service runs; "running" means invoking an engine script, and "testing"
+plus **6** skills (`data-extract`, `data-tidy`, `data-reconcile`, `data-analyse`,
+`data-visualise`, `data-convert`). No service runs; "running" means invoking an engine script, and "testing"
 means the regression suite.
 
 - Runtime: Python 3 (VM has 3.12). Hard dependency: `openpyxl` (see `requirements.txt`).

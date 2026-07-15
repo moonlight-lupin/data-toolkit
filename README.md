@@ -147,7 +147,7 @@ already have.
 ## Benchmark
 
 We ran the honest comparison: **the same model (Claude Sonnet 5) with the toolkit vs.
-with plain Python**, across all five skills plus a reconciliation scaling test.
+with plain Python**, across all six skills plus a reconciliation scaling test.
 Synthetic fixtures, planted traps, recorded ground truth. Deliverables scored by
 independent verification — not the agents’ self-reports.
 

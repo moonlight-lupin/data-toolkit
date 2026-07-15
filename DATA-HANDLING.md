@@ -86,6 +86,7 @@ controlled place or goes to a recipient entitled to it:
 | `data-reconcile` | Same: matching/triage runs **locally** and produces a working paper for review — no egress, nothing posted. |
 | `data-analyse` | Same: metrics and the insight brief are computed **locally**; brief + metrics workbook stay on the local/synced store. A brief that names individuals or quotes confidential figures is gated on any egress. |
 | `data-visualise` | Embeds data directly into a self-contained `.html` and never calls out (no CDN/remote images). Keep the file on the local/synced store; if it carries personal or confidential business/financial data, treat it as gated — only share with entitled recipients. A board built purely from non-sensitive, aggregated numbers is not gated. |
+| `data-convert` | Same: mapping + reshape run **locally**; the target file (CSV / JSON / XLSX / fixed-width) stays on the local/synced store. A target file carrying personal or confidential data (e.g. a payments upload) is gated — only share with the entitled recipient. |
 
 > **General rule for any handoff:** if a value would cross to an external/third-party tool
 > (web search, external API, online converter, a cloud artifact runtime), de-identify it

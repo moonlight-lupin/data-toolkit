@@ -2,11 +2,12 @@
 name: data-tidy
 description: >-
   Clean up messy data into a structured, validated table — from any source (a junk-filled
-  .xlsx/CSV, a pasted email/markdown table, a PDF table, a Word table, an Outlook .msg, or a
-  scanned PDF via local OCR) to a clean .xlsx plus an audit/change report. Use when the user
-  wants to "clean up this data", "tidy this spreadsheet", "normalise this list", "extract a
-  table from this PDF", "structure this messy export", "dedupe this", "standardise these
-  dates / currencies", or "turn this into a clean table". Works INTENT-FIRST: it asks what
+  .xlsx/CSV, a pasted email/markdown table, a Word table, or an Outlook .msg) to a clean .xlsx
+  plus an audit/change report. Use when the user wants to "clean up this data", "tidy this
+  spreadsheet", "normalise this list", "structure this messy export", "dedupe this",
+  "standardise these dates / currencies", or "turn this into a clean table". (For getting
+  data OUT of PDFs — tables, forms, scanned documents — use data-extract, not this skill.)
+  Works INTENT-FIRST: it asks what
   the data is for and the expected output up front, then profiles → proposes a transform
   recipe → you confirm → applies it deterministically → reports every change and flags cells
   for review. Never mangles silently; transforms are computed locally by a deterministic engine. Standalone —
@@ -45,6 +46,8 @@ import sys, pathlib
 sys.path.insert(0, str(pathlib.Path("../../scripts").resolve()))   # shared dataclean + ingest
 import ingest, dataclean
 ```
+> **Run from the skill directory** (`skills/data-tidy/`). The `../../scripts` path resolves
+> to the toolkit-root `scripts/` where `dataclean.py` and `ingest.py` live.
 `ingest.read_any(path)` handles `.xlsx`/`.csv`/`.tsv`, `.pdf` (ruled tables → text-layout →
 **local-OCR** fallback for scans), `.docx` tables, and `.msg`; `ingest.read_paste(text)`
 handles a pasted markdown/TSV/CSV table. Returns `(rows, note)`.
@@ -142,6 +145,11 @@ managed machine, ask IT to deploy it). See `references/recipe-spec.md` for setup
 - `scripts/make_samples.py` — writes synthetic messy samples to `examples/`.
 - `references/recipe-spec.md` — the recipe format, the intent step, OCR/Tesseract setup.
 - `examples/` — synthetic messy samples (no real data) to build/demo against.
+
+## Principles
+
+Behavioural charter: `../../PRINCIPLES.md` — drafts not advice, never invent, honesty and
+calibration, plain speech, action boundary.
 
 ## Data handling
 The engine runs **on your machine** and makes no network calls — messy inputs are often sensitive

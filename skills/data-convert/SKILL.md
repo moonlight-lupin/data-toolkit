@@ -35,6 +35,8 @@ import sys; sys.path.insert(0, "scripts")
 from convert import (load_spec, render_card, convert_file, convert_rows,
                      sense_check, render_report)
 ```
+> **Run from the skill directory** (`skills/data-convert/`). The `scripts` path resolves
+> to this skill's `scripts/` subdirectory where `convert.py` lives.
 
 ### 1. Intent first — what's the target, and why?
 Establish the **source**, the **target contract** (another system's import spec — its columns,
@@ -106,6 +108,11 @@ Ready-made example contracts: `references/contracts/journal-import.md`,
 - **Deterministic & human-in-the-loop** — the engine applies a confirmed spec; it never invents a
   value. Output is a **draft for review**, not a posting or an upload — a person submits it.
 - **Never blind-applies** — a drifted source is flagged, not force-converted.
+
+## Principles
+
+Behavioural charter: `../../PRINCIPLES.md` — drafts not advice, never invent, honesty and
+calibration, plain speech, action boundary.
 
 ## Data handling
 The engine runs **on your machine** and makes no network calls; cleaning delegates to `data-tidy`

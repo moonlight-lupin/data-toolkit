@@ -291,32 +291,41 @@ def _nice_ticks(lo, hi, n=5):
 
 def bar_chart(data, title=None, height=220, unit="") -> str:
     """A horizontal-axis bar chart as inline SVG. data: [(label, value)] or dicts.
-    Geometry uses float coordinates; labels preserve Decimal formatting where supplied."""
+    Geometry uses float coordinates; labels preserve Decimal formatting where supplied.
+    Negative values are drawn below a zero line."""
     pairs = _norm_pairs(data)
     if not pairs:
         return _empty_block(title, "No data")
     vals = [float(v or 0) for _, v in pairs]
-    vmax = max(vals + [0]) or 1
+    vmin, vmax = min(vals + [0]), max(vals + [0])
+    rng = (vmax - vmin) or 1
     n = len(pairs)
     W, pad_l, pad_b, pad_t = 640, 8, 28, 20  # pad_t leaves room for value labels
     plot_h = height - pad_b - pad_t
     gap = 10
     bw = (W - pad_l) / n - gap
+    has_neg = vmin < 0
+    y_zero = pad_t + plot_h - (0 - vmin) / rng * plot_h if has_neg else pad_t + plot_h
     bars = []
     for i, ((lab, raw_v), v) in enumerate(zip(pairs, vals)):
-        h = (v / vmax) * plot_h
+        if has_neg:
+            h = abs(v) / rng * plot_h
+            y = y_zero - h if v >= 0 else y_zero
+        else:
+            h = (v / rng) * plot_h
+            y = pad_t + (plot_h - h)
         x = pad_l + i * (bw + gap)
-        y = pad_t + (plot_h - h)
         col = _SERIES[i % len(_SERIES)] if n <= len(_SERIES) else BRAND["burgundy"]
+        lbl_y = y - 4 if v >= 0 else y + h + 12
         bars.append(
             f'<rect x="{x:.1f}" y="{y:.1f}" width="{bw:.1f}" height="{h:.1f}" '
             f'rx="3" fill="{col}"><title>{_e(lab)}: {_fmt_num(raw_v)}{_e(unit)}</title></rect>'
-            f'<text x="{x + bw/2:.1f}" y="{y - 4:.1f}" text-anchor="middle" '
+            f'<text x="{x + bw/2:.1f}" y="{lbl_y:.1f}" text-anchor="middle" '
             f'class="v">{_fmt_num(raw_v)}</text>'
             f'<text x="{x + bw/2:.1f}" y="{height - 9:.1f}" text-anchor="middle" '
             f'class="x">{_e(lab)}</text>')
     svg = (f'<svg viewBox="0 0 {W} {height}" class="chart" '
-           f'preserveAspectRatio="xMidYMid meet">{"".join(bars)}</svg>')
+           f'preserveAspectRatio="xMidYMid meet">{" ".join(bars)}</svg>')
     return _chart_block(title, svg)
 
 

@@ -35,6 +35,8 @@ import sys; sys.path.insert(0, "scripts")
 from reconcile import (reconcile_files, propose_aggregations, apply_aggregations,
                        finalize, render_proposals, write_workpaper, render_report, PRESETS)
 ```
+> **Run from the skill directory** (`skills/data-reconcile/`). The `scripts` path resolves
+> to this skill's `scripts/` subdirectory where `reconcile.py` lives.
 
 ### 1. Intent first — what are we reconciling, and against what?
 Establish **A** (e.g. our invoice tracker / cashbook / internal records) and **B** (e.g. the
@@ -129,7 +131,7 @@ finance to red-line). In short:
 
 | Category | Means | Typical action |
 |---|---|---|
-| `missing_in_B` | in A, not B (e.g. invoiced-not-booked; approved-not-paid) | investigate / post / chase |
+| `missing_in_B` | in A, not B (e.g. invoiced-not-booked; approved-not-paid) | investigate / suggest posting / chase |
 | `missing_in_A` | in B, not A (e.g. booked-not-tracked; paid-without-approval) | investigate / record / query |
 | `amount_mismatch` | matched, amounts differ | investigate the difference |
 | `rounding` | differ within the rounding / FX tolerance | accept (note) |
@@ -165,8 +167,12 @@ Materiality grades each by value: **within tolerance → immaterial → material
 - **Drafts, not advice; never invents.** An unmatched or ambiguous item is flagged, never
   guessed into a match. The output is a first-pass working paper for a qualified person.
 
-## Data handling
+## Principles
 
+Behavioural charter: `../../PRINCIPLES.md` — drafts not advice, never invent, honesty and
+calibration, plain speech, action boundary.
+
+## Data handling
 Matching and triage are computed **on your machine** — A, B and the working paper stay in your
 synced or shared file store and **nothing is sent to any external tool** by the engine. (The AI
 agent driving the skill does send whatever it reads into its context to your AI provider.) Reconciliations routinely touch bank details and

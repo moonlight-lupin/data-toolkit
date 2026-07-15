@@ -476,6 +476,7 @@ def apply_recipe(raw_rows, recipe, masters=None):
         if ct:
             out_header.append(ct)
     idx = [(_col_index(header_src, c["source"]), c) for c in cols]
+    _missing_src = [c["source"] for j, c in idx if j is None]
 
     out_rows = []
     conv = {c["target"]: {"ok": 0, "flagged": 0} for c in cols}
@@ -484,6 +485,14 @@ def apply_recipe(raw_rows, recipe, masters=None):
         for (j, spec), ct, csi in zip(idx, code_tgt, code_src_idx):
             raw = "" if j is None or j >= len(r) else r[j]
             code_src_raw = "" if csi is None or csi >= len(r) else r[csi]
+            if j is None:
+                conv[spec["target"]]["flagged"] += 1
+                log["flagged"].append({"row": ri + 1, "column": spec["target"],
+                                       "value": "", "reason": f"source column '{spec['source']}' not found"})
+                out.append("")
+                if ct:
+                    out.append("")
+                continue
             val, note, kept_raw = _convert(raw, spec, code_src_raw)  # kept_raw=True only on hard failure
             if _s(raw) != "":
                 if not kept_raw:
