@@ -1,7 +1,7 @@
 name: CI
 
-permissions:
-  contents: write
+# Quality gate for the Data Toolkit: authoring lint + finance-grade engine and
+# agent-runtime regression suites on every push and PR to main.
 
 on:
   push:
@@ -12,30 +12,6 @@ on:
   workflow_dispatch:
 
 jobs:
-  apply-runtime-hardening:
-    if: github.event_name == 'pull_request' && github.head_ref == 'agent/agent-runtime-priority-0-1' && github.actor != 'github-actions[bot]'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: agent/agent-runtime-priority-0-1
-          fetch-depth: 0
-
-      - name: Apply reviewed hardening patch
-        run: |
-          cat .maintainer/runtime-hardening.part* | base64 --decode | gzip --decompress > /tmp/runtime-hardening.patch
-          git apply --check --exclude=.github/workflows/ci.yml /tmp/runtime-hardening.patch
-          git apply --exclude=.github/workflows/ci.yml /tmp/runtime-hardening.patch
-          rm -rf .maintainer
-
-      - name: Commit consolidated runtime
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "fix: harden agent approval controls"
-          git push origin HEAD:agent/agent-runtime-priority-0-1
-
   test:
     runs-on: ubuntu-latest
     strategy:
