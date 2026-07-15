@@ -82,9 +82,9 @@ def _load_conversion_card(path: Path) -> dict[str, Any]:
         text = path.read_text(encoding="utf-8-sig")
     except FileNotFoundError as exc:
         raise SchemaSpecError(f"spec not found: {path}") from exc
-    match = re.search(r"```convert-spec\s*(\{.*?\})\s*```", text, flags=re.DOTALL)
+    match = re.search(r"```(?:convert-spec|json)\s*\n(.*?)\n```", text, flags=re.DOTALL)
     if not match:
-        raise SchemaSpecError(f"conversion card has no ```convert-spec JSON block: {path}")
+        raise SchemaSpecError(f"conversion card has no ```convert-spec (or ```json) block: {path}")
     try:
         value = json.loads(match.group(1))
     except json.JSONDecodeError as exc:
@@ -113,7 +113,12 @@ def plan_payload(plan: dict[str, Any], *, base_dir: str | Path | None = None) ->
     skill = plan.get("skill")
     if skill == "data-extract":
         if plan.get("mode", "fields") == "fields":
-            return skill, load_spec_value(plan.get("fields"), base_dir=base_dir)
+            payload = load_spec_value(plan.get("fields"), base_dir=base_dir)
+            # run_plan validates before dispatch. Canonicalise a referenced field list in
+            # memory so execution consumes the exact payload that passed schema validation.
+            if isinstance(plan.get("fields"), str):
+                plan["fields"] = payload
+            return skill, payload
         if plan.get("recipe") is not None:
             return "data-tidy", load_spec_value(plan.get("recipe"), base_dir=base_dir)
         return None
