@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from agent_runtime import main  # noqa: E402
+from agent_runtime_api import main  # noqa: E402
 
 
 if __name__ == "__main__":
