@@ -203,10 +203,88 @@ def apply_reshape(header, rows, ops):
 
 
 # --------------------------------------------------------------------------- #
-# Stage 2 — map onto the target contract.
-# mapping: {target_col: {from, compute?, type?, format?, dp?, const?, sep?}}
+# Stage 1.5 — row filter (drop rows before mapping, e.g. only Posted entries).
 # --------------------------------------------------------------------------- #
-def _field(row, spec, fx):
+def _match(row, cond):
+    v = row.get(cond["col"])
+    op = cond.get("op", "eq")
+    val = cond.get("value")
+    sv = _s(v)
+    if op == "in":
+        return sv in [_s(x) for x in val]
+    if op == "not_in":
+        return sv not in [_s(x) for x in val]
+    if op == "eq":
+        return sv == _s(val)
+    if op == "ne":
+        return sv != _s(val)
+    if op == "contains":
+        return _s(val).lower() in sv.lower()
+    if op == "blank":
+        return sv == ""
+    if op == "nonblank":
+        return sv != ""
+    n, m = _num(v), _num(val)                        # numeric comparisons
+    if n is None or m is None:
+        return False
+    return {"gt": n > m, "ge": n >= m, "lt": n < m, "le": n <= m}.get(op, True)
+
+
+def apply_filter(rows, conditions):
+    """Keep only rows where ALL conditions match. `conditions` = [{col, op, value}]."""
+    if not conditions:
+        return rows
+    return [r for r in rows if all(_match(r, c) for c in conditions)]
+
+
+# --------------------------------------------------------------------------- #
+# Lookup / enrich — translate a source value via a reference table (2nd input)
+# or an inline map (e.g. internal account code -> target chart-of-accounts code).
+# --------------------------------------------------------------------------- #
+def _load_lookup_table(path, key, value):
+    _, ingest = _load_engine()
+    _h, rows = _records(ingest.read_any(path))
+    return {_s(r.get(key)): r.get(value) for r in rows}
+
+
+def load_lookups(mapping, base_dir=None):
+    """Preload every `compute:"lookup"` field's table (once, not per row) -> {target_col: {k: v}}.
+    A field carries either an inline `map_values` dict or a `table` file (+ `key`/`value` cols)."""
+    out = {}
+    for tcol, sp in (mapping or {}).items():
+        if sp.get("compute") != "lookup":
+            continue
+        if "map_values" in sp:
+            out[tcol] = {_s(k): v for k, v in sp["map_values"].items()}
+        elif sp.get("table"):
+            path = str(Path(base_dir) / sp["table"]) if base_dir else sp["table"]
+            out[tcol] = _load_lookup_table(path, sp["key"], sp["value"])
+    return out
+
+
+def _fx_rate(fx, row, spec):
+    """The rate to apply: a single pinned `fx.rate`, or the row-date-effective rate from a pinned
+    `fx.rates` table (latest as_of <= the row's `on_date`). The engine never fetches."""
+    if not fx:
+        return None
+    if fx.get("rate") not in (None, ""):
+        return Decimal(str(fx["rate"]))
+    rates = fx.get("rates")
+    if rates:
+        on = spec.get("on_date")
+        d = _fmt_date(row.get(on), {"format": "%Y-%m-%d"}) if on else None
+        eligible = [r for r in rates if (not d or _s(r.get("as_of")) <= d)]
+        chosen = (max(eligible, key=lambda r: _s(r.get("as_of")), default=None)
+                  or min(rates, key=lambda r: _s(r.get("as_of")), default=None))
+        return Decimal(str(chosen["rate"])) if chosen else None
+    return None
+
+
+# --------------------------------------------------------------------------- #
+# Stage 2 — map onto the target contract.
+# mapping: {target_col: {from, compute?, type?, format?, dp?, const?, sep?, ...}}
+# --------------------------------------------------------------------------- #
+def _field(row, spec, fx=None, lookup=None):
     comp = spec.get("compute", "as_is")
     frm = spec.get("from")
     if "const" in spec:
@@ -219,10 +297,20 @@ def _field(row, spec, fx):
     elif comp == "concat":
         return spec.get("sep", " ").join(_s(row.get(x)) for x in frm)
     elif comp == "fx_convert":
-        if not fx or fx.get("rate") in (None, ""):
-            raise ValueError("compute 'fx_convert' needs a pinned fx.rate in the spec")
+        rate = _fx_rate(fx, row, spec)
+        if rate is None:
+            raise ValueError("compute 'fx_convert' needs a pinned fx.rate (or fx.rates + on_date)")
         n = _num(row.get(frm))
-        return _fmt_number((n * Decimal(str(fx["rate"]))) if n is not None else None, spec)
+        return _fmt_number((n * rate) if n is not None else None, spec)
+    elif comp == "lookup":
+        k = _s(row.get(frm))
+        if lookup is not None and k in lookup:
+            raw = lookup[k]
+        else:
+            om = spec.get("on_missing", "keep")      # keep (source value passes through) | blank | error
+            if om == "error":
+                raise ValueError(f"lookup: no match for {k!r} (target left untranslated)")
+            raw = "" if om == "blank" else row.get(frm)
     else:                                            # as_is
         raw = row.get(frm if isinstance(frm, str) else (frm[0] if frm else ""))
     typ = spec.get("type")
@@ -233,10 +321,11 @@ def _field(row, spec, fx):
     return _s(raw)
 
 
-def apply_map(header, rows, mapping, fx=None):
+def apply_map(header, rows, mapping, fx=None, lookups=None):
     """Produce (target_header, target_rows) by applying `mapping` to each source row."""
+    lookups = lookups or {}
     tcols = list(mapping.keys())
-    out = [{tc: _field(r, sp, fx) for tc, sp in mapping.items()} for r in rows]
+    out = [{tc: _field(r, sp, fx, lookups.get(tc)) for tc, sp in mapping.items()} for r in rows]
     return tcols, out
 
 
@@ -261,6 +350,58 @@ def check_contract(target_header, target_rows, columns, source_header, mapping, 
         if c not in consumed:
             issues.append({"kind": "unmapped_source", "detail": f"source column '{c}' is not used",
                            "severity": "info" if rules.get("on_unmapped_source", "report") != "error" else "error"})
+    issues.extend(_validate(target_rows, columns))
+    return issues
+
+
+def _valid_iban(v):
+    s = re.sub(r"\s", "", _s(v)).upper()
+    if not re.fullmatch(r"[A-Z]{2}\d{2}[A-Z0-9]{1,30}", s):
+        return False
+    rearranged = s[4:] + s[:4]                       # move the country+check to the back
+    digits = "".join(str(int(ch, 36)) for ch in rearranged)  # A..Z -> 10..35
+    return int(digits) % 97 == 1
+
+
+def _valid_bic(v):
+    return bool(re.fullmatch(r"[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?", _s(v).upper()))
+
+
+_CHECKERS = {"iban": _valid_iban, "bic": _valid_bic}
+
+
+def _validate(target_rows, columns):
+    """Validate output values against each target column's contract: `allowed` (value set),
+    `pattern` (regex), `max_len`, and `check` (iban/bic). Aggregated to one issue per
+    (column, rule) with a count + first offending value — so a bad column doesn't flood."""
+    issues, seen = [], {}
+    for c in (columns or []):
+        name = c["name"]
+        for r in target_rows:
+            v = _s(r.get(name))
+            if v == "":
+                continue
+            fails = []
+            if c.get("allowed") is not None and v not in [_s(x) for x in c["allowed"]]:
+                fails.append(("not_allowed", "not in the allowed set"))
+            if c.get("pattern") and not re.search(c["pattern"], v):
+                fails.append(("pattern", f"fails pattern {c['pattern']}"))
+            if c.get("max_len") and len(v) > int(c["max_len"]):
+                fails.append(("too_long", f"exceeds max_len {c['max_len']}"))
+            chk = c.get("check")
+            if chk in _CHECKERS and not _CHECKERS[chk](v):
+                fails.append((f"bad_{chk}", f"is not a valid {chk.upper()}"))
+            for kind, why in fails:
+                key = (name, kind)
+                if key not in seen:
+                    seen[key] = {"kind": kind, "severity": "error", "n": 0,
+                                 "detail": f"'{name}' {why} (e.g. '{v}')"}
+                    issues.append(seen[key])
+                seen[key]["n"] += 1
+    for i in issues:
+        if i.get("n", 0) > 1:
+            i["detail"] += f" — {i['n']} rows"
+        i.pop("n", None)
     return issues
 
 
@@ -295,16 +436,67 @@ def write_xlsx(header, rows, path):
     return path
 
 
-def write_output(target_header, target_rows, target_spec, out_path):
-    fmt = (target_spec or {}).get("format", "csv")
+def write_fixedwidth(header, rows, path, columns, write_header=False, encoding="utf-8"):
+    """Fixed-width flat file (legacy bank/ERP imports). Each target column carries `width`,
+    `align` (`l`/`r`, default left) and `pad` (default space); values are clipped to width."""
+    specs = {c["name"]: c for c in (columns or [])}
+
+    def fld(name, val):
+        c = specs.get(name, {})
+        w = int(c.get("width", len(_s(val))))
+        pad = (c.get("pad") or " ")[:1]
+        s = _s(val)[:w]
+        return s.rjust(w, pad) if c.get("align") == "r" else s.ljust(w, pad)
+
+    lines = []
+    if write_header:
+        lines.append("".join(fld(c, c) for c in header))
+    lines += ["".join(fld(c, r.get(c, "")) for c in header) for r in rows]
+    Path(path).write_text("\n".join(lines) + ("\n" if lines else ""), encoding=encoding)
+    return path
+
+
+def write_template(target_header, rows, template_path, out_path):
+    """Populate a PROVIDED target template (its first row is the header). The template's own
+    column order/format is preserved; mapped rows are written under it. XLSX keeps the template
+    workbook (header styling, other sheets); CSV takes the template's header line."""
+    ext = Path(template_path).suffix.lower()
+    if ext == ".xlsx":
+        from openpyxl import load_workbook
+        wb = load_workbook(template_path)
+        ws = wb.active
+        thdr = [_s(c.value) for c in ws[1]]
+        start = ws.max_row + 1
+        for i, r in enumerate(rows):
+            for j, col in enumerate(thdr, start=1):
+                ws.cell(row=start + i, column=j, value=r.get(col, ""))
+        wb.save(out_path)
+        return out_path
+    with open(template_path, encoding="utf-8") as f:
+        thdr = next(_csv.reader(f))
+    with open(out_path, "w", newline="", encoding="utf-8") as f:
+        w = _csv.writer(f)
+        w.writerow(thdr)
+        w.writerows([[r.get(c, "") for c in thdr] for r in rows])
+    return out_path
+
+
+def write_output(target_header, target_rows, target_spec, out_path, base_dir=None):
+    ts = target_spec or {}
+    if ts.get("template"):
+        tpath = str(Path(base_dir) / ts["template"]) if base_dir else ts["template"]
+        return write_template(target_header, target_rows, tpath, out_path)
+    fmt = ts.get("format", "csv")
     if fmt == "csv":
         return write_csv(target_header, target_rows, out_path,
-                         delimiter=target_spec.get("delimiter", ","),
-                         encoding=target_spec.get("encoding", "utf-8"))
+                         delimiter=ts.get("delimiter", ","), encoding=ts.get("encoding", "utf-8"))
     if fmt in ("json", "jsonl"):
         return write_json(target_rows, out_path)
     if fmt == "xlsx":
         return write_xlsx(target_header, target_rows, out_path)
+    if fmt == "fixedwidth":
+        return write_fixedwidth(target_header, target_rows, out_path, ts.get("columns"),
+                                write_header=ts.get("header", False))
     raise ValueError(f"unsupported target format '{fmt}'")
 
 
@@ -423,20 +615,26 @@ def render_card(spec):
 # --------------------------------------------------------------------------- #
 # Orchestration
 # --------------------------------------------------------------------------- #
-def convert_rows(spec, header, rows):
-    """Pure core: reshape -> map -> contract-check. Returns (target_header, target_rows, report).
-    (split/nest are applied by convert_file since they change the output cardinality.)"""
+def convert_rows(spec, header, rows, lookups=None):
+    """Pure core: filter -> reshape -> map (+ lookups) -> contract-check + validate. Returns
+    (target_header, target_rows, report). (split/nest are applied by convert_file since they
+    change the output cardinality.) `lookups` may be preloaded by convert_file; else inline
+    `map_values` are resolved here."""
+    n_in = len(rows)
+    rows = apply_filter(rows, spec.get("filter"))
     reshape = [o for o in spec.get("reshape", []) if o["op"] in _RESHAPE and o["op"] != "nest"]
     header, rows = apply_reshape(header, rows, reshape)
     mapping, tgt = spec.get("map", {}), spec.get("target", {})
+    if lookups is None:
+        lookups = load_lookups(mapping)              # inline map_values (file tables need a base_dir)
     if mapping:
-        t_header, t_rows = apply_map(header, rows, mapping, fx=spec.get("fx"))
+        t_header, t_rows = apply_map(header, rows, mapping, fx=spec.get("fx"), lookups=lookups)
     else:
         t_header, t_rows = header, rows
     issues = check_contract(t_header, t_rows, tgt.get("columns"), header, mapping,
                             spec.get("rules"))
-    report = {"rows_in": len(rows), "rows_out": len(t_rows), "issues": issues,
-              "target_columns": t_header}
+    report = {"rows_in": n_in, "rows_filtered": n_in - len(rows), "rows_out": len(t_rows),
+              "issues": issues, "target_columns": t_header}
     return t_header, t_rows, report
 
 
@@ -456,9 +654,10 @@ def _records(raw):
     return header, out
 
 
-def convert_file(spec, in_path, out_path, run_dates_after=None):
+def convert_file(spec, in_path, out_path, run_dates_after=None, base_dir=None):
     """Read source (any format via ingest), sense-check, convert, write. Returns a report dict
-    (with `sense_check` issues surfaced separately so the agent can halt on drift)."""
+    (with `sense_check` issues surfaced separately so the agent can halt on drift). `base_dir`
+    (defaults to the card's folder) resolves relative lookup tables and output templates."""
     _, ingest = _load_engine()
     if spec.get("source", {}).get("clean_with_tidy") and spec["source"].get("tidy_recipe"):
         dc, _ = _load_engine()
@@ -470,7 +669,8 @@ def convert_file(spec, in_path, out_path, run_dates_after=None):
         header, rows = _records(ingest.read_any(in_path, sheet=spec.get("source", {}).get("sheet")))
 
     drift = sense_check(spec, header, rows, run_dates_after=run_dates_after)
-    t_header, t_rows, report = convert_rows(spec, header, rows)
+    lookups = load_lookups(spec.get("map", {}), base_dir=base_dir)   # resolve file tables here
+    t_header, t_rows, report = convert_rows(spec, header, rows, lookups=lookups)
     report["sense_check"] = drift
 
     split_op = next((o for o in spec.get("reshape", []) if o["op"] == "split"), None)
@@ -481,16 +681,20 @@ def convert_file(spec, in_path, out_path, run_dates_after=None):
         for key, (h, rs) in parts.items():
             safe = re.sub(r"[^\w.-]+", "_", key) or "blank"
             p = outp.with_name(f"{outp.stem}_{safe}{outp.suffix}")
-            written.append(write_output(h, rs, spec.get("target"), p))
+            written.append(write_output(h, rs, spec.get("target"), p, base_dir=base_dir))
         report["written"] = [str(p) for p in written]
     else:
-        report["written"] = [str(write_output(t_header, t_rows, spec.get("target"), out_path))]
+        report["written"] = [str(write_output(t_header, t_rows, spec.get("target"), out_path,
+                                               base_dir=base_dir))]
     return report
 
 
 def render_report(report, *, name="Conversion"):
     L = [f"# {name} — conversion report", ""]
-    L.append(f"- Rows in: {report['rows_in']} · rows out: {report['rows_out']}")
+    filt = report.get("rows_filtered") or 0
+    L.append(f"- Rows in: {report['rows_in']}"
+             + (f" · filtered out: {filt}" if filt else "")
+             + f" · rows out: {report['rows_out']}")
     L.append(f"- Written: {', '.join(report.get('written', [])) or '(not written)'}")
     drift = report.get("sense_check") or []
     if drift:
@@ -602,6 +806,68 @@ def _self_test():
     kinds = {i["kind"] for i in issues}
     assert "mapped_column_missing" in kinds and "new_column" in kinds and "stale_fx" in kinds, issues
     print("sense-check drift: PASS")
+
+    # ------------------------------ v2 ------------------------------ #
+    # v2 (1) row filter: keep only Posted, non-zero rows before mapping
+    f_rows = [{"Status": "Posted", "Amt": "10"}, {"Status": "Draft", "Amt": "5"},
+              {"Status": "Posted", "Amt": "0"}]
+    fspec = {"filter": [{"col": "Status", "op": "eq", "value": "Posted"},
+                        {"col": "Amt", "op": "gt", "value": "0"}],
+             "map": {"Amount": {"from": "Amt", "type": "number", "dp": 2}}, "target": {}}
+    _, fr, frep = convert_rows(fspec, ["Status", "Amt"], f_rows)
+    assert len(fr) == 1 and fr[0]["Amount"] == "10.00" and frep["rows_filtered"] == 2, (fr, frep)
+    print("v2 row filter: PASS")
+
+    # v2 (2) lookup / enrich: translate an internal code via an inline map
+    lspec = {"map": {"TargetCode": {"from": "Acct", "compute": "lookup",
+                                    "map_values": {"1000": "CASH", "6000": "RENT"},
+                                    "on_missing": "keep"}}, "target": {}}
+    _, lr2, _ = convert_rows(lspec, ["Acct"], [{"Acct": "1000"}, {"Acct": "9999"}])
+    assert lr2[0]["TargetCode"] == "CASH" and lr2[1]["TargetCode"] == "9999", lr2  # miss -> kept
+    print("v2 lookup/enrich: PASS")
+
+    # v2 (3) output validation: allowed set, IBAN checksum, max_len
+    vcols = [{"name": "Ccy", "allowed": ["GBP", "USD"]},
+             {"name": "IBAN", "check": "iban"}, {"name": "Ref", "max_len": 6}]
+    vrows = [{"Ccy": "GBP", "IBAN": "GB82WEST12345698765432", "Ref": "OK"},
+             {"Ccy": "EUR", "IBAN": "GB00WEST12345698765432", "Ref": "TOOLONGREF"}]
+    vissues = {i["kind"] for i in _validate(vrows, vcols)}
+    assert {"not_allowed", "bad_iban", "too_long"} <= vissues, vissues
+    assert _valid_iban("GB82 WEST 1234 5698 7654 32") and not _valid_iban("GB00WEST12345698765432")
+    assert _valid_bic("NWBKGB2L") and _valid_bic("NWBKGB2LXXX") and not _valid_bic("BADBIC")
+    print("v2 output validation (allowed/IBAN/BIC/max_len): PASS")
+
+    # v2 (4) date-keyed FX: per-row rate by transaction date
+    fxspec = {"map": {"GBP": {"from": "USD", "compute": "fx_convert", "on_date": "Date", "dp": 2}},
+              "fx": {"pair": "USD/GBP", "rates": [{"as_of": "2026-01-01", "rate": "0.80"},
+                                                  {"as_of": "2026-06-01", "rate": "0.75"}]},
+              "target": {}}
+    _, fxr, _ = convert_rows(fxspec, ["USD", "Date"],
+                             [{"USD": "100", "Date": "15/03/2026"},   # -> 0.80
+                              {"USD": "100", "Date": "20/06/2026"}])  # -> 0.75
+    assert fxr[0]["GBP"] == "80.00" and fxr[1]["GBP"] == "75.00", fxr
+    print("v2 date-keyed FX: PASS")
+
+    # v2 (5) fixed-width output
+    import tempfile as _tf, os as _os
+    fd2, fw = _tf.mkstemp(suffix=".txt"); _os.close(fd2)
+    write_fixedwidth(["Code", "Amount"], [{"Code": "AB", "Amount": "12.50"}], fw,
+                     [{"name": "Code", "width": 4}, {"name": "Amount", "width": 8, "align": "r", "pad": "0"}])
+    line = Path(fw).read_text(encoding="utf-8").splitlines()[0]
+    assert line == "AB  00012.50", repr(line)
+    _os.unlink(fw)
+    print("v2 fixed-width output: PASS")
+
+    # v2 (6) template population: fill a provided CSV template (its header/order wins)
+    fd3, tpl = _tf.mkstemp(suffix=".csv"); _os.close(fd3)
+    Path(tpl).write_text("Ref,Amount,Ccy\n", encoding="utf-8")
+    fd4, tout = _tf.mkstemp(suffix=".csv"); _os.close(fd4)
+    write_template(["Amount", "Ref"], [{"Amount": "9.99", "Ref": "X1", "Ccy": "GBP"}], tpl, tout)
+    got = Path(tout).read_text(encoding="utf-8").splitlines()
+    assert got[0] == "Ref,Amount,Ccy" and got[1] == "X1,9.99,GBP", got   # template order preserved
+    _os.unlink(tpl); _os.unlink(tout)
+    print("v2 template population: PASS")
+
     print("self-test: PASS")
     return 0
 
@@ -630,7 +896,8 @@ def main(argv=None):
             print(f"  [{i['severity']}] {i['detail']}")
         return 0
     out = a.out or (Path(a.source).stem + "_converted." + spec.get("target", {}).get("format", "csv"))
-    report = convert_file(spec, a.source, out, run_dates_after=a.as_of)
+    base_dir = str(Path(a.card).resolve().parent)   # resolve relative lookup tables / templates
+    report = convert_file(spec, a.source, out, run_dates_after=a.as_of, base_dir=base_dir)
     print(render_report(report, name=spec.get("name", "Conversion")))
     return 0
 

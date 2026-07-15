@@ -9,8 +9,8 @@ real numbers by 4pm.
 analysed, presentable outputs — every number computed by a deterministic engine that
 runs on your own machine.
 
-Five skills, one arc: **extract → tidy → reconcile → analyse → visualise.** Use one,
-or chain them. Each hands the next a clean `.xlsx`.
+Six skills. Five make one arc — **extract → tidy → reconcile → analyse → visualise** — and
+**convert** re-expresses clean data in another system's format. Use one, or chain them.
 
 Built for the people who spend their week wrestling exports into shape — accountants,
 bookkeepers, finance and ops analysts, consultants, and the firms that serve them —
@@ -48,7 +48,7 @@ In an interactive Claude Code session:
 /plugin install data-toolkit@data-toolkit
 ```
 
-That’s it. The five skills light up and trigger when you describe the job
+That’s it. The six skills light up and trigger when you describe the job
 ("analyse this export", "reconcile these two files"). No config, no keys.
 
 **Letting an agent do it.** Ask Claude Code to
@@ -125,6 +125,7 @@ flowchart LR
   C --> D[reconcile]
   D --> E[analyse]
   E --> F[dashboard]
+  C --> G[convert → other system]
 ```
 
 Use one skill on its own, or chain them — each hands the next a clean `.xlsx`.
@@ -136,6 +137,7 @@ Use one skill on its own, or chain them — each hands the next a clean `.xlsx`.
 | **Reconcile** two record sets (bank vs ledger, invoice vs statement) | **data-reconcile** | a reconciliation working paper (`.xlsx`) — match on a key or amount + date; every unmatched item triaged; currency-aware; Debit/Credit, sign flips, ageing, GST hints; never force-fits, never posts |
 | **Analyse** a dataset and find what actually matters | **data-analyse** | an insight brief — headline findings, metrics for the data type (trends, concentration, outliers, ageing), honest caveats; engine computes, narrative only interprets |
 | **Present** the numbers to a stakeholder | **data-visualise** | a self-contained, brandable HTML dashboard (KPI cards, SVG charts, RAG tables) — any browser, print to PDF, live Artifact in Cowork / Claude.ai |
+| **Convert** a clean dataset to another system's format, or reshape it | **data-convert** | the target file (CSV / JSON / XLSX / fixed-width, or a filled template) + a reusable conversion card — maps onto an import **contract** (flags unmapped / required-missing, validates), reshapes (long↔wide, nested JSON↔flat, split, merge), enriches via lookup; deterministic, never invents |
 
 **A typical run:** scanned remittance PDF → `data-extract` → `data-tidy` →
 `data-reconcile` against the ledger → `data-analyse` for the exceptions →

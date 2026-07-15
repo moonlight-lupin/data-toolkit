@@ -12,8 +12,9 @@ you find them instantly instead of after a failed install. Two check groups:
           a non-empty single-line scalar <= 1024 chars; LF (no CRLF); no stray </...> tags in any
           skill .md; no empty / truncated `## ` section (the silent-truncation guard).
 
-  ENGINE  the bundled engines still self-test green — `scripts/dataclean.py --self-test` and
-          `skills/data-analyse/scripts/analyse.py --self-test` — a fast "the maths still holds"
+  ENGINE  the bundled engines still self-test green — `scripts/dataclean.py`,
+          `skills/data-analyse/scripts/analyse.py` and `skills/data-convert/scripts/convert.py`
+          (`--self-test`) — a fast "the maths still holds"
           gate without running the full pytest suite.
 
   $ python bin/data-lint            # lint everything
@@ -210,6 +211,7 @@ def lint_engine(problems):
     checks = [
         ("dataclean", [sys.executable, os.path.join(_ROOT, "scripts", "dataclean.py"), "--self-test"]),
         ("analyse", [sys.executable, os.path.join(_ROOT, "skills", "data-analyse", "scripts", "analyse.py"), "--self-test"]),
+        ("convert", [sys.executable, os.path.join(_ROOT, "skills", "data-convert", "scripts", "convert.py"), "--self-test"]),
     ]
     for name, cmd in checks:
         if not os.path.isfile(cmd[1]):

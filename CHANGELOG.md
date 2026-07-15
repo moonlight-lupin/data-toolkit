@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.5.0 — 2026-07-15
+
+**New skill: `data-convert`** — the toolkit's sixth skill, and the **interoperability**
+counterpart to `data-tidy` (tidy = quality; convert = interoperability). It re-expresses a
+clean-enough source in the structure or contract a *different* system needs, and delegates any
+cleaning back to `data-tidy`.
+
+- **Contract mapping** — map a source onto another system's import contract (columns, order,
+  types, required fields), flagging unmapped source columns and required-but-missing target
+  fields — never invented. Computes: `debit_minus_credit`, `sum`, `concat`, `fx_convert`,
+  `lookup`, `const`, `as_is`.
+- **Structural reshape** — `unpivot` (wide→long), `pivot` (long→wide), `flatten`/`nest`
+  (JSON↔table), `split` (one file→many), `union` (many→one, column-aligned).
+- **Enrich (`lookup`)** — translate a source value via a reference file or inline map (internal
+  code → target chart-of-accounts code), with `on_missing` = keep/blank/error.
+- **Output validation** — per-target-column `allowed` / `pattern` / `max_len` / `check`
+  (IBAN mod-97, BIC format), surfaced before delivery.
+- **Row filter** — drop rows (e.g. only posted, non-zero) before mapping.
+- **Pinned FX** — a single user-approved rate, or a **date-keyed rate table** for per-row
+  conversion by transaction date. The engine **never fetches**; the agent fetches on the user's
+  instruction and the value is recorded in the card.
+- **Output formats** — CSV / JSON / XLSX / fixed-width, or **populate a provided template**.
+- **The reusable artefact is a Markdown conversion card** with an embedded `convert-spec` JSON
+  block (no per-conversion `.py`). **Card-first sense-check** flags source drift (renamed/missing/
+  new columns, a stale pinned rate) before applying — never blind-applies.
+- Ships two example contracts (`journal-import`, `payments-upload`). `convert.py --self-test`
+  (14 checks) is now part of the `bin/data-lint` engine gate.
+
+Docs updated for the sixth skill: README (arc + skill table + flow), `COMPATIBILITY.md`,
+`references/conversion-spec.md`.
+
 ## 0.4.6 — 2026-07-15
 
 Ship **unbranded by default** — the Phronesis Applied theme is no longer the toolkit's default

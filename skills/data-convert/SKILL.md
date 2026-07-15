@@ -93,11 +93,14 @@ leaves. Never send the actual rows to an external service to "convert" them.
   (a bounded rollup is a future addition, deliberately out of v1).
 
 ## The spec / card format
-A declarative spec (`source`, `target` contract, `map`, optional `reshape`, `fx`, `rules`,
-`expected_columns`). Full schema, every reshape op, and the compute functions
-(`debit_minus_credit`, `sum`, `concat`, `fx_convert`, `const`, `as_is`): see
-`references/conversion-spec.md`. Ready-made example contracts:
-`references/contracts/journal-import.md`, `references/contracts/payments-upload.md`.
+A declarative spec (`source`, `target` contract, `map`, optional `filter`, `reshape`, `fx`,
+`rules`, `expected_columns`). Beyond the core mapping + reshape it also supports: a **row
+filter**, a **`lookup`** compute (enrich against a reference table / inline map), **output
+validation** on target columns (`allowed` / `pattern` / `max_len` / `check: iban|bic`),
+**date-keyed FX** (per-row rate by transaction date), and **fixed-width** / **template** output.
+Full schema, every reshape op and compute function: see `references/conversion-spec.md`.
+Ready-made example contracts: `references/contracts/journal-import.md`,
+`references/contracts/payments-upload.md`.
 
 ## Safety
 - **Deterministic & human-in-the-loop** — the engine applies a confirmed spec; it never invents a
