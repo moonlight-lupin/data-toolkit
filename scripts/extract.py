@@ -24,6 +24,7 @@ AI provider — "never leaves the machine" is NOT claimed. See ../DATA-HANDLING.
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 import pathlib
@@ -40,6 +41,55 @@ import dataclean  # noqa: E402
 import ingest  # noqa: E402
 
 
+_FIELD_SPEC_CACHE = {}
+
+
+def _load_field_spec(fields, source=None):
+    """Resolve a field list supplied inline or as a JSON path.
+
+    Schema validation records resolved specs in a context-local cache, so normal
+    validate-then-run execution remains plan-relative without mutating the plan.
+    Direct engine calls can use an absolute path, a cwd-relative path, or a path
+    found relative to the source document or one of its parent directories.
+    """
+    if not isinstance(fields, (str, pathlib.Path)):
+        return fields
+
+    raw = str(fields)
+    if raw in _FIELD_SPEC_CACHE:
+        return _FIELD_SPEC_CACHE[raw]
+    try:
+        import agent_schemas
+        cached = agent_schemas.cached_spec_value(raw)
+    except (ImportError, AttributeError):
+        cached = None
+    if cached is not None:
+        _FIELD_SPEC_CACHE[raw] = cached
+        return cached
+
+    path = pathlib.Path(fields).expanduser()
+    candidates = [path] if path.is_absolute() else [pathlib.Path.cwd() / path]
+    if source is not None and not path.is_absolute():
+        source_path = pathlib.Path(source).expanduser()
+        if not source_path.is_absolute():
+            source_path = (pathlib.Path.cwd() / source_path).resolve()
+        for parent in (source_path.parent, *source_path.parents):
+            candidate = parent / path
+            if candidate not in candidates:
+                candidates.append(candidate)
+
+    for candidate in candidates:
+        if candidate.is_file():
+            value = json.loads(candidate.read_text(encoding="utf-8-sig"))
+            if not isinstance(value, list):
+                raise ValueError(f"field spec must be a JSON list: {candidate}")
+            _FIELD_SPEC_CACHE[raw] = value
+            _FIELD_SPEC_CACHE[str(candidate.resolve())] = value
+            return value
+    attempted = ", ".join(str(candidate) for candidate in candidates)
+    raise FileNotFoundError(f"field spec not found: {raw} (tried {attempted})")
+
+
 # --------------------------------------------------------------------------- #
 # Key-value / form extraction  ->  one record per document
 # --------------------------------------------------------------------------- #
@@ -53,6 +103,7 @@ def extract_fields(source, fields, text=None):
     Returns (record: {name: value}, flags: [{field, issue}]). Unfound/odd values are flagged,
     never invented. `source` may be a path (read via ingest.read_text) or pass `text=`.
     """
+    fields = _load_field_spec(fields, source=source)
     if text is None:
         text, _ = ingest.read_text(str(source))
     lines = [ln.rstrip() for ln in text.splitlines()]
@@ -84,6 +135,7 @@ def field_columns(fields):
     """Output column order for a field list — inserts a currency field's `code_target` column
     right after it, so `fields_to_table` keeps amount + code (mirrors the tidy recipe's
     code_target). Use: `extract.fields_to_table(records, extract.field_columns(FIELDS))`."""
+    fields = _load_field_spec(fields)
     cols = []
     for f in fields:
         cols.append(f["name"])
@@ -112,7 +164,7 @@ def _find_value(lines, labels, *, all_labels=None):
       - next line:  the label sits alone on its line (optionally a trailing ':'), the value is
                     on the next non-empty line — common on confirmations / certificates / boxed
                     forms. The search stops if it hits the NEXT field's label (so it never
-                    grabs a neighbouring label as a value).
+                    grabs a neighbouring label as this field's value).
     `all_labels` (every field's labels) powers the next-line guard. Returns the value or None."""
     norm_labels = [lab.strip() for lab in labels if lab and lab.strip()]
     others = ({lab.strip().lower() for lab in (all_labels or [])}
