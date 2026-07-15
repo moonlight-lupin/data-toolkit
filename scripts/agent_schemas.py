@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,22 @@ SCHEMA_FILES = {
     "data-visualise": "dashboard-spec.schema.json",
     "data-convert": "conversion-spec.schema.json",
 }
+
+_SPEC_CACHE: ContextVar[dict[str, Any]] = ContextVar("agent_spec_cache", default={})
+
+
+def cached_spec_value(value: Any) -> Any | None:
+    """Return a spec loaded earlier in the current execution context, if present."""
+    if not isinstance(value, str):
+        return None
+    return _SPEC_CACHE.get().get(value)
+
+
+def _cache_spec(original: str, resolved: Path, value: Any) -> None:
+    cache = dict(_SPEC_CACHE.get())
+    cache[original] = value
+    cache[str(resolved)] = value
+    _SPEC_CACHE.set(cache)
 
 
 class SchemaSpecError(ValueError):
@@ -105,20 +122,18 @@ def load_spec_value(value: Any, *, base_dir: str | Path | None = None,
     if not path.is_absolute():
         path = (base / path).resolve()
     if conversion_card and path.suffix.lower() == ".md":
-        return _load_conversion_card(path)
-    return _load_json_file(path)
+        loaded = _load_conversion_card(path)
+    else:
+        loaded = _load_json_file(path)
+    _cache_spec(value, path, loaded)
+    return loaded
 
 
 def plan_payload(plan: dict[str, Any], *, base_dir: str | Path | None = None) -> tuple[str, Any] | None:
     skill = plan.get("skill")
     if skill == "data-extract":
         if plan.get("mode", "fields") == "fields":
-            payload = load_spec_value(plan.get("fields"), base_dir=base_dir)
-            # run_plan validates before dispatch. Canonicalise a referenced field list in
-            # memory so execution consumes the exact payload that passed schema validation.
-            if isinstance(plan.get("fields"), str):
-                plan["fields"] = payload
-            return skill, payload
+            return skill, load_spec_value(plan.get("fields"), base_dir=base_dir)
         if plan.get("recipe") is not None:
             return "data-tidy", load_spec_value(plan.get("recipe"), base_dir=base_dir)
         return None
