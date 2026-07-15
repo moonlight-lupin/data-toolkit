@@ -60,7 +60,7 @@ jobs:
 
       - name: Package PR source for maintainer tooling
         if: matrix.python-version == '3.12'
-        run: tar -czf pr-source.tgz --exclude=.git .
+        run: git archive --format=tar.gz -o pr-source.tgz HEAD
 
       - name: Upload PR source for maintainer tooling
         if: matrix.python-version == '3.12'
