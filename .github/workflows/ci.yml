@@ -24,10 +24,9 @@ jobs:
       - name: Apply reviewed hardening patch
         run: |
           cat .maintainer/runtime-hardening.part* | base64 --decode | gzip --decompress > /tmp/runtime-hardening.patch
-          git checkout 7fdcc6494fa0e07101401ec8b2fd6cd2b336d7bb -- .github/workflows/ci.yml
-          git apply --check /tmp/runtime-hardening.patch
-          git apply /tmp/runtime-hardening.patch
-          rm -rf .maintainer .github/workflows/apply-runtime-hardening.yml
+          git apply --check --exclude=.github/workflows/ci.yml /tmp/runtime-hardening.patch
+          git apply --exclude=.github/workflows/ci.yml /tmp/runtime-hardening.patch
+          rm -rf .maintainer
 
       - name: Commit consolidated runtime
         run: |
