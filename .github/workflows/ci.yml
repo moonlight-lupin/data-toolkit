@@ -1,33 +1,62 @@
 name: CI
 
-permissions:
-  contents: write
+# Quality gate for the Data Toolkit: authoring lint + finance-grade engine,
+# agent-runtime and schema regression suites on every push and PR to main.
 
 on:
+  push:
+    branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
   workflow_dispatch:
 
 jobs:
-  install-runtime:
-    if: github.actor != 'github-actions[bot]'
+  test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
         with:
-          ref: agent/schema-fast-path-priority-2-3
-          fetch-depth: 0
+          python-version: ${{ matrix.python-version }}
+          cache: pip
 
-      - name: Install tested runtime file
+      - name: Install dependencies
         run: |
-          base64 --decode .maintainer/runtime.py.gz.b64 | gzip --decompress > scripts/agent_runtime.py
-          test "$(sha256sum scripts/agent_runtime.py | cut -d' ' -f1)" = "27628e77feed1c0da13880a8187e37f94a8eecc1d7dac86d5747deb5d718f5ba"
-          rm -rf .maintainer
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Commit runtime integration
+      - name: Authoring lint (manifest, SKILL.md, engine self-tests)
+        run: python bin/data-lint
+
+      - name: Engine regression suite
+        run: python tests/test_engine.py
+
+      - name: Agent runtime regression suite
+        shell: bash
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git commit -m "feat: integrate schema validation into runtime"
-          git push origin HEAD:agent/schema-fast-path-priority-2-3
+          set +e
+          python tests/test_agent_runtime.py > agent-runtime-test.log 2>&1
+          status=$?
+          cat agent-runtime-test.log
+          exit $status
+
+      - name: Agent schema regression suite
+        run: python tests/test_agent_schemas.py
+
+      - name: Upload agent runtime failure log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-runtime-failure-${{ matrix.python-version }}
+          path: agent-runtime-test.log
+          retention-days: 7
+
+      - name: Quickstart smoke (recon + dashboard)
+        run: python examples/run_quickstart.py
