@@ -1,7 +1,7 @@
 # data-toolkit benchmark
 
 An independent, reproducible benchmark of the toolkit's skills — **Claude Sonnet 5 with the
-toolkit vs. the same model with plain Python** — across all five skills plus a reconciliation
+toolkit vs. the same model with plain Python** — across all six skills plus a reconciliation
 scaling test, scored against recorded ground truth.
 
 **Start here → [`REPORT.md`](REPORT.md).**

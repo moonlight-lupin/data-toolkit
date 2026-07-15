@@ -100,6 +100,8 @@ Full palette and status keywords:
 | A junk export | *"Tidy this export"* → `data-tidy` |
 | PDFs / Word / `.msg` | *"Extract the table from these"* → `data-extract` |
 | A clean sheet + a stakeholder | *"Dashboard this for the controller, Acme brand, logo at …"* → `data-visualise` |
+| A dataset to understand | *"What does this data say?"* → `data-analyse` |
+| Data for another system's format | *"Convert this to X's import format"* → `data-convert` |
 
 A common chain: extract → tidy → reconcile → analyse exceptions → visualise one-pager.
 

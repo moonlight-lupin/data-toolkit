@@ -50,6 +50,9 @@ sys.path.insert(0, str(pathlib.Path("../../scripts").resolve()))
 import ingest
 header_rows, note = ingest.read_any(path)     # xlsx/csv/pdf/docx/msg; read_paste for pasted tables
 ```
+> **Run from the skill directory** (`skills/data-analyse/`). The `../../scripts` path resolves
+> to the toolkit-root `scripts/` where `ingest.py` and `dataclean.py` live. The analysis
+> engine (`analyse.py`) is in this skill's own `scripts/` subdirectory.
 Multi-tab workbooks: `read_any` raises `SheetSelectionRequired` if several tabs hold data —
 list the sheets and ask, don't guess.
 

@@ -10,7 +10,7 @@ for the standing PII / confidential-data rule.
 
 | Version | Supported |
 |---|---|
-| Latest `main` / tagged release (currently 0.4.x) | Yes |
+| Latest `main` / tagged release (currently 0.5.x) | Yes |
 | Older tagged releases | Best-effort — please upgrade |
 
 ## Reporting a vulnerability

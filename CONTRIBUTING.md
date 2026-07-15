@@ -2,7 +2,7 @@
 
 Thanks for considering a contribution to the **Data Toolkit** (Phronesis Applied).
 
-This is a local-first Claude Code plugin: five skills + a small Python engine. Contributions
+This is a local-first Claude Code plugin: six skills + a small Python engine. Contributions
 that keep numbers honest, outputs reviewable, and data on the user's machine are especially
 welcome.
 

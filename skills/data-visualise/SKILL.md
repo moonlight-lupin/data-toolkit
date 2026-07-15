@@ -87,6 +87,9 @@ Minimal example:
 ```python
 import sys; sys.path.insert(0, "scripts")
 from viz import kpi_row, bar_chart, table, section, dashboard, open_in_browser
+```
+> **Run from the skill directory** (`skills/data-visualise/`). The `scripts` path resolves
+> to this skill's `scripts/` subdirectory where `viz.py` lives.
 
 blocks = [
     kpi_row([{"label": "Open", "value": 12, "status": "brand"},
@@ -168,8 +171,12 @@ the common case: a clean, branded, printable dashboard that also opens as a live
   artefact stays self-contained).
 - `examples/operations-dashboard.html` — a built sample (the self-test output).
 
-## Data handling
+## Principles
 
+Behavioural charter: `../../PRINCIPLES.md` — drafts not advice, never invent, honesty and
+calibration, plain speech, action boundary.
+
+## Data handling
 The renderer is **local and offline** — it embeds whatever data you pass directly into the
 HTML and never calls out (no CDN/remote images), so the dashboard file itself leaks nothing. (The
 AI agent driving the skill does send whatever it reads into its context to your AI provider.) Keep the rendered `.html`/PDF on **your synced or

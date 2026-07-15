@@ -617,12 +617,12 @@ def render_card(spec):
 # --------------------------------------------------------------------------- #
 def convert_rows(spec, header, rows, lookups=None):
     """Pure core: filter -> reshape -> map (+ lookups) -> contract-check + validate. Returns
-    (target_header, target_rows, report). (split/nest are applied by convert_file since they
-    change the output cardinality.) `lookups` may be preloaded by convert_file; else inline
+    (target_header, target_rows, report). `split`/`nest` are applied by convert_file since they
+    change the output cardinality. `lookups` may be preloaded by convert_file; else inline
     `map_values` are resolved here."""
     n_in = len(rows)
     rows = apply_filter(rows, spec.get("filter"))
-    reshape = [o for o in spec.get("reshape", []) if o["op"] in _RESHAPE and o["op"] != "nest"]
+    reshape = [o for o in spec.get("reshape", []) if o["op"] in ("unpivot", "pivot", "flatten")]
     header, rows = apply_reshape(header, rows, reshape)
     mapping, tgt = spec.get("map", {}), spec.get("target", {})
     if lookups is None:
@@ -674,8 +674,15 @@ def convert_file(spec, in_path, out_path, run_dates_after=None, base_dir=None):
     report["sense_check"] = drift
 
     split_op = next((o for o in spec.get("reshape", []) if o["op"] == "split"), None)
+    nest_op = next((o for o in spec.get("reshape", []) if o["op"] == "nest"), None)
     outp = Path(out_path)
-    if split_op:
+    if nest_op:
+        kw = {k: v for k, v in nest_op.items() if k != "op"}
+        nested = nest(t_header, t_rows, **kw)
+        out_path_json = outp.with_suffix(".json")
+        outp.write_text(json.dumps(nested, indent=2, default=str), encoding="utf-8")
+        report["written"] = [str(out_path_json)]
+    elif split_op:
         parts = split(t_header, t_rows, split_op["by"])
         written = []
         for key, (h, rs) in parts.items():

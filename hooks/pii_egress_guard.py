@@ -51,6 +51,8 @@ STRONG = [
     r"\b(?:\d{8,9}[a-z]|\d{4}\d{5}[a-z]|[a-z]\d{2}[a-z]{2}\d{4}[a-z])\b",  # company/UEN-like
     r"\b(?:\+?\d[\d\s-]{7,}\d)\b",                   # phone / long numeric ID
     r"\b\d{3,4}-\d{4,6}-\d{3,4}\b",                 # bank account / card-like
+    r"\b[A-Z]{2}\d{2}[A-Z0-9]{10,30}\b",             # IBAN
+    r"\b(?:\d{4}[\s-]?){3}\d{4}\b",                   # credit card (16 digits, optionally grouped)
     r"\b(?:customer|counterparty|vendor|payee|beneficiary|account)\b.{0,80}"
     r"\b(?:amount|balance|invoice|payment|salary|schedule)\b.{0,80}"
     r"\b\d{1,3}(?:,\d{3})+(?:\.\d{2})?\b",          # financial schedule row-like

@@ -51,6 +51,8 @@ import sys, pathlib
 sys.path.insert(0, str(pathlib.Path("../../scripts").resolve()))   # shared engine
 import extract, dataclean      # extract, dataclean, ingest all live in ../../scripts
 ```
+> **Run from the skill directory** (`skills/data-extract/`). The `../../scripts` path resolves
+> to the toolkit-root `scripts/` where `extract.py`, `dataclean.py` and `ingest.py` live.
 
 ### 2 — Extract
 
@@ -148,6 +150,11 @@ Word and `.msg` still work; only image/scanned pages need it. Windows install:
 - `../../scripts/ingest.py` *(shared)* — source adapters incl. `read_text` + local-OCR.
 - `references/extraction-guide.md` — field-list spec, table selection, extract-vs-tidy, reuse.
 - `examples/sample_subscription_confirmation.pdf` — a synthetic form to try `extract_fields`.
+
+## Principles
+
+Behavioural charter: `../../PRINCIPLES.md` — drafts not advice, never invent, honesty and
+calibration, plain speech, action boundary.
 
 ## Data handling
 The engine runs **on your machine** and makes no network calls (local OCR only). The documents are
