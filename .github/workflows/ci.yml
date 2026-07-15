@@ -39,7 +39,21 @@ jobs:
         run: python tests/test_engine.py
 
       - name: Agent runtime regression suite
-        run: python tests/test_agent_runtime.py
+        shell: bash
+        run: |
+          set +e
+          python tests/test_agent_runtime.py > agent-runtime-test.log 2>&1
+          status=$?
+          cat agent-runtime-test.log
+          exit $status
+
+      - name: Upload agent runtime failure log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-runtime-failure-${{ matrix.python-version }}
+          path: agent-runtime-test.log
+          retention-days: 7
 
       - name: Quickstart smoke (recon + dashboard)
         run: python examples/run_quickstart.py
