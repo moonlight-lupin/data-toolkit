@@ -17,8 +17,9 @@ normalisation + the change report all come from dataclean.
     cands = extract.list_tables("report.pdf")                          # which tables exist
     rows  = extract.get_table("report.pdf", page=1, index=0)           # pull one
 
-DATA HANDLING: runs fully local; your data (and any OCR of it) never leaves the machine. See
-../DATA-HANDLING.md.
+DATA HANDLING: this engine runs on your machine and makes no network calls (local OCR only —
+never a cloud OCR). But the AI agent driving it sends whatever it reads into its context to your
+AI provider — "never leaves the machine" is NOT claimed. See ../DATA-HANDLING.md.
 """
 
 from __future__ import annotations

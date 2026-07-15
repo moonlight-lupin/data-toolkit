@@ -2,9 +2,9 @@
 
 Turns any tabular data — a list of dicts, or an existing .xlsx — into a
 self-contained HTML artefact that opens in a browser and prints cleanly to PDF.
-Ships with **Phronesis Applied** defaults (mark + teal/bronze/paper palette from
-phronesis-applied.com) and lets any firm drop in its own brand (name, colours,
-logo) without touching the code.
+Ships **unbranded** — a neutral "Data Toolkit" wordmark (no logo image), a teal /
+cool-paper palette and a clean type pairing — and lets any firm drop in its own
+brand (name, colours, fonts, logo) without touching the code.
 
 Design principles
 -----------------
@@ -13,9 +13,9 @@ Design principles
   This keeps sensitive/confidential data off any cloud (the toolkit's
   data-handling rule) and makes the file print reliably and travel as a single
   attachment.
-* **Brandable.** Phronesis Applied defaults are built in; pass a `theme` dict
-  (brand name, primary/accent colours, optional logo path) to re-skin every
-  artefact. See DEFAULT_THEME below.
+* **Brandable.** A neutral default is built in; pass a `theme` dict (brand name,
+  primary/accent colours, fonts, optional logo path) to re-skin every artefact.
+  See DEFAULT_THEME below.
 * **Composable.** Small building blocks (kpi_card, bar_chart, line_chart,
   donut_chart, table, status_pill, section, grid) each return an HTML string;
   `dashboard(...)` assembles them into a full page with a header, an "as-of"
@@ -35,7 +35,7 @@ Quick start
     dashboard("Operations dashboard", blocks, subtitle="Weekly", as_of="14 Jun 2026",
               out_path="dashboard.html")
 
-To apply your own brand, pass a theme (any subset overrides the Phronesis default):
+To apply your own brand, pass a theme (any subset overrides the neutral default):
     my_theme = {"brand_name": "Acme Co",
                 "colours": {"burgundy": "#0B3D91", "rose": "#1565C0"},
                 "logo_path": "assets/acme-logo.png"}
@@ -63,32 +63,38 @@ except Exception:
 
 
 # --------------------------------------------------------------------------- #
-# Theme — Phronesis Applied defaults (from www.phronesis-applied.com), fully
-# white-labelable. Colour-token *names* (burgundy / rose / pink …) stay stable
-# across the rendering code; hex values follow the Phronesis palette. A firm
-# re-skins every artefact by passing a `theme` dict to dashboard() (or calling
-# apply_theme before building blocks). See references/brand.md.
+# Theme — a NEUTRAL, white-label default. The toolkit ships unbranded: a generic
+# "Data Toolkit" wordmark (no logo image), a teal/paper palette and a clean type
+# pairing. A firm re-skins every artefact by passing a `theme` dict to dashboard()
+# (or calling apply_theme before building blocks) — name, colours, fonts, logo.
+# Colour-token *names* (burgundy / rose / pink …) are historical and stay stable
+# across the rendering code. See references/brand.md.
 # --------------------------------------------------------------------------- #
 DEFAULT_THEME = {
-    # Shown in the header wordmark fallback and footer.
-    "brand_name": "Phronesis Applied",
-    # Default logo: Phronesis mark lockup (transparent PNG). Firms swap via
-    # theme["logo_path"]; if missing, the header shows a text wordmark.
-    "logo_path": str(Path(__file__).resolve().parent.parent / "assets" / "logo-sample.png"),
-    # Font stack — clean sans with safe fallbacks (site uses Inter / Fraunces).
+    # Shown in the header text wordmark and footer. Neutral by default.
+    "brand_name": "Data Toolkit",
+    # No default logo image — the header shows a text wordmark of brand_name.
+    # A firm supplies its own via theme["logo_path"] (a transparent PNG or SVG).
+    "logo_path": None,
+    # Font stacks — a clean sans body with a geometric-display heading. The dashboard
+    # is self-contained (no CDN), so these load only if the reader has them installed
+    # and otherwise fall back gracefully down the stack.
     "font": "'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif",
-    # Palette. Token names are historical; values match Phronesis Applied.
+    "font_heading": "'Space Grotesk','Inter','Segoe UI',system-ui,sans-serif",
+    # Palette — the toolkit's neutral default scheme (a teal accent on cool paper).
+    # Token names are historical (kept stable so existing themes keep working).
     "colours": {
-        "burgundy": "#163F3A",   # primary — accent teal (site --accent)
-        "rose":     "#A9722F",   # accent 1 — bronze (site --bronze)
-        "pink":     "#20574F",   # accent 2 — soft teal (site --accent-soft)
-        "pink_lt":  "#D9B98A",   # light bronze tint
-        "pink_vlt": "#F1ECE2",   # paper-2 zebra (site --paper-2)
-        "ink":      "#1A1A17",   # body text (site --ink)
-        "grey":     "#55524A",   # muted text (site --ink-soft)
-        "grey_lt":  "#E4DDD0",   # hairlines (site --line)
-        "bg":       "#F7F4EE",   # page background (site --paper)
-        "white":    "#FFFFFF",
+        "burgundy": "#163F3A",   # primary — deep teal
+        "rose":     "#4FB3A0",   # accent 1 — bright teal
+        "pink":     "#20574F",   # accent 2 — soft teal
+        "pink_lt":  "#A7D9CF",   # light teal tint
+        "pink_vlt": "#E7EBE9",   # zebra striping (very light)
+        "ink":      "#14171A",   # body text
+        "grey":     "#565C63",   # muted text
+        "grey_faint": "#8C9298", # faintest text
+        "grey_lt":  "#D9DEDB",   # hairlines
+        "bg":       "#F1F3F2",   # page background (paper)
+        "white":    "#FFFFFF",   # cards
         # status (RAG)
         "green":    "#2E7D57",
         "amber":    "#B26B00",
@@ -100,9 +106,10 @@ DEFAULT_THEME = {
 # blocks read these; apply_theme() rebinds them so block colours follow a brand.
 BRAND = dict(DEFAULT_THEME["colours"])
 FONT = DEFAULT_THEME["font"]
+FONT_HEADING = DEFAULT_THEME["font_heading"]
 BRAND_NAME = DEFAULT_THEME["brand_name"]
-# Path to the header logo (Phronesis lockup by default; firms replace via theme).
-LOGO_PATH = Path(DEFAULT_THEME["logo_path"])
+# Path to the header logo (none by default — text wordmark; a firm supplies its own via theme).
+LOGO_PATH = Path(DEFAULT_THEME["logo_path"]) if DEFAULT_THEME["logo_path"] else None
 
 
 def _series_palette() -> list:
@@ -113,14 +120,19 @@ def _series_palette() -> list:
 
 def _resolve_theme(theme: dict | None) -> dict:
     """Merge a partial `theme` dict over DEFAULT_THEME → a complete theme.
-    `theme` may set any of: brand_name, logo_path, font, colours (partial)."""
+    `theme` may set any of: brand_name, logo_path, font, font_heading, colours (partial).
+    `font_heading` defaults to `font` when a theme sets only `font`, so a brand that gives
+    one font stack gets it everywhere (no stray Space Grotesk leaking into their headings)."""
     t = theme or {}
     colours = dict(DEFAULT_THEME["colours"])
     colours.update(t.get("colours") or {})
+    font = t.get("font", DEFAULT_THEME["font"])
+    heading_default = font if "font" in t else DEFAULT_THEME["font_heading"]
     return {
         "brand_name": t.get("brand_name", DEFAULT_THEME["brand_name"]),
         "logo_path": t.get("logo_path", DEFAULT_THEME["logo_path"]),
-        "font": t.get("font", DEFAULT_THEME["font"]),
+        "font": font,
+        "font_heading": t.get("font_heading", heading_default),
         "colours": colours,
     }
 
@@ -129,12 +141,13 @@ def apply_theme(theme: dict | None) -> dict:
     """Rebind the module-level brand state (BRAND/FONT/BRAND_NAME/LOGO_PATH and the
     chart series palette) from a (partial) `theme` dict, so building blocks built
     afterwards pick up the brand. Returns the fully-resolved theme. Pass None to
-    reset to the Phronesis default. Call this BEFORE composing blocks if you want a
+    reset to the neutral default. Call this BEFORE composing blocks if you want a
     firm's colours in the charts; dashboard() also accepts `theme=` for the shell."""
-    global BRAND, FONT, BRAND_NAME, LOGO_PATH, _SERIES, _STATUS_COLOUR
+    global BRAND, FONT, FONT_HEADING, BRAND_NAME, LOGO_PATH, _SERIES, _STATUS_COLOUR
     rt = _resolve_theme(theme)
     BRAND = rt["colours"]
     FONT = rt["font"]
+    FONT_HEADING = rt["font_heading"]
     BRAND_NAME = rt["brand_name"]
     LOGO_PATH = Path(rt["logo_path"]) if rt["logo_path"] else None
     _SERIES = _series_palette()
@@ -143,9 +156,9 @@ def apply_theme(theme: dict | None) -> dict:
 
 
 def _logo_html() -> str:
-    """The brand mark for the header: the logo PNG as a base64 data URI if the asset
-    is present, else a plain text wordmark of the brand name. The shipped logo is a
-    neutral sample placeholder — a firm swaps it for its own (see brand.md)."""
+    """The brand mark for the header: a logo image as a base64 data URI if a firm has
+    supplied one via theme["logo_path"], else a plain text wordmark of the brand name.
+    The toolkit ships with no default logo — the neutral default is the wordmark."""
     return _logo_for({"logo_path": str(LOGO_PATH) if LOGO_PATH else "",
                       "brand_name": BRAND_NAME})
 
@@ -486,13 +499,13 @@ def dashboard(title, blocks, subtitle=None, as_of=None, out_path=None,
     as_of     — "as-of" stamp shown top-right (e.g. '14 Jun 2026'); defaults to today.
     out_path  — if given, write the file and return its path; else return the HTML.
     footnote  — optional extra line in the footer (above the standard disclaimer).
-    theme     — optional (partial) theme dict {brand_name, logo_path, font, colours}
-                overriding the Phronesis default for the page shell (header rule,
-                wordmark/logo, fonts, footer brand line). To also re-skin the chart
-                colours, call apply_theme(theme) before building the blocks.
+    theme     — optional (partial) theme dict {brand_name, logo_path, font,
+                font_heading, colours} overriding the neutral default for the page
+                shell (header rule, wordmark/logo, fonts, footer brand line). To also
+                re-skin the chart colours, call apply_theme(theme) before the blocks.
     """
     rt = _resolve_theme(theme)
-    brand, font = rt["colours"], rt["font"]
+    brand, font, font_heading = rt["colours"], rt["font"], rt["font_heading"]
     logo_html = _logo_html() if theme is None else _logo_for(rt)
     as_of = as_of or _today_str()
     sub_h = f'<div class="sub">{_e(subtitle)}</div>' if subtitle else ""
@@ -503,8 +516,8 @@ def dashboard(title, blocks, subtitle=None, as_of=None, out_path=None,
              ('data-sortable', 'data-filter', 'data-toggle')) else ""
     doc = _PAGE.format(
         title=_e(title), subtitle=sub_h, asof=_e(as_of), body=body,
-        foot_extra=foot_extra, brand=brand, font=font, logo=logo_html,
-        brand_name=_e(rt["brand_name"]), script=script,
+        foot_extra=foot_extra, brand=brand, font=font, font_heading=font_heading,
+        logo=logo_html, brand_name=_e(rt["brand_name"]), script=script,
         year=as_of.split()[-1] if as_of and as_of[-1].isdigit() else "")
     if out_path:
         Path(out_path).write_text(doc, encoding="utf-8")
@@ -536,15 +549,15 @@ header{{display:flex;align-items:flex-end;justify-content:space-between;
 gap:16px;border-bottom:3px solid var(--burg);padding:22px 0 12px;margin-bottom:18px}}
 .brand{{display:flex;align-items:center;gap:13px}}
 .brand .logo{{height:46px;width:auto;display:block}}
-.mark{{font-weight:700;letter-spacing:2px;color:var(--ink);font-size:24px}}
-h1{{font-size:21px;margin:0;font-weight:700}}
+.mark{{font-family:{font_heading};font-weight:700;letter-spacing:2px;color:var(--ink);font-size:24px}}
+h1{{font-family:{font_heading};font-size:21px;margin:0;font-weight:700}}
 .sub{{color:var(--grey);font-size:13px;margin-top:2px}}
 .asof{{text-align:right;color:var(--grey);font-size:12px;white-space:nowrap}}
 .asof b{{display:block;color:var(--ink);font-size:13px}}
 .btn{{margin-top:8px;font:12px {font};background:var(--burg);color:#fff;border:0;
 border-radius:5px;padding:6px 12px;cursor:pointer}}
 .sec{{margin:22px 0}}
-.sec h2{{font-size:15px;color:var(--burg);margin:0 0 10px;
+.sec h2{{font-family:{font_heading};font-size:15px;color:var(--burg);margin:0 0 10px;
 border-left:4px solid var(--burg);padding-left:9px}}
 .block{{background:#fff;border:1px solid var(--line);border-radius:9px;
 padding:14px 16px;margin:0 0 14px}}
@@ -553,7 +566,7 @@ padding:14px 16px;margin:0 0 14px}}
 gap:14px;margin:0 0 14px}}
 .kpi{{background:#fff;border:1px solid var(--line);border-top:4px solid var(--burg);
 border-radius:9px;padding:14px 16px}}
-.kpi-val{{font-size:30px;font-weight:700;line-height:1.1}}
+.kpi-val{{font-family:{font_heading};font-size:30px;font-weight:700;line-height:1.1}}
 .kpi-lbl{{color:var(--grey);font-size:12px;margin-top:4px;text-transform:uppercase;
 letter-spacing:.4px}}
 .kpi-sub{{color:var(--ink);font-size:12px;margin-top:6px}}

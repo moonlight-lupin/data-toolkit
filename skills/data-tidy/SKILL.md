@@ -9,7 +9,7 @@ description: >-
   dates / currencies", or "turn this into a clean table". Works INTENT-FIRST: it asks what
   the data is for and the expected output up front, then profiles → proposes a transform
   recipe → you confirm → applies it deterministically → reports every change and flags cells
-  for review. Never mangles silently; runs fully local (sensitive data never leaves). Standalone —
+  for review. Never mangles silently; transforms are computed locally by a deterministic engine. Standalone —
   no other toolkit required. NOT deal-document intelligence (lease abstraction,
   model review, comps) — that's out of scope.
 ---
@@ -21,8 +21,10 @@ Turn messy data — in whatever shape it arrives — into a clean, validated str
 and the wanted output before guessing) and **human-in-the-loop** (propose → confirm →
 apply → report). Transforms are deterministic and logged; nothing is changed silently.
 
-> **Self-sufficient & local.** Runs on its own — no other toolkit needed. All processing
-> is local: sensitive or confidential business/financial data (and any OCR of it) never leaves the machine.
+> **Self-sufficient & local engine.** Runs on its own — no other toolkit needed. All processing
+> (including OCR) happens on your machine: no cloud OCR, no external APIs, no third-party uploads.
+> Note the AI agent driving the skill does send whatever it reads into its context to your AI
+> provider — "never leaves the machine" is not claimed. See `../../DATA-HANDLING.md`.
 
 ## Workflow
 
@@ -121,7 +123,7 @@ Before re-deriving, **check for a `tidy_[name].{py,md}`** for this source. If on
 
 ## OCR (scanned PDFs)
 Only used when a PDF page has **no text layer**, and only via **local Tesseract** — never a
-cloud OCR (sensitive data must not leave the machine). OCR'd content is lower-fidelity and
+cloud OCR, so no third-party service ever sees your documents. OCR'd content is lower-fidelity and
 flagged for review. Tesseract is an external binary (not pip): `envcheck.py` probes for it;
 if missing, digital PDFs/spreadsheets still work fully — only scans need it. On Windows it
 can be installed via `winget install UB-Mannheim.TesseractOCR` (needs admin rights; on a
@@ -142,10 +144,11 @@ managed machine, ask IT to deploy it). See `references/recipe-spec.md` for setup
 - `examples/` — synthetic messy samples (no real data) to build/demo against.
 
 ## Data handling
-This skill runs **fully local** and is built for it: messy inputs are often sensitive or
-confidential — commitments, schedules, statements. Process locally; **never send the data, or
-OCR of it, to an external or third-party tool**; the clean `.xlsx` and the recipe stay in your
-synced or shared file store. A bare list with nothing sensitive attached isn't confidential,
+The engine runs **on your machine** and makes no network calls — messy inputs are often sensitive
+or confidential (commitments, schedules, statements). **Never send the data, or OCR of it, to an
+external or third-party tool**; the clean `.xlsx` and the recipe stay in your synced or shared
+file store. Be aware the AI agent driving this skill sends whatever it reads into its context to
+your AI provider, as in any AI-assisted work. A bare list with nothing sensitive attached isn't confidential,
 but treat financial exports as sensitive by default. Full rule: `../../DATA-HANDLING.md`. (No
 external connector — files are local paths in your synced or shared file store.)
 

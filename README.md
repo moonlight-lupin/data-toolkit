@@ -6,7 +6,8 @@ just `$`, good luck), and a column someone typed "pending" into. Somebody needs 
 real numbers by 4pm.
 
 **Data Toolkit is the fix.** It turns messy business data into clean, reconciled,
-analysed, presentable outputs — entirely on your own machine, nothing uploaded.
+analysed, presentable outputs — every number computed by a deterministic engine that
+runs on your own machine.
 
 Five skills, one arc: **extract → tidy → reconcile → analyse → visualise.** Use one,
 or chain them. Each hands the next a clean `.xlsx`.
@@ -68,7 +69,7 @@ No Claude required:
 
 ```bash
 pip install openpyxl
-python examples/run_quickstart.py          # Phronesis-branded dashboard
+python examples/run_quickstart.py          # neutral default dashboard
 python examples/run_branded_dashboard.py   # same data, Acme Co theme + logo
 ```
 
@@ -78,10 +79,15 @@ That writes working papers and HTML dashboards under `examples/out/`. Full notes
 
 ## Why teams choose it
 
-- **Fully local, fully confidential.** No network calls, no cloud upload, no
-  credentials, no connectors. Shared drives (SharePoint / OneDrive / Drive) are read
-  as synced local paths — the compliance answer is "it never left." See
-  [`DATA-HANDLING.md`](DATA-HANDLING.md).
+- **Local engine, no third-party services.** No network calls, no cloud OCR, no CDN,
+  no credentials, no connectors. Shared drives (SharePoint / OneDrive / Drive) are
+  read as synced local paths, so nothing is pushed through a cloud connector. And to
+  be straight about the limit: an AI agent drives these skills, so whatever it reads
+  into its context goes to your AI provider — we don't claim "it never left." What we
+  do claim: the processing is local, no *third party* beyond the provider you already
+  chose sees your data, and because the engine does the heavy lifting the agent works
+  with samples and summaries rather than streaming whole datasets through the model.
+  See [`DATA-HANDLING.md`](DATA-HANDLING.md).
 - **Numbers you can defend.** Every transform and every quoted figure is computed by
   a deterministic engine (exact `Decimal`, currency-aware, dates normalised) and
   logged — not free-typed by a model having a creative afternoon. Money doesn’t
@@ -94,8 +100,8 @@ That writes working papers and HTML dashboards under `examples/out/`. Full notes
 - **Drafts, not advice.** Every output is a first draft for a qualified person to
   sign off — clearly labelled, never dressed up as a decision or as financial / tax /
   investment advice. See [`PRINCIPLES.md`](PRINCIPLES.md).
-- **White-label ready.** Phronesis Applied defaults out of the box; pass a `theme`
-  dict (brand name, colours, local logo) to re-skin dashboards. See
+- **White-label ready.** Ships unbranded — a neutral default; pass a `theme` dict
+  (brand name, colours, fonts, local logo) to re-skin dashboards. See
   [Onboarding §3](ONBOARDING.md#3-put-your-brand-on-a-dashboard-theme--logo).
 - **Standalone.** Plain Python plus optional libraries for non-spreadsheet inputs. It
   also slots in as a data-prep front end for the rest of the Phronesis Applied suite,
@@ -107,7 +113,7 @@ That writes working papers and HTML dashboards under `examples/out/`. Full notes
 |---|---|
 | Small one-off file, strong model, careful prompt | Correctness parity — you’re buying standardised artefacts and an audit trail, not magic arithmetic |
 | Recurring exports, multi-thousand-row reconciles, reviewable working papers | Cheaper, faster, flatter cost — and a smaller error surface than hand-rolled agent code |
-| Client / financial data that must not leave the machine | Fully local by design |
+| Client / financial data that must not reach third-party services | Local engine by design — no cloud OCR, no connectors, no uploads (your own AI provider still sees what the agent reads) |
 | Stakeholder one-pager by end of day | Brandable HTML dashboard → browser → print to PDF |
 
 ## What you can do

@@ -1,5 +1,68 @@
 # Changelog
 
+## 0.4.6 — 2026-07-15
+
+Ship **unbranded by default** — the Phronesis Applied theme is no longer the toolkit's default
+(so forks/white-label users don't inherit someone else's identity):
+
+- **`data-visualise` `DEFAULT_THEME` is now neutral** — `brand_name` `"Data Toolkit"` and **no
+  default logo** (the header shows a text wordmark). The teal/paper palette and the type pairing
+  stay as a generic default; token names are unchanged, so existing white-label themes keep
+  working. `logo_path` may now be `None` (handled everywhere).
+- **Removed the Phronesis brand assets** (`logo-phronesis*.{png,svg}`, `logo-sample.png`); no
+  brand mark ships, and there is **no Phronesis theme preset** in the repo.
+- Reworded the theming docs/docstrings (`viz.py`, `brand.md`, `blocks.md`, the visualise
+  `SKILL.md`, the README white-label bullet, `NOTICE`, `CONTRIBUTING.md`) from "Phronesis
+  defaults" to the neutral-default / white-label framing.
+- **Authorship is unchanged** — "From Phronesis Applied" stays as the author/maintainer credit in
+  the README, plugin/marketplace metadata and the LICENSE/NOTICE copyright.
+- Sample dashboards regenerated on the neutral default (content unchanged; styling/wordmark only).
+
+## 0.4.5 — 2026-07-15
+
+Brand refresh — `data-visualise` defaults track the revised Phronesis Applied identity
+([phronesis-applied.com](https://www.phronesis-applied.com)):
+
+- **Palette went cool; bronze is retired.** The warm cream/bronze scheme is replaced by the
+  site's teal / cool-paper scheme. Values taken from the site's CSS custom properties:
+  `rose` → `#4FB3A0` (bright teal, was bronze `#A9722F`), `ink` → `#14171A`, `grey` →
+  `#565C63`, `grey_lt` → `#D9DEDB`, `bg` → `#F1F3F2`, `pink_vlt` → `#E7EBE9`, plus a new
+  `grey_faint` (`#8C9298`). `burgundy` (`#163F3A`) and `pink` (`#20574F`) are unchanged.
+  Token *names* are unchanged, so existing white-label themes keep working.
+- **Type pairing.** New `font_heading` theme key — Space Grotesk headings over the Inter body,
+  as on the site, applied to `h1`, section `h2`, KPI values and the text wordmark. Dashboards
+  stay self-contained (no CDN), so the faces are a progressive enhancement that falls back
+  down the stack. A theme that sets only `font` gets it for headings too, so a white-label
+  brand never inherits Space Grotesk by accident.
+- **Mark recoloured** to the current identity (dark-ink tile, cool-paper glyph, bright-teal
+  square) across `logo-phronesis-mark.svg` and the lockup/mark PNGs.
+- Committed samples (`examples/sample-dashboard.html`, the visualise example dashboard)
+  regenerated on the new brand; content unchanged, styling only. `brand.md` documents the
+  palette against the site variables.
+
+## 0.4.4 — 2026-07-15
+
+Honest data-handling claims (correctness fix to the docs):
+
+- **Removed the "your data never leaves the machine" / "nothing uploaded" assertions.** They were
+  not defensible: these skills are driven by an AI agent, and whatever the agent reads into its
+  context is sent to the AI provider, as in any AI-assisted work. Claiming otherwise was wrong,
+  and a compliance answer built on it would have been wrong too.
+- **Replaced with what is actually true**, consistently across the README, `DATA-HANDLING.md`,
+  `SECURITY.md`, `COMPATIBILITY.md`, all five `SKILL.md` files, the plugin/marketplace
+  descriptions and the engine docstrings:
+  - the **engine** runs on your machine and makes **no network calls** — no cloud OCR (local
+    Tesseract only), no CDN or remote images, no external APIs, no credentials, no connectors,
+    no third-party uploads;
+  - the **AI agent driving it is not local** — what it reads into context goes to your AI
+    provider, and the toolkit says so plainly;
+  - no **third party** beyond the AI provider you have already chosen ever sees the data, and
+    because the deterministic engine does the heavy lifting the agent generally works with
+    samples, profiles and summaries rather than streaming whole datasets through the model.
+- `DATA-HANDLING.md` gains a "What is local — and what is not" section as the single source of
+  this rule. A generated reuse runner's card still (correctly) states that running it sends
+  nothing anywhere — it is plain Python with no model in the loop.
+
 ## 0.4.3 — 2026-07-14
 
 Bug fixes and an enhancement surfaced in toolkit testing:

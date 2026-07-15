@@ -36,13 +36,15 @@ by a broken or degraded result.
 |---|---|---|---|
 | data-tidy | any (portable); local processing | Python + `openpyxl` | `PyMuPDF` for PDF input (`pdfplumber` optional — preferred for messy/borderless PDF tables), `python-docx` for .docx, `extract_msg` for .msg (each optional, degrade per-source); **scanned-PDF OCR needs local Tesseract** (digital PDFs/spreadsheets unaffected) |
 | data-extract | any (portable); local processing | Python + `PyMuPDF`, `openpyxl` | `pdfplumber` (optional — preferred for messy/borderless PDF tables), `python-docx` for .docx, `extract_msg` for .msg (optional); **scanned-document OCR needs local Tesseract**; shares the engine at `scripts/` (`dataclean.py`/`ingest.py`/`extract.py`) |
-| data-reconcile | any (portable); fully local | Python + `openpyxl` (xlsx working paper) | reads CSV/PDF/.docx/.msg via the shared engine (same optional deps as `data-tidy`); no network/Office/connector; produces a working paper (.xlsx) — **never posts**; aggregation (sum-to-one / sum-to-sum) matches are **confirm-first** (the user approves before they count) |
-| data-analyse | any (portable); fully local | Python + `openpyxl` (xlsx in / metrics workbook out) | reads CSV/PDF/.docx/.msg via the shared engine (same optional deps as `data-tidy`); metric engine (`skills/data-analyse/scripts/analyse.py`) is pure stdlib + `Decimal`; no network/Office/connector; output is an insight brief (`.md`) + optional metrics `.xlsx` — **descriptive analysis, never advice** |
+| data-reconcile | any (portable); no network | Python + `openpyxl` (xlsx working paper) | reads CSV/PDF/.docx/.msg via the shared engine (same optional deps as `data-tidy`); no network/Office/connector; produces a working paper (.xlsx) — **never posts**; aggregation (sum-to-one / sum-to-sum) matches are **confirm-first** (the user approves before they count) |
+| data-analyse | any (portable); no network | Python + `openpyxl` (xlsx in / metrics workbook out) | reads CSV/PDF/.docx/.msg via the shared engine (same optional deps as `data-tidy`); metric engine (`skills/data-analyse/scripts/analyse.py`) is pure stdlib + `Decimal`; no network/Office/connector; output is an insight brief (`.md`) + optional metrics `.xlsx` — **descriptive analysis, never advice** |
 | data-visualise | any (most portable) | Python (stdlib) — pure inline HTML/CSS/SVG, no library to render | `openpyxl` only to read an `.xlsx` source; a desktop browser to `open_in_browser` / print-to-PDF (headless → builds the `.html`, open locally to print); no network/MS Office/creds. **Cowork/Claude.ai:** the output doubles as a **live HTML Artifact** (single-file, dependency-free → renders/edits/shares in the artifact panel as-is). **Claude Code (local):** no artifact panel — open the file in a browser |
 
-**Rule of thumb:** the whole toolkit is **portable and fully local** — pure Python plus a
-few optional libraries for non-spreadsheet inputs (PDF/.docx/.msg) and local OCR. None of it
-needs the network or credentials. The only mode-specific wrinkle is `data-visualise`'s
+**Rule of thumb:** the whole toolkit is **portable and runs on your machine** — pure Python plus
+a few optional libraries for non-spreadsheet inputs (PDF/.docx/.msg) and local OCR. None of the
+*code* needs the network or credentials. (The AI agent driving it does, of course, send whatever
+it reads into its context to your AI provider — see [`DATA-HANDLING.md`](DATA-HANDLING.md).) The
+only mode-specific wrinkle is `data-visualise`'s
 preview: in a headless/Cowork session it still builds the `.html` (and it doubles as a live
 Artifact there) — open it in a desktop browser to print to PDF.
 

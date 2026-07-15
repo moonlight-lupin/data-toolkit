@@ -9,7 +9,7 @@ description: >-
   record per document — certificates, confirmations, cover sheets) and TABLE extraction (list a
   document's tables, pick one, pull it). Intent-first; normalises via the shared engine (dates →
   DD MMM YYYY, currency → amount + code) and flags anything unfound or uncertain — never invents
-  values. Runs fully local. NOT for already-tabular data (use data-tidy) or deal-document
+  values. Extraction is computed locally (local OCR only). NOT for already-tabular data (use data-tidy) or deal-document
   intelligence like lease abstraction/model review (out of scope).
 ---
 
@@ -20,8 +20,10 @@ counterpart to `data-tidy`: **tidy** cleans data that's already roughly tabular;
 **extract** locates and pulls data from document-shaped sources (forms, multi-table PDFs,
 scans). Both share one engine, so extracted data is normalised and reported the same way.
 
-> **Self-sufficient & local.** No other toolkit needed. All processing is local; sensitive
-> or confidential business/financial data and any OCR of it never leave the machine.
+> **Self-sufficient & local engine.** No other toolkit needed. All processing — including OCR —
+> happens on your machine: no cloud OCR, no external APIs, no third-party uploads. Note the AI
+> agent driving the skill does send whatever it reads into its context to your AI provider;
+> "never leaves the machine" is not claimed. See `../../DATA-HANDLING.md`.
 >
 > **Shared engine.** The cleanup primitives live at the plugin-root `scripts/`
 > (`dataclean.py`, `ingest.py`); this skill's `scripts/extract.py` adds them to the path.
@@ -134,7 +136,7 @@ slight drift (a renamed label, an added column) would otherwise pass silently:
 - **Never invents** — an unfound field is blank + flagged; OCR/ambiguous values are flagged.
 
 ## OCR (scanned documents)
-Local **Tesseract** only — never a cloud OCR (sensitive data must not leave the machine). External
+Local **Tesseract** only — never a cloud OCR, so no third-party service ever sees your documents. External
 binary (not pip): `python ../../scripts/envcheck.py` probes for it. Without it, digital PDFs,
 Word and `.msg` still work; only image/scanned pages need it. Windows install:
 `winget install UB-Mannheim.TesseractOCR` (admin rights; on a managed machine, ask IT to deploy).
@@ -148,10 +150,11 @@ Word and `.msg` still work; only image/scanned pages need it. Windows install:
 - `examples/sample_subscription_confirmation.pdf` — a synthetic form to try `extract_fields`.
 
 ## Data handling
-Runs **fully local**; your data never leaves the machine. The documents are often sensitive
-or confidential (subscription confirmations, statements, certificates name parties and
-amounts). Process locally; **never send a document, its text, or OCR of it to an external or
-third-party tool**; the extracted `.xlsx` stays in your synced or shared file store. Full
+The engine runs **on your machine** and makes no network calls (local OCR only). The documents are
+often sensitive or confidential (subscription confirmations, statements, certificates name parties
+and amounts). **Never send a document, its text, or OCR of it to an external or third-party tool**;
+the extracted `.xlsx` stays in your synced or shared file store. Be aware the AI agent driving this
+skill sends whatever it reads into its context to your AI provider, as in any AI-assisted work. Full
 rule: `../../DATA-HANDLING.md`. (No external connector — files are local paths in your synced
 or shared file store.)
 

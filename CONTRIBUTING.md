@@ -77,8 +77,8 @@ in any sample output.
 
 - Prefer small PRs over large ones
 - Do not commit `.env`, real client data, or generated `examples/out/` artefacts
-- Do not use the Phronesis Applied mark in third-party branding — white-label via `theme`
-  (see [`ONBOARDING.md`](ONBOARDING.md), [`NOTICE`](NOTICE), and
+- Do not use the Phronesis Applied name or marks in third-party branding — the toolkit ships
+  unbranded; white-label via `theme` (see [`ONBOARDING.md`](ONBOARDING.md), [`NOTICE`](NOTICE), and
   `skills/data-visualise/references/brand.md`)
 - Feedback from using a skill in the wild can also be captured with the template in
   [`FEEDBACK.md`](FEEDBACK.md)

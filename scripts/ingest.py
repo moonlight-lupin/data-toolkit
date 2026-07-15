@@ -26,8 +26,8 @@ installed; each page keeps the higher-scoring extraction. With pdfplumber absent
 only — same as before.
 
 OCR (scanned PDFs): tried ONLY when a PDF page has no text layer, and ONLY via LOCAL
-Tesseract — never a cloud OCR (the Data Toolkit runs fully local; your data never leaves
-the machine). OCR'd rows are lower-fidelity; the caller flags them for review.
+Tesseract — never a cloud OCR, so no third-party service ever sees your documents. OCR'd rows
+are lower-fidelity; the caller flags them for review.
 """
 
 from __future__ import annotations

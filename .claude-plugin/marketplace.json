@@ -9,7 +9,7 @@
     {
       "name": "data-toolkit",
       "source": "./",
-      "description": "Extract, tidy, reconcile, analyse and visualise messy data — fully local. From Phronesis Applied."
+      "description": "Extract, tidy, reconcile, analyse and visualise messy data — deterministic engine, runs on your machine. From Phronesis Applied."
     }
   ]
 }

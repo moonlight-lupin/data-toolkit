@@ -33,7 +33,7 @@ From the repo root:
 python examples/run_quickstart.py
 ```
 
-You get a reconciliation working paper and a Phronesis-branded dashboard under
+You get a reconciliation working paper and a dashboard (the neutral default theme) under
 `examples/out/`. Prefer to look first?
 
 - [`examples/sample-reconciliation.xlsx`](examples/sample-reconciliation.xlsx)
@@ -41,9 +41,9 @@ You get a reconciliation working paper and a Phronesis-branded dashboard under
 
 ## 3. Put your brand on a dashboard (theme + logo)
 
-Phronesis Applied is the default. White-label is a `theme` dict — brand name, logo
-path, font, and any colour overrides. Token names (`burgundy`, `rose`, `pink`) are
-historical; set `burgundy` to your primary.
+The toolkit ships **unbranded** (a neutral "Data Toolkit" wordmark, no logo). Your brand
+is a `theme` dict — brand name, logo path, fonts, and any colour overrides. Token names
+(`burgundy`, `rose`, `pink`) are historical; set `burgundy` to your primary.
 
 ```bash
 python examples/run_branded_dashboard.py
@@ -85,9 +85,9 @@ dashboard(
 
 - Local file only (no URL) — the engine base64-embeds it so the HTML stays offline
 - Prefer transparent PNG; SVG / JPG / GIF also work
-- Keep under 1 MB; if the path is missing, you get a text wordmark of `brand_name`
-- Replacing the default logo does **not** grant rights to use the Phronesis Applied
-  name or mark — see [`NOTICE`](NOTICE)
+- Keep under 1 MB; with no `logo_path` (the default), you get a text wordmark of `brand_name`
+- Using the toolkit does **not** grant any right to the Phronesis Applied name or marks in
+  your own branding — see [`NOTICE`](NOTICE)
 
 Full palette and status keywords:
 [`skills/data-visualise/references/brand.md`](skills/data-visualise/references/brand.md).

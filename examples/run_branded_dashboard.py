@@ -5,7 +5,7 @@ Run from the repo root:
 
     python examples/run_branded_dashboard.py
 
-Writes examples/out/branded-dashboard.html. Compare with the Phronesis-default
+Writes examples/out/branded-dashboard.html. Compare with the neutral-default
 dashboard from examples/run_quickstart.py.
 """
 from __future__ import annotations
@@ -117,7 +117,7 @@ def main() -> int:
     )
     print(f"dashboard -> {dash}")
     print("Open in a browser and compare with examples/out/dashboard.html")
-    print("(Phronesis defaults from run_quickstart.py).")
+    print("(the neutral default from run_quickstart.py).")
     return 0
 
 

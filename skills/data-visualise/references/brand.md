@@ -1,27 +1,28 @@
 # Theming guide — colours, font, logo
 
-The Data Toolkit's visualise engine ships with **Phronesis Applied** defaults (mark and
-palette from [phronesis-applied.com](https://www.phronesis-applied.com)) and is **fully
-white-labelable**: a firm sets its own colours, font and logo without touching the code.
-Everything lives in `scripts/viz.py` as `DEFAULT_THEME` (with `BRAND` / `FONT` as the active
-module-level state). Refer to those tokens, don't hardcode hexes in a caller.
+The Data Toolkit's visualise engine ships a **neutral, unbranded default** (no logo, a
+teal/paper palette, a clean type pairing) and is **fully white-labelable**: a firm sets its
+own name, colours, fonts and logo without touching the code. Everything lives in
+`scripts/viz.py` as `DEFAULT_THEME` (with `BRAND` / `FONT` as the active module-level state).
+Refer to those tokens, don't hardcode hexes in a caller.
 
-## The default (Phronesis Applied) palette
+## The default palette
 
-Colour-token *names* are historical (kept stable so the rendering code doesn't churn); the
-**values** match the Phronesis Applied site.
+The toolkit's neutral default scheme — a teal accent on cool paper. Colour-token *names* are
+historical (kept stable so the rendering code doesn't churn); refer to the names, not the hexes.
 
 | Token | Default hex | Use |
 |---|---|---|
-| `burgundy` | `#163F3A` | primary — header rule, wordmark, table heads (site accent teal) |
-| `rose` | `#A9722F` | accent 1 — bronze |
+| `burgundy` | `#163F3A` | primary — header rule, wordmark, table heads (deep teal) |
+| `rose` | `#4FB3A0` | accent 1 — bright teal |
 | `pink` | `#20574F` | accent 2 — soft teal |
-| `pink_lt` | `#D9B98A` | light bronze tint |
-| `pink_vlt` | `#F1ECE2` | very light tint — table zebra striping (paper-2) |
-| `ink` | `#1A1A17` | body text |
-| `grey` | `#55524A` | muted text / labels |
-| `grey_lt` | `#E4DDD0` | hairlines / borders |
-| `bg` | `#F7F4EE` | page background (paper) |
+| `pink_lt` | `#A7D9CF` | light teal tint |
+| `pink_vlt` | `#E7EBE9` | very light tint — table zebra striping |
+| `ink` | `#14171A` | body text |
+| `grey` | `#565C63` | muted text / labels |
+| `grey_faint` | `#8C9298` | faintest text |
+| `grey_lt` | `#D9DEDB` | hairlines / borders |
+| `bg` | `#F1F3F2` | page background (paper) |
 | `white` | `#FFFFFF` | cards |
 | `green` | `#2E7D57` | RAG — good / done / on-track |
 | `amber` | `#B26B00` | RAG — warning / due / at-risk |
@@ -43,38 +44,38 @@ Multi-series charts and donut slices cycle through:
 `primary → accent 1 → accent 2 → green → amber → grey → light tint`
 (i.e. `burgundy → rose → pink → green → amber → grey → pink_lt` token names).
 
-## Font
+## Fonts
 
-The default `FONT` is a clean geometric/neutral sans with safe fallbacks:
+Two stacks — a **geometric-display heading** over a **neutral sans body**:
 
-`"'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif"`
+| Theme key | Default | Applies to |
+|---|---|---|
+| `font` | `'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif` | body, tables, labels |
+| `font_heading` | `'Space Grotesk','Inter','Segoe UI',system-ui,sans-serif` | `h1`, section `h2`, KPI values, the text wordmark |
 
-A firm sets its own via the theme's `font` key.
+Dashboards are **self-contained (no CDN)**, so a font only renders if the reader has it
+installed — otherwise it falls back down its stack. The pairing is therefore a progressive
+enhancement, never a dependency.
+
+A firm sets its own via the theme's `font` / `font_heading` keys. **Setting only `font`
+applies it to headings too** — so a white-label brand never inherits Space Grotesk by
+accident. Set `font_heading` explicitly only if you want a distinct display face.
 
 ## Logo
 
-The header shows a logo if `assets/logo-sample.png` (or a firm-supplied path) is present;
-otherwise it falls back to a **text wordmark** of the brand name. The engine **base64-embeds**
-the logo as a data URI, so the file stays self-contained and offline — never a remote URL
-(that would break the offline / data-handling guarantee). Use a transparent-background PNG so
-it blends onto the page.
+**No logo ships by default** — the header shows a **text wordmark** of the brand name
+(`"Data Toolkit"` unless a theme overrides it). A firm supplies its own by pointing
+`theme["logo_path"]` at a transparent PNG or SVG; the engine **base64-embeds** it as a data
+URI, so the file stays self-contained and offline — never a remote URL (that would break the
+offline / data-handling guarantee).
 
-Shipped assets:
-
-| File | What it is |
-|---|---|
-| `assets/logo-sample.png` | Default header lockup (Phronesis mark + wordmark) — what `DEFAULT_THEME` points at |
-| `assets/logo-phronesis.png` | Same lockup, named copy |
-| `assets/logo-phronesis-mark.png` | Square mark only |
-| `assets/logo-phronesis-mark.svg` | Source SVG of the mark (from the site favicon geometry) |
-
-> **White-label:** swap `assets/logo-sample.png` or point `theme["logo_path"]` at your own
-> transparent PNG. Replacing the file for client work does not grant rights to use the
-> Phronesis Applied name or mark in your own branding — see `NOTICE`.
+> **White-label:** set `theme["logo_path"]` to your own transparent PNG/SVG (and
+> `theme["brand_name"]` to your name). Using the toolkit does not grant any right to the
+> Phronesis Applied name or marks in your own branding — see `NOTICE`.
 
 ## How a firm sets its own brand
 
-Pass a (partial) `theme` dict — any subset overrides the Phronesis default:
+Pass a (partial) `theme` dict — any subset overrides the neutral default:
 
 ```python
 my_theme = {
@@ -96,7 +97,7 @@ Two ways to apply it:
 - **Whole render (incl. chart colours):** call `apply_theme(my_theme)` **before** building the
   blocks, then build and call `dashboard(...)`. `apply_theme` rebinds the module-level
   `BRAND` / `FONT` / series palette so the charts pick up the brand too. `apply_theme(None)`
-  resets to the Phronesis default.
+  resets to the neutral default.
 
 ```python
 from viz import apply_theme, kpi_row, bar_chart, dashboard

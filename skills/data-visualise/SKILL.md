@@ -8,7 +8,7 @@ description: >-
   shareable visual summary of tasks, compliance, pipeline, finance or any tabular data.
   Composes KPI cards, bar / line / donut charts (inline SVG — no external JS/chart
   libraries, no CDN, no remote images; optional inline JS for sorting/filtering), tables with RAG conditional formatting, status pills, sections and
-  grids into a single HTML file. Ships with Phronesis Applied defaults and is fully
+  grids into a single HTML file. Ships unbranded (a neutral default) and is fully
   brandable (colours, font, logo). Output is a draft for review, not advice;
   nothing is auto-distributed. NOT for PowerPoint decks or letters; for cleaning /
   extracting the underlying data first, see data-tidy / data-extract.
@@ -19,9 +19,9 @@ description: >-
 Build a **self-contained HTML dashboard** from tabular data — KPI cards, charts, RAG
 tables — in **one self-contained file** that opens in a browser and prints straight to PDF.
 
-It ships with **Phronesis Applied** defaults (mark + teal/bronze/paper palette) and is
-**fully brandable**: a firm sets its own colours, font and logo without touching the code
-(see `references/brand.md`).
+It ships **unbranded** — a neutral default (a teal / cool-paper palette and a clean type
+pairing, no logo) — and is **fully brandable**: a firm sets its own name, colours, fonts and
+logo without touching the code (see `references/brand.md`).
 
 > **Self-contained & offline by design.** Pure HTML + CSS + **inline SVG** charts —
 > no JavaScript chart libraries, no CDN, no remote images. The file works with no
@@ -103,9 +103,9 @@ open_in_browser(path)
 See `references/blocks.md` for the full cookbook and `references/brand.md` for the theming
 guide. `examples/operations-dashboard.html` is a built sample.
 
-## Theming (Phronesis defaults, fully brandable)
+## Theming (neutral default, fully brandable)
 
-The engine ships Phronesis Applied defaults out of the box. To apply a firm's brand, pass
+The engine ships a neutral, unbranded default out of the box. To apply a firm's brand, pass
 a `theme` dict (any subset overrides the default):
 
 ```python
@@ -160,21 +160,19 @@ the common case: a clean, branded, printable dashboard that also opens as a live
 - `scripts/viz.py` — the engine: default theme + `apply_theme`, building blocks,
   `dashboard()`, `rows_from_xlsx`, `open_in_browser`; `python viz.py [out.html]` builds an
   offline self-test dashboard (no data, no network).
-- `references/brand.md` — the theming guide: Phronesis defaults and how a firm sets its own
+- `references/brand.md` — the theming guide: the neutral default and how a firm sets its own
   brand.
 - `references/blocks.md` — the building-block cookbook with worked snippets.
-- `assets/logo-sample.png` — **Phronesis Applied** header lockup by default (mark from
-  phronesis-applied.com), base64-embedded so the artefact stays self-contained. Firms
-  white-label by replacing the file or pointing `theme["logo_path"]` at their PNG; if
-  absent, the header shows a text wordmark. Also shipped: `logo-phronesis.png`,
-  `logo-phronesis-mark.png`, `logo-phronesis-mark.svg`.
+- No default logo ships — the header shows a text wordmark of the brand name. A firm supplies
+  its own by pointing `theme["logo_path"]` at a transparent PNG or SVG (base64-embedded so the
+  artefact stays self-contained).
 - `examples/operations-dashboard.html` — a built sample (the self-test output).
 
 ## Data handling
 
-This skill is **local and offline** — it embeds whatever data you pass directly into the
-HTML and never calls out (no CDN/remote images), which is exactly why it suits sensitive or
-confidential business/financial data. Keep the rendered `.html`/PDF on **your synced or
+The renderer is **local and offline** — it embeds whatever data you pass directly into the
+HTML and never calls out (no CDN/remote images), so the dashboard file itself leaks nothing. (The
+AI agent driving the skill does send whatever it reads into its context to your AI provider.) Keep the rendered `.html`/PDF on **your synced or
 shared file store**. If the dashboard contains **personal data or confidential business/
 financial data** (e.g. named individuals with contact details or IDs, customer/supplier
 lists, pricing, unpublished financials), treat the file as gated — don't send it to any

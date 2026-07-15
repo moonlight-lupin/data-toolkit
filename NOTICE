@@ -7,8 +7,9 @@ https://www.phronesis-applied.com
 Licensed under the Apache License, Version 2.0.
 See the LICENSE file for the full license text.
 
-The Phronesis Applied brand mark (skills/data-visualise/assets/logo-phronesis*.png
-and logo-phronesis-mark.svg) is derived from the mark published at
-https://www.phronesis-applied.com and is © Phronesis Applied. Firms may replace
-the default logo via the visualise theme for white-label use; that does not grant
-rights to use the Phronesis Applied name or mark in their own branding.
+The Data Toolkit ships UNBRANDED: the default dashboard theme carries no logo and a
+neutral "Data Toolkit" wordmark. "Phronesis Applied" is the author / maintainer name
+(and appears in this NOTICE and the LICENSE copyright). Using the toolkit does not grant
+any right to use the Phronesis Applied name or marks in your own or third-party branding.
+White-label the dashboards with your own name, colours, fonts and logo via the visualise
+theme (see skills/data-visualise/references/brand.md).

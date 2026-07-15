@@ -23,13 +23,13 @@ That writes:
 | Output | What it is |
 |---|---|
 | `examples/out/reconciliation.xlsx` | Invoice-tracker vs ledger working paper (matches + triaged exceptions) |
-| `examples/out/dashboard.html` | Self-contained dashboard with **Phronesis Applied** defaults |
+| `examples/out/dashboard.html` | Self-contained dashboard with the **neutral default** theme |
 | `examples/out/branded-dashboard.html` | Same recon summary, **Acme Co** theme + sample logo |
 
 Prefer to look first? Committed samples (same content):
 
 - [`sample-reconciliation.xlsx`](sample-reconciliation.xlsx)
-- [`sample-dashboard.html`](sample-dashboard.html) — Phronesis defaults
+- [`sample-dashboard.html`](sample-dashboard.html) — neutral default
 - [`sample-branded-dashboard.html`](sample-branded-dashboard.html) — Acme Co white-label
 
 Open the HTML file in a browser. Open the `.xlsx` in Excel / LibreOffice / Numbers.
@@ -41,7 +41,7 @@ Open the HTML file in a browser. Open the `.xlsx` in Excel / LibreOffice / Numbe
    `sample_ledger.csv`) with the `invoice_tracker_vs_ledger` preset — deliberate
    mismatches so the triage sheet has something useful to show.
 2. **`data-visualise`** — KPI cards from the recon summary plus a small exception
-   breakdown chart. `run_quickstart.py` uses Phronesis defaults;
+   breakdown chart. `run_quickstart.py` uses the neutral default;
    `run_branded_dashboard.py` passes an Acme `theme` (colours +
    [`assets/acme-mark.svg`](assets/acme-mark.svg)).
 
