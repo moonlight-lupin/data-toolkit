@@ -1,0 +1,30 @@
+### 2026-07-14 — data-extract — currency-typed field returns amount only, discards the detected code
+- Reporter:        the test organisation toolkit testing (benchmark run T2, Claude Sonnet 5 agent)
+- Type:            Bug
+- Severity:        Friction
+- What I was doing: Batch field extraction from 6 subscription-confirmation PDFs with
+                    a field spec including {"name": "Commitment", "type": "currency"}
+                    where commitments were "GBP 1,500,000", "S$ 2,000,000",
+                    "USD 3,100,000" — the task needed amount AND currency code.
+- What happened:    dataclean.convert_value for type "currency" returned only the
+                    numeric amount; the detected code was discarded (confirmed by
+                    reading _convert() in dataclean.py, ~lines 658–670). SKILL.md's
+                    own description promises "Commitment (amount + currency code)"
+                    style output.
+- What I expected:  The parsed (amount, code) pair to be available on the record —
+                    data-tidy recipes already have a code_target option for exactly
+                    this; the extract field spec has no equivalent.
+- Impact:           Workaround required: the agent called dataclean.parse_currency()
+                    directly and wrote two columns (Commitment Amount / Commitment
+                    Currency). Correct result, but off the documented path; a less
+                    careful run would have delivered amounts with the GBP/SGD/USD
+                    distinction lost — dangerous for mixed-currency batches.
+- Suggested fix:    Support code_target (or return a (amount, code) tuple) for
+                    currency-typed fields in extract_fields, mirroring the tidy
+                    recipe spec.
+- Example / file:   Repro: data-toolkit-benchmark/fixtures/t2_confirmations/
+                    confirmation_01..06.pdf; output workbook
+                    runs/T2_skill/T2_confirmations_extracted.xlsx shows the two-column
+                    workaround.
+
+--- STATUS UPDATE 14 Jul 2026: fixed upstream in v0.4.3 (commit dde0484); fix verified against the repro fixtures in the re-test (REPORT.md section 10). ---

@@ -82,5 +82,5 @@ Bramley & Cole also carries 4 of the 11 clean USD invoices ($26,552 of $37,278, 
 ## Caveats
 
 - This is a working draft for review before circulation or reliance — a qualified reviewer should sanity-check the INV-9999 and November-2025 gap findings against the underlying billing/ERP system before they are acted on.
-- No exchange rate assumption has been made anywhere in this brief; if a blended GBP-equivalent total is required, it should be produced using QIP's actual booking-date FX rates, not an estimate.
+- No exchange rate assumption has been made anywhere in this brief; if a blended GBP-equivalent total is required, it should be produced using the test organisation's actual booking-date FX rates, not an estimate.
 - "Clean" totals throughout mean: GBP or USD rows only, blank-Amount rows removed, INV-9999 removed. This basis is used consistently across the revenue, trend and customer sections above so the figures are comparable to one another.

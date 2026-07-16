@@ -1,6 +1,6 @@
 # data-toolkit benchmark — Claude Sonnet 5, with vs without skills
 
-**Date:** 14 Jul 2026 · **Toolkit under test:** [moonlight-lupin/data-toolkit](https://github.com/moonlight-lupin/data-toolkit) **v0.4.3** (Apache-2.0, Phronesis Applied) · **Test model:** Claude Sonnet 5 (`claude-sonnet-5`) · **Orchestration/evaluation:** Claude Fable 5 · **Status:** published 14 Jul 2026
+**Date:** 14 Jul 2026 · **Toolkit under test:** [moonlight-lupin/data-toolkit](https://github.com/moonlight-lupin/data-toolkit) **v0.4.3** (Apache-2.0, Phronesis Applied) · **Test model:** Claude Sonnet 5 (`claude-sonnet-5`) · **Orchestration/evaluation:** Claude Fable 5 · **Status:** published 16 Jul 2026
 
 ---
 
@@ -127,4 +127,20 @@ Every error in both arms was self-diagnosed and resolved; no run failed or deliv
 
 For small one-off files, a strong model with a careful prompt matches the toolkit's correctness, and the toolkit's fixed overhead (+45% tokens here) buys artefact standardisation, fuller disclosure and a deterministic audit trail rather than better numbers. **From roughly 5,000 rows the trade inverts: the skills are cheaper, ~3× faster, and flat-cost as data grows, while the hand-rolled alternative gets slower and — more importantly — riskier, with an error surface that grows with the data.** For recurring or high-volume data work, the deterministic engine is both the cheaper and the safer path; the skills' reuse bundles (not tested here) would push the marginal cost lower still.
 
-*All figures are reproducible from the artefacts in this folder: the small-data fixtures (T1–T5), ground-truth JSON, the deterministic generator and verification scripts, per-run metrics, and the T1–T5 deliverables from the benchmark runs. The large T6 scaling fixtures (~5,000 / ~20,000 rows) and their workbooks are omitted for size — regenerate them with `python scripts/make_fixtures_t6.py` (see [`README.md`](README.md)).*
+---
+
+## 11. Addendum — T7: repeat conversion (data-convert), closing off the Sonnet rounds
+
+The toolkit later added a sixth skill, **data-convert** (v0.5.x), tested with a three-leg recurring-conversion design: **June** builds a GL-export → journal-import conversion to a defined contract and saves a reusable artefact with standing rules; **July** is a clean repeat run by a *fresh* agent told only "convert as June was done — check the working folder first"; **August** is a drifted repeat (renamed column, new column, one blank required AccountCode; ground truth: drift flagged, 113 rows, sum −317.85). Run on toolkit **v0.5.3**, which added `on_missing_required: exclude/error/flag` enforcement and mandatory Standing-rules card sections — both added by the maintainer in response to feedback from this benchmark's smaller-model round (see REPORT_HAIKU.md §5).
+
+| Leg | Skill | Baseline |
+|---|---|---|
+| June (build) | ✓ 120 rows, sum 0.00; card carries the exclusion policy in the machine spec (96.3k tok / 3m 21s) | ✓ 120 rows; self-built runner enforcing required-exclusion in code (58.0k / 2m 22s) |
+| July (repeat) | ✓ card reused unchanged; 118 rows (60.6k / 1m 55s) | ✓ runner reused unchanged; 118 rows (57.6k / **46s** — cheapest leg of the benchmark) |
+| August (drift) | ✓ drift flagged; invalid row **excluded by the engine** — 113 rows, sum −317.85, exact ground truth; renamed non-required column conservatively left blank pending confirmation (83.6k / 2m 59s) | ⚠ runner **halted the entire run** (SchemaError, failure log, no CSV) and deferred to human confirmation (64.0k / 3m 13s) |
+
+Findings: repeat conversions cost ~1–2 minutes in both arms once a good artefact exists; the August drift produced a spectrum of *defensible* conservatism (halt entirely → deliver-with-exclusions-and-questions → deliver-with-disclosed-remap on the smaller-model round) with **no run on any tier silently converting**; and the v0.5.3 card policy makes the required-field rule mechanical rather than judgement-dependent — which is what makes the repeat legs safe to delegate.
+
+A full companion round on **Claude Haiku 4.5** (same T1–T7 including scaling, plus guard-rail experiments and two further found→filed→fixed toolkit issues) is in **REPORT_HAIKU.md** in this bundle.
+
+*All figures are reproducible from the artefacts in this folder: fixtures, ground-truth JSON, the deterministic generators and `verify_outputs.py`, per-run metrics, and the T1–T5 / T7 deliverables. The large T6 scaling fixtures and workbooks are omitted for size — regenerate the inputs with `scripts/make_fixtures_t6.py` (see [`README.md`](README.md)).*

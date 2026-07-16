@@ -1,0 +1,148 @@
+================================================================================
+GL TO JOURNAL IMPORT CONVERSION - MONTHLY PROCESS
+<org> - June 2026 onwards
+================================================================================
+
+PURPOSE:
+Convert monthly GL (General Ledger) exports from source system to journal import
+format for downstream accounting system.
+
+================================================================================
+STANDING RULES (CRITICAL - DO NOT DEVIATE)
+================================================================================
+
+1. SCHEMA VALIDATION (MUST CHECK EVERY MONTH)
+   - Source file MUST contain these 8 columns (order-independent):
+     * Entry No
+     * Posting Date [format: DD/MM/YYYY]
+     * Account Code
+     * Account Name
+     * Description
+     * Debit
+     * Credit
+     * Cost Centre
+
+   - IF any column is missing, renamed, or new columns appear:
+     STOP IMMEDIATELY and flag discrepancy before proceeding
+   - Never assume columns have been reordered; validate each month
+
+2. REQUIRED FIELDS (MUST NOT BE EMPTY IN OUTPUT)
+   These 4 fields must always be populated:
+   - JournalRef (from Entry No)
+   - Date (from Posting Date, converted to YYYY-MM-DD)
+   - AccountCode (from Account Code)
+   - Amount (calculated as Debit - Credit)
+
+   Any row with empty required fields MUST be:
+   - FLAGGED in the report
+   - EXCLUDED from the import file
+   - NEVER guessed or filled with defaults
+
+3. DATA MAPPING
+   JournalRef    <- Entry No
+   Date          <- Posting Date [convert DD/MM/YYYY to YYYY-MM-DD]
+   AccountCode   <- Account Code
+   Narrative     <- Description
+   Amount        <- Debit - Credit [2 decimal places, signed: positive for debit, negative for credit]
+   CostCentre    <- Cost Centre [may be empty]
+   Source        <- Constant value "GLEXPORT"
+
+4. OUTPUT FORMAT
+   - File type: CSV (comma-separated values)
+   - Encoding: UTF-8 (no BOM)
+   - Header row: JournalRef, Date, AccountCode, Narrative, Amount, CostCentre, Source
+   - Column order: MUST be exactly as specified above
+   - Decimal places: 2 (e.g., 250.00, -263.57)
+
+5. QUALITY CHECKS
+   - Validate all 120 rows are accounted for (converted + flagged)
+   - Check that Amount sum = 0.00 (GL entries must balance)
+   - Review any flagged rows before submitting to downstream system
+
+================================================================================
+HOW TO USE THE CONVERTER
+================================================================================
+
+SETUP (one-time):
+1. Place the GL export Excel file in fixtures/ folder
+2. Navigate to data-toolkit-benchmark directory
+3. The converter script is: runs_haiku/T7_base/GL_to_Journal_Converter.py
+
+MONTHLY EXECUTION:
+1. Obtain GL export file for the month (e.g., fixtures/t7_gl_jul.xlsx for July)
+2. Run the converter:
+
+   python runs_haiku/T7_base/GL_to_Journal_Converter.py \
+     fixtures/t7_gl_jul.xlsx \
+     runs_haiku/T7_base/journal_import_jul2026.csv
+
+3. Review the conversion report (printed to console):
+   - Check "Rows converted" and "Rows flagged/excluded"
+   - Verify "Sum of Amount column" = 0.00
+   - If there are flagged rows, investigate before proceeding
+
+4. Output file location: runs_haiku/T7_base/journal_import_<MMMYYYY>.csv
+5. Submit the CSV file to downstream system
+
+TROUBLESHOOTING:
+
+If schema validation fails:
+- Error: "DISCREPANCY: Missing expected columns: {'...'}"
+- Action: Compare source file headers with expected list above
+- Contact: Source system administrator to confirm column names/order
+
+If Amount sum is not 0.00:
+- Warning: GL entries should balance to zero
+- Action: Review flagged rows and source data for errors
+- May indicate data integrity issue in source system
+
+If rows are flagged for missing required fields:
+- Action: Do NOT guess values; investigate why data is missing
+- Review the specific row number and field indicated in report
+- May need to correct source data or investigate with source owner
+
+================================================================================
+EXAMPLE CONVERSION
+================================================================================
+
+INPUT (GL Export - portion of fixtures/t7_gl_jun.xlsx):
+Entry No | Posting Date | Account Code | Account Name      | Description    | Debit   | Credit | Cost Centre
+E9000    | 01/06/2026   | 1000         | Cash at bank      | Journal 06-000  | 250.00  | (null) | CC-100
+E9001    | 01/06/2026   | 4000         | Sales revenue     | Journal 06-000  | (null)  | 250.00 | CC-100
+
+OUTPUT (journal_import_jun2026.csv):
+JournalRef,Date,AccountCode,Narrative,Amount,CostCentre,Source
+E9000,2026-06-01,1000,Journal 06-000,250.0,CC-100,GLEXPORT
+E9001,2026-06-01,4000,Journal 06-000,-250.0,CC-100,GLEXPORT
+
+Note: E9001 shows -250.0 (credit) because Credit column has 250.00 and Debit is empty.
+
+================================================================================
+MONTHLY SCHEDULE
+================================================================================
+
+Each month, follow this process in this order:
+1. Obtain GL export file for the month from source system
+2. Place in: fixtures/t7_gl_<MMM>.xlsx (where MMM = month abbreviation)
+3. Run converter (see "MONTHLY EXECUTION" section above)
+4. Review conversion report
+5. If successful, submit journal_import_<MMMYYYY>.csv to downstream system
+6. Archive the export file and output file for audit trail
+
+Files are archived in: runs_haiku/T7_base/journal_import_<MMMYYYY>.csv
+
+================================================================================
+AUDIT TRAIL
+================================================================================
+
+Each successful conversion creates:
+1. Output CSV: journal_import_<MMMYYYY>.csv
+2. Conversion script logs (printed to console when run)
+3. This process creates an audit trail for each month's conversion
+
+Keep these files for compliance and troubleshooting records.
+
+================================================================================
+LAST UPDATED: June 2026
+Conversion Script: GL_to_Journal_Converter.py (v1.0)
+================================================================================

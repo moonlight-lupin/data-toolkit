@@ -1,0 +1,124 @@
+{
+  "monthly": [
+    {
+      "month": "Jul 2025",
+      "revenue": 84200.0
+    },
+    {
+      "month": "Aug 2025",
+      "revenue": 88900.0
+    },
+    {
+      "month": "Sep 2025",
+      "revenue": 91400.0
+    },
+    {
+      "month": "Oct 2025",
+      "revenue": 87300.0
+    },
+    {
+      "month": "Nov 2025",
+      "revenue": 93800.0
+    },
+    {
+      "month": "Dec 2025",
+      "revenue": 79500.0
+    },
+    {
+      "month": "Jan 2026",
+      "revenue": 96200.0
+    },
+    {
+      "month": "Feb 2026",
+      "revenue": 98100.0
+    },
+    {
+      "month": "Mar 2026",
+      "revenue": 104700.0
+    },
+    {
+      "month": "Apr 2026",
+      "revenue": 101900.0
+    },
+    {
+      "month": "May 2026",
+      "revenue": 108300.0
+    },
+    {
+      "month": "Jun 2026",
+      "revenue": 112600.0
+    }
+  ],
+  "category": [
+    {
+      "category": "Advisory",
+      "revenue": 412300.0
+    },
+    {
+      "category": "Subscriptions",
+      "revenue": 388100.0
+    },
+    {
+      "category": "Projects",
+      "revenue": 201400.0
+    },
+    {
+      "category": "Training",
+      "revenue": 84900.0
+    },
+    {
+      "category": "Other",
+      "revenue": 60200.0
+    }
+  ],
+  "actions": [
+    {
+      "action": "Renew PI insurance",
+      "owner": "J Tan",
+      "due_date": "05 Jul 2026",
+      "status": "Overdue",
+      "days_overdue": 9
+    },
+    {
+      "action": "Q2 VAT return",
+      "owner": "M Ross",
+      "due_date": "31 Jul 2026",
+      "status": "In progress",
+      "days_overdue": 0
+    },
+    {
+      "action": "Client survey",
+      "owner": "A Rahim",
+      "due_date": "15 Aug 2026",
+      "status": "Not started",
+      "days_overdue": 0
+    },
+    {
+      "action": "Archive FY25 files",
+      "owner": "J Tan",
+      "due_date": "30 Jun 2026",
+      "status": "Overdue",
+      "days_overdue": 14
+    },
+    {
+      "action": "Update fee schedule",
+      "owner": "M Ross",
+      "due_date": "20 Jul 2026",
+      "status": "In progress",
+      "days_overdue": 0
+    },
+    {
+      "action": "ISO audit prep",
+      "owner": "A Rahim",
+      "due_date": "10 Jul 2026",
+      "status": "Done",
+      "days_overdue": 0
+    }
+  ],
+  "kpis": {
+    "total_revenue": 1146900.0,
+    "best_month": "Jun 2026: \u00a3112,600",
+    "mth_change": "+4.0%",
+    "overdue_actions": 2
+  }
+}

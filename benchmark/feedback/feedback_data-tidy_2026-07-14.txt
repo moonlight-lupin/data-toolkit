@@ -1,0 +1,29 @@
+### 2026-07-14 — data-tidy — merged currency parse drops the Currency column's value when the amount is unparseable
+- Reporter:        the test organisation toolkit testing (benchmark run T1, Claude Sonnet 5 agent)
+- Type:            Bug
+- Severity:        Friction
+- What I was doing: Tidying a messy payments CSV (Ref / Payment Date / Payer / Country
+                    / Amount / Currency) using the recipe-spec's currency-merge
+                    pattern (Amount as currency type with the code carried through /
+                    code_target), where two rows had unparseable amounts:
+                    P-1012 Amount="pending", P-1027 Amount blank — both with a real
+                    "GBP" sitting in the Currency column.
+- What happened:    The merge-then-parse logic only carried the currency code through
+                    when the amount parsed successfully; for the two flagged rows the
+                    genuine Currency value ("GBP") was silently dropped, and the run
+                    showed 3 validation failures where only 1 was genuine.
+- What I expected:  An unparseable amount to be kept raw + flagged (which it was)
+                    WITHOUT losing the independent Currency cell's value — the flag
+                    should cost the row its amount, not its currency.
+- Impact:           The agent redesigned the recipe (Amount as plain number, Currency
+                    as its own text column, one explicit pre-fill rule for £-embedded
+                    amounts) and re-ran — extra iteration/tokens; spurious validation
+                    failures went from 3 to the 1 genuine one. Final output correct.
+- Suggested fix:    When a currency-typed conversion fails, preserve the source
+                    code_target/Currency column value on the flagged row instead of
+                    blanking it.
+- Example / file:   Repro: data-toolkit-benchmark/fixtures/t1_messy_payments.csv,
+                    rows P-1012 and P-1027; final recipe documented in
+                    runs/T1_skill/T1_audit_report.md.
+
+--- STATUS UPDATE 14 Jul 2026: fixed upstream in v0.4.3 (commit dde0484); fix verified against the repro fixtures in the re-test (REPORT.md section 10). ---

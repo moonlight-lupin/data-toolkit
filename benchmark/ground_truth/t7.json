@@ -1,0 +1,48 @@
+{
+  "contract": {
+    "columns": [
+      "JournalRef",
+      "Date",
+      "AccountCode",
+      "Narrative",
+      "Amount",
+      "CostCentre",
+      "Source"
+    ],
+    "date_format": "YYYY-MM-DD",
+    "amount": "signed, debit positive, 2dp",
+    "source_constant": "GLEXPORT",
+    "required": [
+      "JournalRef",
+      "Date",
+      "AccountCode",
+      "Amount"
+    ]
+  },
+  "jun": {
+    "rows": 120,
+    "gross_debits": "39018.90",
+    "net": "0.00",
+    "first_entry": "E9000",
+    "last_entry": "E9119"
+  },
+  "jul": {
+    "rows": 118,
+    "gross_debits": "37968.27",
+    "net": "0.00",
+    "first_entry": "E9500",
+    "last_entry": "E9617"
+  },
+  "aug": {
+    "rows": 114,
+    "gross_debits": "35907.72",
+    "net": "0.00",
+    "first_entry": "E9950",
+    "last_entry": "E10063",
+    "drift": [
+      "'Cost Centre' renamed to 'CC Code'",
+      "new column 'Approved By'",
+      "one row (11th data row) has blank Account Code (required)"
+    ]
+  }
+}

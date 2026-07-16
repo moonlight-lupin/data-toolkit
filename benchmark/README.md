@@ -1,40 +1,62 @@
 # data-toolkit benchmark
 
-An independent, reproducible benchmark of the toolkit's skills — **Claude Sonnet 5 with the
-toolkit vs. the same model with plain Python** — across all six skills plus a reconciliation
-scaling test, scored against recorded ground truth.
+An independent, reproducible benchmark of the toolkit's skills — **the same model with the
+toolkit vs. with plain Python** — now across **two model tiers**, all six skills, a
+reconciliation scaling test, and a recurring-conversion test, scored against recorded ground
+truth (deliverables independently verified, never the agents' self-reports).
 
-**Start here → [`REPORT.md`](REPORT.md).**
+**Two reports:**
+- **[`REPORT.md`](REPORT.md)** — **Claude Sonnet 5** (a strong model): T1–T5, the T6 scaling
+  test, and the T7 recurring-conversion addendum.
+- **[`REPORT_HAIKU.md`](REPORT_HAIKU.md)** — **Claude Haiku 4.5** (a small, cheap model): the
+  full T1–T7 companion, incl. scaling and guard-rail experiments.
 
-- **Date:** 14 Jul 2026 · **Toolkit under test:** data-toolkit **v0.4.3**
-- **Test model:** Claude Sonnet 5 (both arms) · **Orchestration / evaluation:** Claude Fable 5
+- **Toolkit under test:** v0.4.3 (Sonnet T1–T6) · v0.5.2 / v0.5.3 (T7 and the Haiku round)
+- **Orchestration / evaluation:** Claude Fable 5
 
 ## Headline
 
-- **Correctness:** parity on the headline numbers — a well-prompted Sonnet 5 without the toolkit
-  matched the toolkit's figures at ordinary sizes.
-- **Quality:** the skill arm produced the stronger, more standardised artefacts — **50 / 50 vs
-  48.5 / 50** on the rubric.
-- **Cost inverts at scale:** the toolkit costs more on small one-off files (+45% tokens here),
-  but from ~5,000 rows the deterministic engine is **~25% cheaper on tokens and ~3× faster**,
-  and its cost is essentially **flat** across a 235× size increase.
-- **Risk:** the hand-rolled baseline's error surface grows with data size (a matcher that began
-  force-pairing unrelated items; a real formula bug in a delivered workbook) — the failure class
-  a tested deterministic engine removes.
+- **Correctness parity on a strong model.** On Sonnet, a well-prompted baseline matched the
+  toolkit's numbers at ordinary sizes — the value is standardised artefacts + a deterministic
+  audit trail, not better arithmetic. Rubric **50 / 50 vs 48.5 / 50**.
+- **The value grows as the model gets cheaper — shown, not assumed.** On **Haiku**, the baseline
+  fell into a planted currency trap and headlined a blended **£1,121,085** GBP+USD total; the
+  skill arm's currency gate held. The arm gap **widens to 50 / 50 vs 44 / 50**, and skill
+  overhead nearly vanishes (**+14% tokens vs +45% on Sonnet**).
+- **The value grows as the data gets bigger.** On Sonnet's scaling test the engine's cost is
+  ~flat across a 235× size increase — from ~5,000 rows the skill arm is **~3× faster** and
+  cheaper, while hand-rolled code gets slower *and* riskier (a matcher force-paired unrelated
+  items; a formula bug shipped in a workbook).
+- **Recurring conversion (T7) is cheap and safe to repeat** — month 2+ costs ~1 minute; on the
+  drift month the toolkit **excluded the invalid row mechanically** to exact ground truth where a
+  hand-rolled baseline **halted the whole run**.
+- **Found → filed → fixed → re-verified, inside the benchmark.** Issues surfaced by testing were
+  filed in the toolkit's own feedback format and fixed upstream (v0.4.3, and v0.5.3 / PR #17 for
+  the required-field enforcement), then re-verified on the same fixtures. See `feedback/`.
+
+## Honest limits (read these)
+
+- **n = 1 per cell** — single run per task/arm; treat sub-~10% deltas as noise.
+- **The prompt scaffolding favours the baseline** — both arms get the same integrity rules, which
+  are much of what the skills encode; the unscaffolded gap is plausibly larger in the toolkit's
+  favour.
+- **On a weak model at scale, the risk shifts from cost to correctness.** Haiku needs explicit
+  operating guard rails, and a wrong 20k-row working paper is invisible to eyeball review — so:
+  Sonnet + skills for large / high-stakes work; Haiku + skills only for small, attended tasks.
+  (Full detail in `REPORT_HAIKU.md` §8.)
 
 ## Contents
 
 | Path | What |
 |---|---|
-| [`REPORT.md`](REPORT.md) | The benchmark report — method, results, cost, scaling, errors, limitations. |
-| [`run_metrics.csv`](run_metrics.csv) | Tokens / tool calls / wall-clock per run, as reported by the agent harness. |
-| `fixtures/` | Synthetic test inputs (all data fictional). T1–T5 committed; the large T6 scaling inputs are regenerable (below). |
-| `ground_truth/` | The planted-trap answer keys the outputs were scored against (incl. T6). |
-| `scripts/` | `make_fixtures.py`, `make_fixtures_t6.py` (deterministic generators) and `verify_outputs.py` (independent output verification). |
-| `runs/` | The deliverables from the T1–T5 benchmark runs, `_skill` vs `_baseline`. |
-
-T1–T5 = tidy / extract / reconcile / analyse / visualise. T6 = the reconcile scaling test at
-~5,000 (T6M) / ~20,000 (T6L) rows per side.
+| `REPORT.md` / `REPORT_HAIKU.md` | The two reports (method, results, cost, scaling, errors, limits). |
+| `run_metrics.csv` | Tokens / tool calls / wall-clock per run. Row suffixes: none = Sonnet r1, `_v2` = Sonnet on v0.4.3, `_sn` = Sonnet T7, `_hk` = Haiku, `_hk_v2` = Haiku canonical re-runs. |
+| `fixtures/` | Synthetic inputs (all fictional). T1–T5 + T7 committed; the large T6 scaling inputs are regenerable (below). |
+| `ground_truth/` | The planted-trap answer keys the outputs were scored against. |
+| `scripts/` | `make_fixtures.py`, `make_fixtures_t6.py`, `make_fixtures_t7.py` (deterministic generators) and `verify_outputs.py` (independent verification). |
+| `runs/` | Sonnet deliverables (T1–T5, T7). *T7_baseline has no August CSV by design — its runner halted on drift and wrote a `SCHEMA_FAILURE.log`.* |
+| `runs_haiku/` | Haiku deliverables. Canonical markers: `T7_skill_v053_CANON` (the post-fix T7) and, for T6, the `*_guarded_CANON` runs — the unguarded originals are retained as the prompting-for-weaker-models finding. |
+| `feedback/` | Issues filed to the maintainer in the toolkit's own template (all fixed upstream: v0.4.3 and v0.5.3 / PR #17). |
 
 ## Reproducing
 
@@ -42,23 +64,20 @@ Everything is deterministic — no randomness, all data fictional.
 
 ```bash
 cd benchmark
-python scripts/make_fixtures.py       # regenerate the T1–T5 fixtures + ground truth
-python scripts/make_fixtures_t6.py    # regenerate the large T6 scaling fixtures + ground truth
-python scripts/verify_outputs.py      # re-score deliverables in runs/ against ground_truth/
+python scripts/make_fixtures.py       # T1–T5 fixtures + ground truth
+python scripts/make_fixtures_t7.py    # T7 monthly GL exports + ground truth
+python scripts/make_fixtures_t6.py    # the large T6 scaling fixtures (omitted from the repo)
+python scripts/verify_outputs.py      # re-score the Sonnet T1–T5 deliverables in runs/
 ```
 
-The large **T6 scaling fixtures** (`fixtures/t6{l,m}_*` — ~5,000 / ~20,000 rows/side) and their
-run workbooks are **omitted from the committed folder for size**; `make_fixtures_t6.py`
-regenerates the inputs byte-for-byte, and the scaling results live in [`REPORT.md`](REPORT.md)
-§6 and `run_metrics.csv`.
+The **T6 scaling fixtures** (`fixtures/t6{l,m}_*`) and all T6 run workbooks are **omitted for
+size**; `make_fixtures_t6.py` regenerates the inputs and the scaling results live in the reports
+(§6 / §8) and `run_metrics.csv`.
 
 ## Notes
 
 - Prompts were identical between the two arms except for one block pointing the skill arm at the
-  toolkit; both arms received the same intent context and integrity rules, so this measures the
-  toolkit's *mechanical* value floor (see the report's §1 caveat and §9 limitations — including
-  n = 1 per cell).
-- Deliverables were scored by independent verification against ground truth, not by trusting the
-  agents' self-reports.
-- One redaction: `runs/T5_baseline/dashboard.html` had a header line removed (the agent had
-  inferred the test organisation's name from a file path). Nothing else was altered.
+  toolkit. The Haiku T6 *guarded* runs and the T7 v0.5.3 legs are documented in the reports.
+- **Sanitised:** absolute local paths and a test organisation's name (which some agents inferred
+  from file paths) were replaced with neutral placeholders. No figures, classifications or
+  structure were altered.

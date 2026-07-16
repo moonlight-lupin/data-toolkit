@@ -1,7 +1,12 @@
 # Regenerable large T6 scaling fixtures — recreate with scripts/make_fixtures_t6.py
-# (omitted from the repo for size; see REPORT.md §6 and README.md).
+# (omitted from the repo for size; see REPORT.md §6 / REPORT_HAIKU.md §8 and README.md).
 fixtures/t6l_*
 fixtures/t6m_*
 
-# T6 scaling-run workbooks are not committed (only their metrics, in run_metrics.csv).
+# T6 scaling-run workbooks (Sonnet runs/ and Haiku runs_haiku/) are not committed —
+# only their metrics, in run_metrics.csv.
 runs/T6*/
+runs_haiku/T6*/
+
+# Stray binary run artefacts (e.g. a baseline's pickled intermediate).
+*.pkl

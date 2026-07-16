@@ -1,0 +1,89 @@
+### 2026-07-14 — data-reconcile — Omitting the date column silently disables the date window in amount_date mode
+- Reporter:        the test organisation toolkit testing (benchmark run T3, Claude Sonnet 5 agent)
+- Type:            Bug
+- Severity:        Blocker
+- What I was doing: Reconciling a cashbook (.xlsx, signed amounts) against a bank
+                    statement (.csv, Debit/Credit columns) with
+                    `reconcile.py A B --mode amount_date --date-window 5 --debit Debit
+                    --credit Credit --flip-b` — but without `--date`.
+- What happened:    With no date column named, the engine's date-window check
+                    short-circuited (both sides carried `dt: None`, gap treated as 0),
+                    so an equal-amount pair whose dates were 12 days apart
+                    (cashbook "Acme receipt" 13/06/2026 vs bank "FAST PAYMENT ACME"
+                    25/06/2026, both 3,236.53) was treated as an in-window MATCH
+                    instead of `ambiguous_match`.
+- What I expected:  In amount_date mode the date window is the safety rail — the run
+                    should refuse to start (or at minimum warn loudly) when no date
+                    column is resolved, rather than matching on amount alone.
+- Impact:           A false match that passes off a possibly coincidental payment as
+                    reconciled — exactly what the skill promises never to do. Silent:
+                    only caught because the agent dumped res["matched"] and checked.
+- Suggested fix:    Hard-require a resolvable date column in amount_date mode, or route
+                    all no-date matches to ambiguous_match and say so in the summary.
+- Example / file:   Repro fixtures: data-toolkit-benchmark/fixtures/t3_cashbook.xlsx +
+                    t3_bank_statement.csv (planted 12-day equal-amount pair CB-AMB1).
+
+### 2026-07-14 — data-reconcile — duplicate / sign_flip / amount_mismatch triage not wired into amount_date mode
+- Reporter:        the test organisation toolkit testing (benchmark run T3, Claude Sonnet 5 agent)
+- Type:            Enhancement
+- Severity:        Friction
+- What I was doing: Same reconciliation as above (bank vs cashbook, no shared key —
+                    so amount_date is the only applicable mode), re-run correctly
+                    with `--date Date`.
+- What happened:    The planted cashbook duplicate (CB-9001A repeating CB-9001), the
+                    sign flip (CB-SGN1 +3,292.08 vs bank debit 3,292.08) and the
+                    amount mismatch with a 9% GST gap (CB-GST1 -2,400.00 vs bank
+                    -2,616.00) all surfaced only as unclassified one-sided items.
+                    Reading scripts/reconcile.py confirmed those triage branches
+                    (value_diffs / dup_a / dup_b) are only reachable in key mode.
+- What I expected:  The taxonomy in references/triage-taxonomy.md lists duplicate,
+                    sign_flip and amount_mismatch without saying they are key-mode
+                    only — bank-vs-cashbook (the flagship amount_date use case)
+                    routinely contains all three.
+- Impact:           The agent had to re-triage 9 one-sided items by hand (using the
+                    engine's own _exc/TRIAGE/_tax_hint primitives) to produce a
+                    correctly classified working paper — extra tokens/time, and a
+                    less careful operator would have delivered them as
+                    missing_in_A/missing_in_B.
+- Suggested fix:    After the one-sided residue is known in amount_date mode, run a
+                    second pass pairing residues on magnitude/sign/date to detect the
+                    three categories; or document the limitation prominently in
+                    SKILL.md and the taxonomy.
+- Example / file:   Same T3 fixtures as above; agent workaround in
+                    scratchpad/t3work/build_workpaper.py.
+
+--- STATUS UPDATE 14 Jul 2026: fixed upstream in v0.4.3 (commit dde0484); fix verified against the repro fixtures in the re-test (REPORT.md section 10). ---
+
+### 2026-07-14 — data-reconcile — warn when matched=0 but both sides share many equal amounts (absurd-result guard)
+- Reporter:        Toolkit benchmark testing (round 3, Claude Haiku 4.5 agent; toolkit v0.5.2)
+- Type:            Enhancement
+- Severity:        Friction (Blocker when a weaker model drives unattended)
+- What I was doing: amount_date reconciliation of ~5,000-row cashbook vs bank statement.
+                    The agent pre-converted the bank side to signed amounts by hand
+                    (instead of using --debit/--credit + --flip-b) and lost the date
+                    wiring in the process.
+- What happened:    The run completed "successfully" with 0 matched and 4,935 items in
+                    ambiguous_match — even though the agent's own earlier probe had
+                    counted 4,935 common amounts across the two sides. The engine gave
+                    no signal that a 0% match against thousands of equal amounts is
+                    almost certainly a misconfiguration, and the (small-model) agent
+                    rationalised the result and delivered the working paper.
+- What I expected:  A loud warning in the summary/report when matched == 0 (or a very
+                    low match rate) while a large number of exactly-equal amounts exist
+                    on both sides — analogous to the v0.4.3 no-date-column warning:
+                    "0 matched but N equal-amount pairs exist — check sign convention
+                    (--flip-b), debit/credit mapping and the date column before
+                    accepting this result."
+- Impact:           A confidently wrong RED/0% working paper shipped; at 5,000 rows no
+                    reviewer can spot by eye that virtually every item should have
+                    matched. A stronger model catches this by judgement; the engine
+                    could catch it mechanically for everyone.
+- Suggested fix:    Cheap post-match assertion in summarise()/render_report(): compare
+                    matched count against the count of amounts common to both sides;
+                    below a threshold ratio, emit a prominent warning (and set RAG
+                    accordingly) rather than presenting the result as a clean run.
+- Example / file:   Repro: data-toolkit-benchmark/fixtures/t6m_cashbook.xlsx +
+                    t6m_bank_statement.csv; the failed artefact is
+                    runs_haiku/T6M_skill/T6M_Reconciliation_Cashbook_BankStatement.xlsx
+                    (0 matched / 4,985 exceptions); correct result: 4,930 matched,
+                    75 exceptions (see ground_truth/t6m.json).

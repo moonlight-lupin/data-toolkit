@@ -17,11 +17,11 @@ bookkeepers, finance and ops analysts, consultants, and the firms that serve the
 and for anyone who needs the numbers **right, reproducible, and confidential**, not
 just fast.
 
-> **Same model. Two paths. Different ending.** On a reproducible benchmark, Claude
-> Sonnet 5 with this toolkit matched plain-Python Sonnet on the headline numbers —
-> then pulled away as the data grew: at ~5,000 rows/side, **~3× faster**, cheaper on
-> tokens, and without the baseline’s growing error surface (force-paired near-misses,
-> a formula bug in a delivered workbook). Full write-up in
+> **Same task. Toolkit vs. plain Python.** On a reproducible **two-model** benchmark, a strong
+> model (Claude Sonnet 5) matched the toolkit's numbers by hand at small sizes — then the toolkit
+> pulled ahead on two axes: **as the data grew** (from ~5,000 rows/side, ~3× faster and flat-cost)
+> and **as the model got cheaper** (on Claude Haiku 4.5 the plain-Python arm blended currencies
+> into a **£1.1M** wrong total; the skill arm's currency gate held). Full write-up in
 > [`benchmark/`](benchmark/).
 
 **From [Phronesis Applied](https://www.phronesis-applied.com)** — practical AI and
@@ -146,25 +146,17 @@ already have.
 
 ## Benchmark
 
-We ran the honest comparison: **the same model (Claude Sonnet 5) with the toolkit vs.
-with plain Python**, across all six skills plus a reconciliation scaling test.
-Synthetic fixtures, planted traps, recorded ground truth. Deliverables scored by
-independent verification — not the agents’ self-reports.
+The honest comparison: **the same model with the toolkit vs. with plain Python**,
+across all six skills, a reconciliation **scaling** test, and a recurring-conversion
+test — now on **two model tiers**. Synthetic fixtures, planted traps, recorded ground
+truth; every deliverable scored by independent verification, not the agents’ self-reports.
 
-**The value isn’t “better arithmetic.”** At ordinary sizes, a well-prompted Sonnet
-matched the toolkit’s headline numbers. What diverged:
+**It isn’t “better arithmetic.”** On a strong model (Sonnet 5) a well-prompted baseline
+matched the toolkit’s headline numbers. The value shows up on two axes — and it *compounds*:
 
-- **Artefacts.** Standard reconciliation taxonomy with materiality / RAG, dual-lens
-  analysis disclosure, print-ready branded dashboards — reviewable out of the box,
-  not a one-off format reinvented each time.
-- **Time at scale.** Skill wall-clock stayed essentially flat across a 235× size
-  jump; from ~5,000 rows the skill arm was **~3× faster**.
-- **Risk at scale.** The baseline’s error surface grew with the data — a matcher that
-  began force-pairing unrelated items, a real formula bug in a delivered workbook —
-  exactly the failure class a tested deterministic engine removes.
-
-The fixed overhead (reading skill docs + engine before work) shows up on small
-one-offs; it amortises hard once the engine is doing the heavy matching.
+**As the data grows → cheaper and faster.** The engine’s cost stays flat while hand-rolled
+matching gets slower *and* riskier (it force-paired unrelated rows; shipped a formula bug in a
+delivered workbook — the failure class a tested engine removes).
 
 ```mermaid
 xychart-beta
@@ -180,10 +172,20 @@ xychart-beta
 | ~5,000 | **0.31** | ~3× faster; ~25% fewer tokens |
 | ~20,000 | **0.38** | Still ~2.6× faster; skill cost stays flat |
 
-Method, per-task scores, token tables, error analysis, and limitations (including
-**n = 1** per cell) — plus fixtures, ground truth, generators, verify scripts, and
-every T1–T5 deliverable — live in **[`benchmark/`](benchmark/)**
-([report](benchmark/REPORT.md)).
+**As the model gets cheaper → correctness.** Re-run on **Haiku 4.5** (a small, cheap model), the
+plain-Python arm fell into a planted trap and headlined a blended **£1,121,085** — GBP + USD added
+with no exchange rate. The skill arm’s currency gate held. The gap between arms **widens** (50 vs
+**44** on Haiku, vs 50 vs 48.5 on Sonnet), while skill overhead nearly vanishes (**+14% tokens**,
+vs +45%). *Haiku + skills ≈ Sonnet-quality artefacts at a fraction of the cost.*
+
+And **recurring conversion repeats cheaply and safely** — month 2+ costs ~1 minute, and on a
+drifted month the toolkit **excluded the bad row** to exact ground truth where the hand-rolled
+baseline **halted the whole run**. Issues surfaced by testing were filed and fixed upstream, then
+re-verified — inside the benchmark.
+
+Both full reports (Sonnet + Haiku), per-task scores, cost tables and honest limits (**n = 1** per
+cell; on a weak model *at scale* the risk shifts to correctness — see the limits) live in
+**[`benchmark/`](benchmark/)**.
 
 ## Under the hood
 

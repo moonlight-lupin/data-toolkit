@@ -1,0 +1,43 @@
+SCHEMA/SENSE-CHECK FAILURE -- August 2026 GL export conversion STOPPED, nothing written.
+Generated: 2026-07-16 (agent run, Task T7-AUG, condition BASELINE)
+
+Source: fixtures/t7_gl_aug.xlsx
+Tool used: runs_t7_sonnet/T7_base/convert_gl_to_journal_import.py (unmodified, reused from June/July runs)
+
+Result of running the reusable artefact against the August file, verbatim:
+
+    SCHEMA/SENSE-CHECK FAILURE -- conversion STOPPED, nothing written.
+    Source file 'fixtures/t7_gl_aug.xlsx' header does not match the expected shape. STOPPING -- no rows converted.
+      - Missing expected column(s): ['Cost Centre']
+      - Unexpected/new/renamed column(s) present: ['CC Code', 'Approved By']
+      Expected columns: ['Entry No', 'Posting Date', 'Account Code', 'Account Name', 'Description', 'Debit', 'Credit', 'Cost Centre']
+      Found columns:    ['Entry No', 'Posting Date', 'Account Code', 'Account Name', 'Description', 'Debit', 'Credit', 'CC Code', 'Approved By']
+
+Supporting detail gathered (read-only inspection, no conversion attempted):
+  - Source has 114 data rows (115 total rows incl. header), single sheet "GL Export".
+  - "CC Code" contains only the values CC-100, CC-200, CC-300, CC-400, CC-500 -- the same
+    format/range as "Cost Centre" in the June/July files. This is CONSISTENT WITH but not
+    PROOF of a straight rename of the same field; it has not been confirmed with a human.
+  - "Approved By" is a wholly new column, populated with a single constant value "J Ellis"
+    for all 114 rows. It has no mapped destination in the system B contract.
+
+Per the standing rule embedded in convert_gl_to_journal_import.py ("STANDING RULE...
+every month, no exceptions"): a missing/renamed/unexpected column is a STRUCTURAL problem,
+and the whole run must be EXCLUDED/STOPPED rather than silently converted or guessed --
+"if this is a genuine new column from the source system, a human must confirm it before
+this script is updated."
+
+No file named journal_import_aug2026.csv has been produced this run, because doing so
+would require guessing that "CC Code" is a same-meaning rename of "Cost Centre" and
+silently dropping "Approved By" -- exactly the kind of undocumented judgment call the
+standing rule exists to prevent.
+
+ACTION NEEDED (human): confirm whether "CC Code" is the same field as "Cost Centre"
+(rename) and whether "Approved By" should simply be ignored (not part of the output
+contract) or needs a place in the target system. Once confirmed, either:
+  (a) re-export August's GL with the original column names, or
+  (b) update EXPECTED_SOURCE_COLUMNS / the header mapping in
+      convert_gl_to_journal_import.py to reflect the confirmed new source shape,
+      and note the change + date in the script's docstring per its own instructions.
+Then re-run:
+    python convert_gl_to_journal_import.py fixtures/t7_gl_aug.xlsx runs_t7_sonnet/T7_base/journal_import_aug2026.csv

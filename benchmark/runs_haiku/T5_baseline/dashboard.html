@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monthly Review Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #f5f5f5; color: #333; line-height: 1.6; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        .header { background-color: #fff; padding: 20px; margin-bottom: 20px; border-radius: 4px; border-bottom: 2px solid #003d7a; }
+        .header h1 { font-size: 28px; color: #003d7a; margin-bottom: 5px; }
+        .as-of { font-size: 12px; color: #666; font-style: italic; }
+        .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .kpi-card { background-color: #fff; padding: 20px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); border-left: 4px solid #003d7a; }
+        .kpi-label { font-size: 12px; color: #999; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+        .kpi-value { font-size: 32px; font-weight: 600; color: #003d7a; }
+        .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .chart-container { background-color: #fff; padding: 20px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .chart-title { font-size: 16px; font-weight: 600; color: #333; margin-bottom: 15px; }
+        canvas { width: 100% !important; height: auto !important; border: 1px solid #f0f0f0; display: block; }
+        .table-container { background-color: #fff; padding: 20px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .table-title { font-size: 16px; font-weight: 600; color: #333; margin-bottom: 15px; }
+        table { width: 100%; border-collapse: collapse; }
+        thead { background-color: #f5f5f5; border-bottom: 2px solid #ddd; }
+        th { padding: 12px; text-align: left; font-weight: 600; color: #333; font-size: 13px; }
+        td { padding: 12px; border-bottom: 1px solid #eee; font-size: 13px; }
+        tbody tr:hover { background-color: #f9f9f9; }
+        .status-overdue { background-color: #fee5e5; color: #b71c1c; padding: 4px 8px; border-radius: 2px; font-weight: 500; }
+        .status-in-progress { background-color: #fff3cd; color: #856404; padding: 4px 8px; border-radius: 2px; font-weight: 500; }
+        .status-done { background-color: #d4edda; color: #155724; padding: 4px 8px; border-radius: 2px; font-weight: 500; }
+        .status-not-started { background-color: #e2e3e5; color: #383d41; padding: 4px 8px; border-radius: 2px; font-weight: 500; }
+        .footer { background-color: #fff; padding: 15px 20px; border-top: 1px solid #ddd; text-align: right; font-size: 11px; color: #999; margin-top: 30px; border-radius: 4px; }
+        @media print { body { background-color: #fff; } .container { padding: 0; } .header, .kpi-card, .chart-container, .table-container, .footer { page-break-inside: avoid; box-shadow: none; border: 1px solid #ddd; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Monthly Review Dashboard</h1>
+            <div class="as-of">As at 14 Jul 2026</div>
+        </div>
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-label">Total Revenue (12 months)</div>
+                <div class="kpi-value">£1,146,900</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Best Month</div>
+                <div class="kpi-value" style="font-size: 24px;">Jun 2026: £112,600</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Latest Month-on-Month Change</div>
+                <div class="kpi-value" style="color: #2ecc71;">+4.0%</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Overdue Actions</div>
+                <div class="kpi-value" style="color: #e74c3c;">2</div>
+            </div>
+        </div>
+        <div class="charts-grid">
+            <div class="chart-container">
+                <div class="chart-title">Monthly Revenue Trend</div>
+                <canvas id="trendChart" height="300"></canvas>
+            </div>
+            <div class="chart-container">
+                <div class="chart-title">Revenue by Category</div>
+                <canvas id="categoryChart" height="300"></canvas>
+            </div>
+        </div>
+        <div class="table-container">
+            <div class="table-title">Actions Tracker</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Action</th>
+                        <th>Owner</th>
+                        <th>Due Date</th>
+                        <th>Status</th>
+                        <th>Days Overdue</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td>Renew PI insurance</td><td>J Tan</td><td>05 Jul 2026</td><td><span class="status-overdue">Overdue</span></td><td>9</td></tr>
+                    <tr><td>Q2 VAT return</td><td>M Ross</td><td>31 Jul 2026</td><td><span class="status-in-progress">In progress</span></td><td>0</td></tr>
+                    <tr><td>Client survey</td><td>A Rahim</td><td>15 Aug 2026</td><td><span class="status-not-started">Not started</span></td><td>0</td></tr>
+                    <tr><td>Archive FY25 files</td><td>J Tan</td><td>30 Jun 2026</td><td><span class="status-overdue">Overdue</span></td><td>14</td></tr>
+                    <tr><td>Update fee schedule</td><td>M Ross</td><td>20 Jul 2026</td><td><span class="status-in-progress">In progress</span></td><td>0</td></tr>
+                    <tr><td>ISO audit prep</td><td>A Rahim</td><td>10 Jul 2026</td><td><span class="status-done">Done</span></td><td>0</td></tr>                </tbody>
+            </table>
+        </div>
+        <div class="footer">
+            Draft for review only. For use by managing partners only.
+        </div>
+    </div>
+    <script>
+        const monthlyData = [{"month": "Jul 2025", "revenue": 84200.0}, {"month": "Aug 2025", "revenue": 88900.0}, {"month": "Sep 2025", "revenue": 91400.0}, {"month": "Oct 2025", "revenue": 87300.0}, {"month": "Nov 2025", "revenue": 93800.0}, {"month": "Dec 2025", "revenue": 79500.0}, {"month": "Jan 2026", "revenue": 96200.0}, {"month": "Feb 2026", "revenue": 98100.0}, {"month": "Mar 2026", "revenue": 104700.0}, {"month": "Apr 2026", "revenue": 101900.0}, {"month": "May 2026", "revenue": 108300.0}, {"month": "Jun 2026", "revenue": 112600.0}];
+        const categoryData = [{"category": "Advisory", "revenue": 412300.0}, {"category": "Subscriptions", "revenue": 388100.0}, {"category": "Projects", "revenue": 201400.0}, {"category": "Training", "revenue": 84900.0}, {"category": "Other", "revenue": 60200.0}];
+        function drawTrendChart() {
+            const canvas = document.getElementById('trendChart');
+            const ctx = canvas.getContext('2d');
+            const container = canvas.parentElement;
+            const width = container.offsetWidth - 40;
+            const height = 300;
+            canvas.width = width;
+            canvas.height = height;
+            const padding = 50;
+            const graphWidth = width - 2 * padding;
+            const graphHeight = height - 2 * padding;
+            const maxRevenue = Math.max(...monthlyData.map(d => d.revenue));
+            const range = maxRevenue;
+            ctx.strokeStyle = '#e0e0e0';
+            ctx.lineWidth = 1;
+            for (let i = 0; i <= 5; i++) {
+                const y = padding + (graphHeight / 5) * i;
+                ctx.beginPath();
+                ctx.moveTo(padding, y);
+                ctx.lineTo(width - padding, y);
+                ctx.stroke();
+            }
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(padding, padding);
+            ctx.lineTo(padding, height - padding);
+            ctx.lineTo(width - padding, height - padding);
+            ctx.stroke();
+            ctx.strokeStyle = '#003d7a';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            for (let i = 0; i < monthlyData.length; i++) {
+                const x = padding + (graphWidth / (monthlyData.length - 1)) * i;
+                const y = height - padding - (monthlyData[i].revenue / range) * graphHeight;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+            ctx.fillStyle = '#003d7a';
+            for (let i = 0; i < monthlyData.length; i++) {
+                const x = padding + (graphWidth / (monthlyData.length - 1)) * i;
+                const y = height - padding - (monthlyData[i].revenue / range) * graphHeight;
+                ctx.beginPath();
+                ctx.arc(x, y, 4, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+            ctx.fillStyle = '#666';
+            ctx.font = '11px sans-serif';
+            ctx.textAlign = 'center';
+            for (let i = 0; i < monthlyData.length; i++) {
+                const x = padding + (graphWidth / (monthlyData.length - 1)) * i;
+                const label = monthlyData[i].month.split(' ')[0];
+                ctx.fillText(label, x, height - padding + 20);
+            }
+            ctx.textAlign = 'right';
+            for (let i = 0; i <= 5; i++) {
+                const value = (range / 5) * i;
+                const y = height - padding - (graphHeight / 5) * i;
+                ctx.fillText('£' + (value / 1000).toFixed(0) + 'k', padding - 10, y + 4);
+            }
+        }
+        function drawCategoryChart() {
+            const canvas = document.getElementById('categoryChart');
+            const ctx = canvas.getContext('2d');
+            const container = canvas.parentElement;
+            const width = container.offsetWidth - 40;
+            const height = 300;
+            canvas.width = width;
+            canvas.height = height;
+            const centerX = width / 2;
+            const centerY = height / 2.5;
+            const radius = Math.min(width, height) / 3.5;
+            const total = categoryData.reduce((sum, d) => sum + d.revenue, 0);
+            const colors = ['#003d7a', '#0055a4', '#0070cf', '#3b9cff', '#a8d4ff'];
+            let currentAngle = -Math.PI / 2;
+            categoryData.forEach((data, index) => {
+                const sliceAngle = (data.revenue / total) * 2 * Math.PI;
+                ctx.beginPath();
+                ctx.moveTo(centerX, centerY);
+                ctx.arc(centerX, centerY, radius, currentAngle, currentAngle + sliceAngle);
+                ctx.closePath();
+                ctx.fillStyle = colors[index % colors.length];
+                ctx.fill();
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                const labelAngle = currentAngle + sliceAngle / 2;
+                const labelX = centerX + Math.cos(labelAngle) * (radius * 0.65);
+                const labelY = centerY + Math.sin(labelAngle) * (radius * 0.65);
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 11px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                const pct = ((data.revenue / total) * 100).toFixed(0);
+                ctx.fillText(pct + '%', labelX, labelY);
+                currentAngle += sliceAngle;
+            });
+            let legendY = height - 100;
+            ctx.font = '11px sans-serif';
+            ctx.textAlign = 'left';
+            categoryData.forEach((data, index) => {
+                ctx.fillStyle = colors[index % colors.length];
+                ctx.fillRect(20, legendY, 12, 12);
+                ctx.fillStyle = '#333';
+                const value = (data.revenue / 1000).toFixed(0);
+                ctx.fillText(data.category + ' (£' + value + 'k)', 40, legendY + 10);
+                legendY += 18;
+            });
+        }
+        window.addEventListener('load', function() {
+            drawTrendChart();
+            drawCategoryChart();
+        });
+        window.addEventListener('resize', function() {
+            drawTrendChart();
+            drawCategoryChart();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+### 2026-07-14 — data-convert — required: true is report-only; no enforcement semantic, so an invalid row ships in the import file
+- Reporter:        Toolkit benchmark testing (round 3, Claude Haiku 4.5 agents; toolkit v0.5.2)
+- Type:            Enhancement (borderline Bug — the SKILL.md safety framing implies stronger handling)
+- Severity:        Friction (Blocker for unattended repeat use)
+- What I was doing: A recurring monthly GL-export → journal-import conversion run across
+                    three months by three fresh agents. The user contract stated four
+                    required target fields (JournalRef, Date, AccountCode, Amount) and
+                    that a row failing a required field must be flagged and EXCLUDED
+                    from the import file. Month 1's agent saved the conversion card;
+                    month 3's source had one row with a blank Account Code.
+- What happened:    Two compounding gaps:
+                    (1) The spec's `required: true` is report-only — the engine flags
+                    "required-but-missing" in its report but still writes the row to
+                    the output. Month 3's agent saw the flag and shipped the invalid
+                    row anyway ("engine never invents values; source data quality
+                    issue") — the import file contained a journal line with an empty
+                    AccountCode: "E9960,2026-08-06,,Journal 08-005,317.85,CC-100,GLEXPORT".
+                    (2) `render_card` captured the mapping/spec but the month-1 agent
+                    (a smaller model) did not carry the user's standing rule prose into
+                    the card, so month 3's agent had no executable or written rule to
+                    follow — the rule lived only in month 1's conversation.
+- What I expected:  A way to make the exclusion rule part of the deterministic layer:
+                    e.g. `on_required_missing: exclude | keep+flag | fail` per field or
+                    per spec, so a required-missing row is dropped (and counted in the
+                    report) by the engine, not left to each month's model judgement.
+                    Also: a `notes`/`standing_rules` field in the card template that
+                    render_card always emits, so agent-authored cards preserve the
+                    user's stated rules verbatim.
+- Impact:           An import file left the conversion with a row that violates the
+                    downstream system's contract. In the same benchmark leg, a baseline
+                    agent's hand-written runner enforced exclusion in code and produced
+                    the correct 113-row file — i.e. the toolkit's card was the weaker
+                    reusable artefact here, which inverts its usual advantage.
+- Suggested fix:    Add enforcement semantics for required-missing rows to the convert
+                    spec (default keep+flag for backwards compatibility; allow exclude
+                    and fail); count excluded rows in the report; add a standing-rules
+                    section to the card format so confirm-first rules survive hand-off
+                    between sessions/models.
+- Example / file:   Repro: data-toolkit-benchmark/fixtures/t7_gl_aug.xlsx (11th data
+                    row has blank Account Code) with the card in
+                    runs_haiku/T7_skill/convert_gl_to_journal.md; shipped output
+                    runs_haiku/T7_skill/journal_import_aug2026.csv (114 rows, includes
+                    E9960); correct expected output has 113 rows, Amount sum -317.85.

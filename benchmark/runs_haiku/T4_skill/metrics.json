@@ -1,0 +1,314 @@
+{
+  "summary": {
+    "total_gbp": 1083807.0,
+    "total_usd": 37278.0,
+    "count_gbp": 275,
+    "count_usd": 12,
+    "missing_amounts": 3,
+    "total_invoices": 287
+  },
+  "trends_gbp": [
+    {
+      "period": "2025-04",
+      "total": 65142.0,
+      "count": 21
+    },
+    {
+      "period": "2025-05",
+      "total": 62410.0,
+      "count": 21
+    },
+    {
+      "period": "2025-06",
+      "total": 58727.0,
+      "count": 21
+    },
+    {
+      "period": "2025-07",
+      "total": 65363.0,
+      "count": 21
+    },
+    {
+      "period": "2025-08",
+      "total": 64830.0,
+      "count": 21
+    },
+    {
+      "period": "2025-09",
+      "total": 62757.0,
+      "count": 21
+    },
+    {
+      "period": "2025-10",
+      "total": 65584.0,
+      "count": 21
+    },
+    {
+      "period": "2025-11",
+      "total": 0.0,
+      "count": 0
+    },
+    {
+      "period": "2025-12",
+      "total": 72331.0,
+      "count": 21
+    },
+    {
+      "period": "2026-01",
+      "total": 63147.0,
+      "count": 21
+    },
+    {
+      "period": "2026-02",
+      "total": 66041.0,
+      "count": 22
+    },
+    {
+      "period": "2026-03",
+      "total": 313608.0,
+      "count": 22
+    },
+    {
+      "period": "2026-04",
+      "total": 59505.0,
+      "count": 21
+    },
+    {
+      "period": "2026-05",
+      "total": 64362.0,
+      "count": 21
+    }
+  ],
+  "trends_usd": [
+    {
+      "period": "2025-04",
+      "total": 2225.0,
+      "count": 1
+    },
+    {
+      "period": "2025-05",
+      "total": 2004.0,
+      "count": 1
+    },
+    {
+      "period": "2025-06",
+      "total": 7132.0,
+      "count": 1
+    },
+    {
+      "period": "2025-07",
+      "total": 1562.0,
+      "count": 1
+    },
+    {
+      "period": "2025-08",
+      "total": 1341.0,
+      "count": 1
+    },
+    {
+      "period": "2025-09",
+      "total": 4480.0,
+      "count": 1
+    },
+    {
+      "period": "2025-10",
+      "total": 0.0,
+      "count": 1
+    },
+    {
+      "period": "2025-11",
+      "total": 0.0,
+      "count": 0
+    },
+    {
+      "period": "2025-12",
+      "total": 678.0,
+      "count": 1
+    },
+    {
+      "period": "2026-01",
+      "total": 9108.0,
+      "count": 1
+    },
+    {
+      "period": "2026-02",
+      "total": 0.0,
+      "count": 0
+    },
+    {
+      "period": "2026-03",
+      "total": 1679.0,
+      "count": 1
+    },
+    {
+      "period": "2026-04",
+      "total": 5832.0,
+      "count": 1
+    },
+    {
+      "period": "2026-05",
+      "total": 1237.0,
+      "count": 1
+    }
+  ],
+  "customers_gbp_top10": [
+    {
+      "customer": "Bramley & Cole",
+      "total": 581016.0,
+      "pct": 53.60880673404028,
+      "count": 100
+    },
+    {
+      "customer": "Kestrel",
+      "total": 280514.0,
+      "pct": 25.882283469289273,
+      "count": 22
+    },
+    {
+      "customer": "Silverbirch",
+      "total": 33103.0,
+      "pct": 3.0543260931143643,
+      "count": 22
+    },
+    {
+      "customer": "Orchard Lane",
+      "total": 31580.0,
+      "pct": 2.913802918785356,
+      "count": 21
+    },
+    {
+      "customer": "Fenwick",
+      "total": 29951.0,
+      "pct": 2.763499405336928,
+      "count": 20
+    },
+    {
+      "customer": "Marlowe",
+      "total": 27401.0,
+      "pct": 2.528217662369776,
+      "count": 18
+    },
+    {
+      "customer": "Hollis",
+      "total": 27221.0,
+      "pct": 2.5116095393368005,
+      "count": 20
+    },
+    {
+      "customer": "Northgate",
+      "total": 25906.0,
+      "pct": 2.390277973845897,
+      "count": 18
+    },
+    {
+      "customer": "Dunmore",
+      "total": 25412.0,
+      "pct": 2.344697902855398,
+      "count": 18
+    },
+    {
+      "customer": "Verity",
+      "total": 21703.0,
+      "pct": 2.0024783010259206,
+      "count": 16
+    }
+  ],
+  "customers_usd_top10": [
+    {
+      "customer": "Bramley & Cole",
+      "total": 26552.0,
+      "pct": 71.22699715649982,
+      "count": 4
+    },
+    {
+      "customer": "Verity",
+      "total": 5260.0,
+      "pct": 14.110199045013145,
+      "count": 4
+    },
+    {
+      "customer": "Marlowe",
+      "total": 3787.0,
+      "pct": 10.158806802940072,
+      "count": 3
+    },
+    {
+      "customer": "Orchard Lane",
+      "total": 1679.0,
+      "pct": 4.503996995546972,
+      "count": 1
+    }
+  ],
+  "regions_gbp": [
+    {
+      "region": "North",
+      "total": 654146.0,
+      "pct": 60.356318052937475
+    },
+    {
+      "region": "South",
+      "total": 429661.0,
+      "pct": 39.64368194706253
+    }
+  ],
+  "regions_usd": [
+    {
+      "region": "North",
+      "total": 37278.0,
+      "pct": 100.0
+    }
+  ],
+  "outliers_gbp": {
+    "count_high": 5,
+    "high_values": [
+      250000.0,
+      9576.0,
+      9472.0,
+      9316.0,
+      9212.0
+    ]
+  },
+  "outliers_usd": {
+    "count_high": 0,
+    "high_values": []
+  },
+  "summary_gbp": {
+    "n": 273,
+    "mean": 3969.989010989011,
+    "median": 2004.0,
+    "min": 600.0,
+    "max": 250000.0,
+    "p25": 1289.0,
+    "p75": 4428.0
+  },
+  "summary_usd": {
+    "n": 11,
+    "mean": 3388.909090909091,
+    "median": 2004.0,
+    "min": 678.0,
+    "max": 9108.0,
+    "p25": 1341.0,
+    "p75": 5832.0
+  },
+  "anomalies": [
+    {
+      "invoice": "INV-9999",
+      "date": "18/03/2026",
+      "customer": "Kestrel",
+      "amount": 250000.0,
+      "currency": "GBP"
+    }
+  ],
+  "concentration_gbp": {
+    "top1_share": 53.60880673404028,
+    "top3_share": 82.54541629644392,
+    "groups_to_80pct": 3,
+    "n_groups": 10
+  },
+  "concentration_usd": {
+    "top1_share": 71.22699715649982,
+    "top3_share": 95.49600300445303,
+    "groups_to_80pct": 2,
+    "n_groups": 4
+  }
+}

@@ -52,7 +52,7 @@ The raw `Country` column had 7 distinct spellings for 3 countries. The engine's 
 Of the 40 delivered rows, 30 had their Country cell **changed** (a `UK`/`U.K.`/`USA`/`U.S.A.`/`SINGAPORE` spelling rewritten to the canonical form) and 10 already matched the canonical spelling used elsewhere in the file, so needed no change. All 30 changed cells are listed in §6d.
 
 ## 5. Payment date parsing
-Dates arrived in at least three formats: `DD/MM/YYYY`, `YYYY-MM-DD`, and `D Mon YYYY`. All were parsed with a **day-first** convention (UK/SG default, consistent with QIP's core markets) and output as `DD MMM YYYY`.
+Dates arrived in at least three formats: `DD/MM/YYYY`, `YYYY-MM-DD`, and `D Mon YYYY`. All were parsed with a **day-first** convention (UK/SG default, consistent with the test organisation's core markets) and output as `DD MMM YYYY`.
 
 **Assumption flagged for review:** where a slash-date's two numeric parts are both ≤ 12 (e.g. `07/03/2026`), the date is genuinely ambiguous — it could be 7 Mar or 3 Jul. These were resolved as **day/month** (i.e. `07/03/2026` → 07 Mar 2026) per the day-first convention, and each such cell is individually flagged in §6c for finance to sanity-check against the payer's own record if needed. 7 of the 40 delivered rows fall into this ambiguous bucket; slash-dates where one part is >12 (e.g. `16/04/2026`) are unambiguous and not flagged.
 
