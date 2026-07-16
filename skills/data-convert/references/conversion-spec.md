@@ -37,7 +37,10 @@ user's intent, confirm it, then `convert_file(spec, in, out)`.
     "Narration":   { "from": "Memo",             "type": "text" }
   },
   "fx": null,
-  "rules": { "on_unmapped_source": "report", "on_missing_required": "error" }
+  "standing_rules": [
+    "Exclude any row whose required target fields are blank from the import file."
+  ],
+  "rules": { "on_unmapped_source": "report", "on_missing_required": "exclude" }
 }
 ```
 
@@ -65,8 +68,13 @@ user's intent, confirm it, then `convert_file(spec, in, out)`.
   the row's date column (the latest rate whose `as_of` ≤ the row date is used). The engine
   **never fetches** — the agent fetches on the user's instruction, the user approves, and it's
   recorded here.
+- **standing_rules** — a string list of user confirm-first rules to preserve across sessions.
+  `render_card` always emits them as a **Standing rules** section so later agents do not have to
+  rediscover policy from chat history.
 - **rules** — `on_unmapped_source`: `report` (default) | `drop` | `error`;
-  `on_missing_required`: `error` (default) | `blank` | `flag`.
+  `on_missing_required`: `flag` (default — keep row + warn) | `exclude` (drop row from output) |
+  `error` (block writing the file) | `blank` (opt out of required-emptiness checks). Required
+  checks are **per row** after mapping.
 
 ## Field mappings (`map` entries)
 
@@ -146,7 +154,8 @@ Beyond `required`, a target column can carry validators; violations surface in t
 - **Sense-check** (run against the card before applying): a mapped source column missing/renamed,
   a new column, an expected column gone, or a **stale pinned rate** → surfaced to the user; the
   engine does **not** auto-apply over drift.
-- **Contract issues**: a required target field unmapped or empty on every row → `error`; a
+- **Contract issues**: a required target field unmapped → `error`; a required field blank on a
+  row → handled by `on_missing_required` (`flag` / `exclude` / `error`); a
   validator violation (`allowed`/`pattern`/`max_len`/`check`) → `error`; a source column the
   mapping never consumed → `info`/`error` per `on_unmapped_source` (nothing is dropped silently).
 

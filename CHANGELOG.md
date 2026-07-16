@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.3 — 2026-07-16
+
+**data-convert required-field enforcement** — `required: true` is no longer report-adjacent only:
+
+- Per-row required blanks are detected after mapping.
+- `rules.on_missing_required` is implemented: `flag` (default — keep + warn), `exclude` (drop from
+  the output and count `rows_excluded_required`), `error` (block writing), `blank` (opt out).
+- `convert_file` refuses to write when contract issues include `severity: error`.
+- Specs may carry `standing_rules`; `render_card` always emits a **Standing rules** section so
+  confirm-first policy survives hand-off between sessions/models.
+- Example journal-import and payments-upload cards use `exclude` plus standing rules.
+
 ## 0.5.2 — 2026-07-15
 
 Agent-runtime follow-ups (right-sized for attended, human-in-the-loop use):

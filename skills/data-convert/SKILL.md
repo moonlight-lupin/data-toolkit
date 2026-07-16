@@ -24,7 +24,8 @@ clean result.
 
 > **Two jobs, often combined:**
 > 1. **Contract mapping** — map a source onto *another system's* import contract (columns, order,
->    types, required fields), flagging anything unmapped or required-but-missing — never invented.
+>    types, required fields). Unmapped sources are reported; required-but-missing rows follow
+>    `rules.on_missing_required` (`flag` / `exclude` / `error`) — never invent values.
 > 2. **Structural reshape** — `unpivot` (wide→long), `pivot` (long→wide), `flatten`/`nest`
 >    (JSON↔table), `split` (one file→many by a key), `union` (many→one with column alignment).
 
@@ -68,10 +69,15 @@ the target contract, and writes the target format (`csv` / `json` / `xlsx`). It 
 in/out, the **sense-check**, unmapped source columns and required-but-missing target fields.
 
 ### 4. Save the reusable card
+Put the user's standing confirm-first rules on the spec as `standing_rules` (verbatim) before
+rendering — later sessions must not rediscover them from chat.
 ```python
+spec["standing_rules"] = [
+    "Exclude any row whose required target fields are blank from the import file.",
+]
 open("convert_gl_to_journal.md", "w", encoding="utf-8").write(render_card(spec))
 ```
-The **card** is the reusable artefact — a Markdown doc a person can read (purpose, target
+The **card** is the reusable artefact — a Markdown doc a person can read (purpose, standing rules, target
 contract, a Source→Target mapping table, the *Expected source* to verify) **with an embedded
 ` ```convert-spec ` JSON block that is the machine source of truth.** No per-conversion `.py`
 runner: next month an agent reads the card, sense-checks the new export, and re-runs this engine.
