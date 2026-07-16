@@ -8,6 +8,11 @@ submits the import.
 - **Source (example):** a GL export with separate `Debit` / `Credit` columns.
 - **Target:** `csv` — the journal-import contract below.
 
+## Standing rules
+
+- Exclude any row whose required target fields are blank from the import file.
+- Never invent AccountCode, Date, or Amount values.
+
 ## Target contract
 
 | Column | Required | Notes |
@@ -40,6 +45,10 @@ Columns: `Date`, `Account`, `Debit`, `Credit`, `Memo`, `Ref`
 {
   "name": "GL export → journal import",
   "purpose": "Monthly journal upload into the accounting system.",
+  "standing_rules": [
+    "Exclude any row whose required target fields are blank from the import file.",
+    "Never invent AccountCode, Date, or Amount values."
+  ],
   "source": { "format": "csv",
               "expected_columns": ["Date", "Account", "Debit", "Credit", "Memo", "Ref"] },
   "target": { "format": "csv", "contract": "journal_import",
@@ -55,6 +64,6 @@ Columns: `Date`, `Account`, `Debit`, `Credit`, `Memo`, `Ref`
     "Narration":   { "from": "Memo",              "type": "text" },
     "Reference":   { "from": "Ref",               "type": "text" }
   },
-  "rules": { "on_unmapped_source": "report", "on_missing_required": "error" }
+  "rules": { "on_unmapped_source": "report", "on_missing_required": "exclude" }
 }
 ```

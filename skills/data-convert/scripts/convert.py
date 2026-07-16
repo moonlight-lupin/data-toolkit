@@ -329,18 +329,58 @@ def apply_map(header, rows, mapping, fx=None, lookups=None):
     return tcols, out
 
 
+def apply_required_policy(target_header, target_rows, columns, rules=None):
+    """Enforce per-row required target fields according to ``rules.on_missing_required``.
+
+    Modes:
+      - ``flag`` (default): keep the row and emit a warning — backwards-compatible with the
+        historical "report-ish / still write" behaviour once per-row detection is on
+      - ``exclude``: drop the row from the output and count it in the report
+      - ``error``: keep the row in the result set but mark ``severity=error`` so writers refuse
+      - ``blank``: opt out of required-emptiness checks
+    """
+    rules = rules or {}
+    mode = rules.get("on_missing_required", "flag")
+    if mode not in ("flag", "exclude", "error", "blank"):
+        mode = "flag"
+    required = [c["name"] for c in (columns or [])
+                if c.get("required") and c.get("name") in target_header]
+    if mode == "blank" or not required:
+        return list(target_rows), [], 0
+
+    kept, issues, excluded = [], [], 0
+    for idx, row in enumerate(target_rows):
+        missing = [name for name in required if _s(row.get(name)) == ""]
+        if not missing:
+            kept.append(row)
+            continue
+        detail = (f"row {idx + 1}: required field(s) missing: "
+                  + ", ".join(f"'{name}'" for name in missing))
+        issue = {"kind": "required_missing_row", "detail": detail,
+                 "severity": "warning", "row": idx + 1, "fields": missing}
+        if mode == "exclude":
+            excluded += 1
+            issues.append(issue)
+        elif mode == "error":
+            issue["severity"] = "error"
+            kept.append(row)
+            issues.append(issue)
+        else:  # flag
+            kept.append(row)
+            issues.append(issue)
+    return kept, issues, excluded
+
+
 def check_contract(target_header, target_rows, columns, source_header, mapping, rules=None):
-    """Report contract issues: required target fields never populated, and source columns that
-    the mapping never consumed (so nothing is silently dropped)."""
+    """Report contract issues: required target fields not mapped, and source columns that the
+    mapping never consumed (so nothing is silently dropped). Per-row required emptiness is
+    handled by :func:`apply_required_policy`."""
     rules = rules or {}
     issues = []
     required = [c["name"] for c in (columns or []) if c.get("required")]
     for req in required:
         if req not in target_header:
             issues.append({"kind": "missing_required", "detail": f"target field '{req}' is not mapped",
-                           "severity": "error"})
-        elif all(_s(r.get(req)) == "" for r in target_rows):
-            issues.append({"kind": "required_empty", "detail": f"required field '{req}' is empty on every row",
                            "severity": "error"})
     consumed = set()
     for sp in mapping.values():
@@ -581,6 +621,16 @@ def render_card(spec):
     L = [f"# Convert: {name}", ""]
     if spec.get("purpose"):
         L += [spec["purpose"], ""]
+    standing = spec.get("standing_rules") or []
+    if isinstance(standing, str):
+        standing = [standing]
+    if standing:
+        L += ["## Standing rules", ""]
+        for rule in standing:
+            text = _s(rule)
+            if text:
+                L.append(f"- {text}")
+        L.append("")
     L += [f"- **Source:** {src.get('format','?')}" + (f" (sheet `{src['sheet']}`)" if src.get("sheet") else ""),
           f"- **Target:** {tgt.get('format','?')}"
           + (f" — contract `{tgt['contract']}`" if tgt.get("contract") else ""), ""]
@@ -616,24 +666,29 @@ def render_card(spec):
 # Orchestration
 # --------------------------------------------------------------------------- #
 def convert_rows(spec, header, rows, lookups=None):
-    """Pure core: filter -> reshape -> map (+ lookups) -> contract-check + validate. Returns
-    (target_header, target_rows, report). `split`/`nest` are applied by convert_file since they
-    change the output cardinality. `lookups` may be preloaded by convert_file; else inline
-    `map_values` are resolved here."""
+    """Pure core: filter -> reshape -> map (+ lookups) -> required policy -> contract-check +
+    validate. Returns (target_header, target_rows, report). `split`/`nest` are applied by
+    convert_file since they change the output cardinality. `lookups` may be preloaded by
+    convert_file; else inline `map_values` are resolved here."""
     n_in = len(rows)
     rows = apply_filter(rows, spec.get("filter"))
+    n_filtered = n_in - len(rows)
     reshape = [o for o in spec.get("reshape", []) if o["op"] in ("unpivot", "pivot", "flatten")]
     header, rows = apply_reshape(header, rows, reshape)
     mapping, tgt = spec.get("map", {}), spec.get("target", {})
+    rules = spec.get("rules") or {}
     if lookups is None:
         lookups = load_lookups(mapping)              # inline map_values (file tables need a base_dir)
     if mapping:
         t_header, t_rows = apply_map(header, rows, mapping, fx=spec.get("fx"), lookups=lookups)
     else:
         t_header, t_rows = header, rows
-    issues = check_contract(t_header, t_rows, tgt.get("columns"), header, mapping,
-                            spec.get("rules"))
-    report = {"rows_in": n_in, "rows_filtered": n_in - len(rows), "rows_out": len(t_rows),
+    t_rows, required_issues, n_excluded = apply_required_policy(
+        t_header, t_rows, tgt.get("columns"), rules)
+    issues = list(required_issues)
+    issues.extend(check_contract(t_header, t_rows, tgt.get("columns"), header, mapping, rules))
+    report = {"rows_in": n_in, "rows_filtered": n_filtered,
+              "rows_excluded_required": n_excluded, "rows_out": len(t_rows),
               "issues": issues, "target_columns": t_header}
     return t_header, t_rows, report
 
@@ -672,6 +727,11 @@ def convert_file(spec, in_path, out_path, run_dates_after=None, base_dir=None):
     lookups = load_lookups(spec.get("map", {}), base_dir=base_dir)   # resolve file tables here
     t_header, t_rows, report = convert_rows(spec, header, rows, lookups=lookups)
     report["sense_check"] = drift
+    blocking = [i for i in (report.get("issues") or []) if i.get("severity") == "error"]
+    if blocking:
+        report["written"] = []
+        report["blocked"] = True
+        return report
 
     split_op = next((o for o in spec.get("reshape", []) if o["op"] == "split"), None)
     nest_op = next((o for o in spec.get("reshape", []) if o["op"] == "nest"), None)
@@ -699,10 +759,15 @@ def convert_file(spec, in_path, out_path, run_dates_after=None, base_dir=None):
 def render_report(report, *, name="Conversion"):
     L = [f"# {name} — conversion report", ""]
     filt = report.get("rows_filtered") or 0
+    excl = report.get("rows_excluded_required") or 0
     L.append(f"- Rows in: {report['rows_in']}"
              + (f" · filtered out: {filt}" if filt else "")
+             + (f" · excluded (required missing): {excl}" if excl else "")
              + f" · rows out: {report['rows_out']}")
-    L.append(f"- Written: {', '.join(report.get('written', [])) or '(not written)'}")
+    if report.get("blocked"):
+        L.append("- Written: (blocked — contract errors; fix required fields or policy)")
+    else:
+        L.append(f"- Written: {', '.join(report.get('written', [])) or '(not written)'}")
     drift = report.get("sense_check") or []
     if drift:
         L += ["", "## ⚠️ Source sense-check — confirm before relying on this run"]
@@ -773,12 +838,32 @@ def _self_test():
     assert any(i["kind"] == "unmapped_source" and "Account" in i["detail"] for i in rep["issues"]), rep
     print("contract mapping + debit_minus_credit: PASS")
 
-    # required target field empty -> error
+    # required target field empty on a row -> flagged by default (keep + warn)
     spec2 = json.loads(json.dumps(spec))
     spec2["map"]["Amount"] = {"const": "", "compute": "as_is"}
-    _, _, rep2 = convert_rows(spec2, gl_h, gl)
-    assert any(i["kind"] in ("required_empty",) for i in rep2["issues"]), rep2
-    print("contract required-field check: PASS")
+    _, tr2, rep2 = convert_rows(spec2, gl_h, gl)
+    assert len(tr2) == 2 and any(i["kind"] == "required_missing_row" for i in rep2["issues"]), rep2
+    assert (rep2.get("rows_excluded_required") or 0) == 0, rep2
+    # exclude drops the offending rows from the import file
+    spec_ex = json.loads(json.dumps(spec))
+    gl_blank = gl + [{"Date": "15/06/2026", "Account": "", "Debit": "50", "Credit": "",
+                      "Memo": "missing account"}]
+    spec_ex["target"]["columns"] = [{"name": "JournalDate", "required": True},
+                                    {"name": "AccountCode", "required": True},
+                                    {"name": "Amount", "required": True},
+                                    {"name": "Narration"}]
+    spec_ex["map"]["AccountCode"] = {"from": "Account", "type": "text"}
+    spec_ex["rules"] = {"on_missing_required": "exclude", "on_unmapped_source": "report"}
+    _, tr_ex, rep_ex = convert_rows(spec_ex, gl_h, gl_blank)
+    assert len(tr_ex) == 2 and rep_ex["rows_excluded_required"] == 1, (tr_ex, rep_ex)
+    assert all(_s(r.get("AccountCode")) for r in tr_ex), tr_ex
+    # standing_rules always round-trip through render_card prose
+    spec["standing_rules"] = [
+        "Exclude any row whose required target fields are blank from the import file."
+    ]
+    card_rules = render_card(spec)
+    assert "## Standing rules" in card_rules and "Exclude any row" in card_rules, card_rules
+    print("contract required-field enforcement: PASS")
 
     # pinned FX applied as a recorded constant (engine never fetches)
     fx_spec = {"map": {"GBP": {"from": "USD", "compute": "fx_convert", "dp": 2}},

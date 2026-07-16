@@ -8,6 +8,11 @@ the actual payment file.
 - **Source (example):** an approved AP payment run.
 - **Target:** `csv` — the payments-upload contract below.
 
+## Standing rules
+
+- Exclude any row whose required target fields are blank from the upload file.
+- Never invent IBAN, Amount, Currency, or ValueDate values.
+
 ## Target contract
 
 | Column | Required | Notes |
@@ -43,6 +48,10 @@ Columns: `Vendor`, `BankAccount`, `GrossAmount`, `Ccy`, `PaymentDate`, `Invoice`
 {
   "name": "AP payment run → payments upload",
   "purpose": "Turn the approved payment run into the bank portal's upload format.",
+  "standing_rules": [
+    "Exclude any row whose required target fields are blank from the upload file.",
+    "Never invent IBAN, Amount, Currency, or ValueDate values."
+  ],
   "source": { "format": "csv",
               "expected_columns": ["Vendor", "BankAccount", "GrossAmount", "Ccy", "PaymentDate", "Invoice"] },
   "target": { "format": "csv", "contract": "payments_upload",
@@ -60,6 +69,6 @@ Columns: `Vendor`, `BankAccount`, `GrossAmount`, `Ccy`, `PaymentDate`, `Invoice`
     "ValueDate":       { "from": "PaymentDate",         "type": "date", "format": "%Y-%m-%d" },
     "Reference":       { "from": ["Vendor", "Invoice"], "compute": "concat", "sep": " – " }
   },
-  "rules": { "on_unmapped_source": "report", "on_missing_required": "error" }
+  "rules": { "on_unmapped_source": "report", "on_missing_required": "exclude" }
 }
 ```
