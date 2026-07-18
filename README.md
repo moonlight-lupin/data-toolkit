@@ -101,8 +101,12 @@ That writes working papers and HTML dashboards under `examples/out/`. Full notes
   sign off — clearly labelled, never dressed up as a decision or as financial / tax /
   investment advice. See [`PRINCIPLES.md`](PRINCIPLES.md).
 - **White-label ready.** Ships unbranded — a neutral default; pass a `theme` dict
-  (brand name, colours, fonts, local logo) to re-skin dashboards. See
+  (brand name, colours, fonts, local logo) to re-skin HTML dashboards **and** Excel
+  chart workbooks from the same palette. See
   [Onboarding §3](ONBOARDING.md#3-put-your-brand-on-a-dashboard-theme--logo).
+- **Agent-stable interface.** Plans validate against schemas, dry-run before write,
+  confirm-first for irreversible work — `bin/data-toolkit` is the stable entry point
+  (`AGENT-RUNTIME.md`).
 - **Standalone.** Plain Python plus optional libraries for non-spreadsheet inputs. It
   also slots in as a data-prep front end for the rest of the Phronesis Applied suite,
   but depends on none of them.
