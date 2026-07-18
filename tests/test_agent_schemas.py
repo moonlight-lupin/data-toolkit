@@ -36,6 +36,10 @@ def valid_payloads():
         "data-analyse": [
             {"op": "numeric_summary", "column": "Amount"},
             {"op": "period_series", "date_col": "Date", "value": "Amount", "grain": "month"},
+            {"op": "concentration", "by": "Customer", "value": "Amount", "top_n": 4},
+            {"op": "percentile", "column": "Amount", "q": [0.5, 0.9]},
+            {"op": "cohort", "id_col": "Customer", "date_col": "Date", "grain": "month"},
+            {"op": "compare_series", "date_col": "Date", "a_value": "Actual", "b_value": "Budget"},
         ],
         "data-visualise": {
             "title": "Status", "blocks": [
@@ -76,6 +80,27 @@ def test_unknown_operation_and_field_are_rejected():
     assert issues and any("forecast" in item["message"] for item in issues)
     tidy_issues = schemas.validate_payload("data-tidy", {"columns": [{"source": "A", "target": "B", "type": "money"}]})
     assert tidy_issues and any("money" in item["message"] for item in tidy_issues)
+
+
+def test_extended_analyse_ops_validate_and_require_fields():
+    ok = [
+        {"op": "pivot", "rows_col": "Region", "cols_col": "Product", "value": "Amount"},
+        {"op": "rolling", "date_col": "Date", "value": "Amount", "window": 3, "func": "mean"},
+        {"op": "join_on", "on": ["SKU", "Week"], "how": "left"},
+        {"op": "compare_series", "left": {"date_col": "Date", "value": "Amount"},
+         "right": {"date_col": "Week", "value": "Price"}},
+        {"op": "gini", "column": "Share"},
+        {"op": "seasonality", "date_col": "Date", "value": "Amount", "grain": "quarter"},
+    ]
+    assert schemas.validate_payload("data-analyse", ok) == []
+    missing = schemas.validate_payload("data-analyse", [{"op": "concentration"}])
+    assert missing and any("column" in item["message"] or "by" in item["message"] for item in missing)
+    bad_roll = schemas.validate_payload("data-analyse", [{"op": "rolling", "date_col": "Date"}])
+    assert any("window" in item["message"] for item in bad_roll)
+    bad_season = schemas.validate_payload(
+        "data-analyse", [{"op": "seasonality", "date_col": "Date", "grain": "year"}]
+    )
+    assert bad_season
 
 
 def test_plan_validation_runs_schema_before_source():

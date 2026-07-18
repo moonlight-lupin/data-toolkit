@@ -191,6 +191,83 @@ def test_analysis_zero_total_is_preserved():
         assert all(g["share"] is None for g in breakdown["groups"])
 
 
+def test_extended_analyse_ops_runtime():
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        src = td / "sales.json"
+        src.write_text(json.dumps([
+            {"Customer": "Acme", "Date": "2026-01-15", "Amount": 100, "Actual": 100, "Budget": 90},
+            {"Customer": "Acme", "Date": "2026-02-15", "Amount": 120, "Actual": 120, "Budget": 100},
+            {"Customer": "Beta", "Date": "2026-01-20", "Amount": 50, "Actual": 50, "Budget": 60},
+            {"Customer": "Beta", "Date": "2026-02-20", "Amount": 40, "Actual": 40, "Budget": 55},
+            {"Customer": "Acme", "Date": "2026-03-10", "Amount": 130, "Actual": 130, "Budget": 110},
+        ]), encoding="utf-8")
+        out = td / "analysis.json"
+        plan = {
+            "version": 1,
+            "skill": "data-analyse",
+            "input": str(src),
+            "operations": [
+                {"op": "concentration", "by": "Customer", "value": "Amount"},
+                {"op": "trend", "date_col": "Date", "value": "Amount", "grain": "month"},
+                {"op": "rolling", "date_col": "Date", "value": "Amount", "grain": "month", "window": 2},
+                {"op": "compare_series", "date_col": "Date", "a_value": "Actual", "b_value": "Budget",
+                 "a_label": "Actual", "b_label": "Budget", "grain": "month"},
+                {"op": "percentile", "column": "Amount", "q": 0.9},
+                {"op": "correlation_matrix", "columns": ["Amount", "Actual", "Budget"]},
+            ],
+            "output": str(out),
+            "approval": {"confirmed": True},
+        }
+        result = ar.run_plan(plan, base_dir=td)
+        assert result["status"] == "success", result
+        by_op = {item["op"]: item["result"] for item in result["details"]["results"]}
+        assert by_op["concentration"]["classification"] in (
+            "fragmented", "moderate", "concentrated", "highly concentrated"
+        )
+        assert by_op["trend"]["classification"]
+        assert len(by_op["rolling"]["series"]) >= 2
+        assert by_op["compare_series"]["n"] >= 2
+        assert by_op["percentile"]["value"] is not None
+        assert by_op["correlation_matrix"]["columns"] == ["Amount", "Actual", "Budget"]
+        assert out.exists()
+
+
+def test_analyse_join_on_two_inputs():
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        left = td / "ours.json"
+        right = td / "theirs.json"
+        left.write_text(json.dumps([
+            {"SKU": "A", "Week": "2026-W01", "Sales": 10},
+            {"SKU": "B", "Week": "2026-W01", "Sales": 20},
+        ]), encoding="utf-8")
+        right.write_text(json.dumps([
+            {"SKU": "A", "Week": "2026-W01", "Price": 5},
+            {"SKU": "C", "Week": "2026-W01", "Price": 7},
+        ]), encoding="utf-8")
+        plan = {
+            "version": 1,
+            "skill": "data-analyse",
+            "inputs": [str(left), str(right)],
+            "operations": [{"op": "join_on", "on": ["SKU", "Week"], "how": "left"}],
+            "output": str(td / "join.json"),
+            "approval": {"confirmed": True},
+        }
+        result = ar.run_plan(plan, base_dir=td)
+        assert result["status"] == "success", result
+        report = result["details"]["results"][0]["result"]["report"]
+        assert report["matched"] == 1
+        assert report["left_only"] == 1
+        bad = ar.validate_plan({
+            "version": 1, "skill": "data-analyse", "input": str(left),
+            "operations": [{"op": "join_on", "on": "SKU"}],
+            "output": "x.json", "approval": {"confirmed": True},
+        }, check_sources=False)
+        assert bad["status"] == "error"
+        assert any("two inputs" in e for e in bad["errors"])
+
+
 def test_tidy_json_runtime():
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
@@ -427,6 +504,8 @@ def main():
         ("explicit multi-source union", test_multiple_conversion_inputs_require_explicit_union),
         ("extract fields validation", test_extract_fields_validation_does_not_parse_as_table),
         ("analysis zero total", test_analysis_zero_total_is_preserved),
+        ("extended analyse ops", test_extended_analyse_ops_runtime),
+        ("analyse join_on two inputs", test_analyse_join_on_two_inputs),
         ("tidy JSON runtime", test_tidy_json_runtime),
         ("reconcile JSON runtime", test_reconcile_json_runtime),
         ("visualise declarative runtime", test_visualise_declarative_runtime),

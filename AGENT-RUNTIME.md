@@ -240,8 +240,18 @@ Table mode uses one input and supplies `page`, `index`, and optionally a tidy `r
 ```
 
 Supported operations are `numeric_summary`, `outliers_iqr`, `breakdown`, `period_series`,
-`ageing`, and `currency_mix`. Zero and net-zero totals remain zero; concentration shares are
-`null` where the denominator is not meaningful.
+`ageing`, `currency_mix`, `concentration`, `pivot`, `distribution`, `trend`, `percentile`,
+`cohort`, `correlation_matrix`, `rolling`, `gini`, `seasonality`, `join_on`, and
+`compare_series`.
+
+- `concentration` / `gini`: pass `by` (+ optional `value`) to aggregate group totals first, or
+  `column` when the column is already one value per group.
+- `trend` / `rolling` / `seasonality`: built from `date_col` (+ optional `value` / `grain`).
+  `seasonality.grain` is `month` or `quarter` only. `rolling` requires `window`.
+- `join_on` and two-input `compare_series` (`left` / `right`) require exactly two plan inputs.
+  Same-table `compare_series` uses `date_col` + `a_value` + `b_value`.
+- Zero and net-zero totals remain zero; concentration shares are `null` where the denominator
+  is not meaningful.
 
 ### Visualise
 

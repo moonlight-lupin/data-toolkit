@@ -1,1 +1,191 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://data-toolkit.local/schemas/analysis-plan.schema.json","title":"Data Analyse operations","type":"array","items":{"type":"object","required":["op"],"properties":{"op":{"enum":["numeric_summary","outliers_iqr","breakdown","period_series","ageing","currency_mix"]},"name":{"type":"string"},"column":{"type":"string","minLength":1},"by":{"type":"string","minLength":1},"value":{"type":"string"},"top":{"type":"integer","minimum":1},"k":{"type":["number","string"]},"cap":{"type":"integer","minimum":1},"date_col":{"type":"string","minLength":1},"grain":{"enum":["month","quarter","year"]},"dayfirst":{"type":"boolean"},"as_of":{"type":"string","minLength":1},"buckets":{"type":"array","minItems":1,"items":{"type":"integer","minimum":0}}},"allOf":[{"if":{"properties":{"op":{"enum":["numeric_summary","outliers_iqr","currency_mix"]}},"required":["op"]},"then":{"required":["column"]}},{"if":{"properties":{"op":{"const":"breakdown"}},"required":["op"]},"then":{"required":["by"]}},{"if":{"properties":{"op":{"const":"period_series"}},"required":["op"]},"then":{"required":["date_col"]}},{"if":{"properties":{"op":{"const":"ageing"}},"required":["op"]},"then":{"required":["date_col","as_of"]}}],"additionalProperties":false}}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://data-toolkit.local/schemas/analysis-plan.schema.json",
+  "title": "Data Analyse operations",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["op"],
+    "properties": {
+      "op": {
+        "enum": [
+          "numeric_summary",
+          "outliers_iqr",
+          "breakdown",
+          "period_series",
+          "ageing",
+          "currency_mix",
+          "concentration",
+          "pivot",
+          "distribution",
+          "trend",
+          "percentile",
+          "cohort",
+          "correlation_matrix",
+          "rolling",
+          "gini",
+          "seasonality",
+          "join_on",
+          "compare_series"
+        ]
+      },
+      "name": {"type": "string"},
+      "column": {"type": "string", "minLength": 1},
+      "by": {"type": "string", "minLength": 1},
+      "value": {"type": "string"},
+      "top": {"type": "integer", "minimum": 1},
+      "top_n": {"type": "integer", "minimum": 1},
+      "k": {"type": ["number", "string"]},
+      "cap": {"type": "integer", "minimum": 1},
+      "date_col": {"type": "string", "minLength": 1},
+      "grain": {"enum": ["month", "quarter", "year"]},
+      "dayfirst": {"type": "boolean"},
+      "as_of": {"type": "string", "minLength": 1},
+      "buckets": {
+        "type": "array",
+        "minItems": 1,
+        "items": {"type": "integer", "minimum": 0}
+      },
+      "rows_col": {"type": "string", "minLength": 1},
+      "cols_col": {"type": "string", "minLength": 1},
+      "aggfunc": {"enum": ["sum", "count", "mean"]},
+      "q": {
+        "oneOf": [
+          {"type": "number", "minimum": 0, "maximum": 1},
+          {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "number", "minimum": 0, "maximum": 1}
+          }
+        ]
+      },
+      "id_col": {"type": "string", "minLength": 1},
+      "columns": {
+        "type": "array",
+        "minItems": 2,
+        "items": {"type": "string", "minLength": 1}
+      },
+      "window": {"type": "integer", "minimum": 1},
+      "func": {"enum": ["mean", "sum", "median"]},
+      "on": {
+        "oneOf": [
+          {"type": "string", "minLength": 1},
+          {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1}
+          }
+        ]
+      },
+      "how": {"enum": ["inner", "left"]},
+      "a_value": {"type": "string", "minLength": 1},
+      "b_value": {"type": "string", "minLength": 1},
+      "a_label": {"type": "string", "minLength": 1},
+      "b_label": {"type": "string", "minLength": 1},
+      "left": {
+        "type": "object",
+        "required": ["date_col"],
+        "properties": {
+          "date_col": {"type": "string", "minLength": 1},
+          "value": {"type": "string"},
+          "dayfirst": {"type": "boolean"}
+        },
+        "additionalProperties": false
+      },
+      "right": {
+        "type": "object",
+        "required": ["date_col"],
+        "properties": {
+          "date_col": {"type": "string", "minLength": 1},
+          "value": {"type": "string"},
+          "dayfirst": {"type": "boolean"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "allOf": [
+      {
+        "if": {
+          "properties": {
+            "op": {
+              "enum": ["numeric_summary", "outliers_iqr", "currency_mix", "distribution"]
+            }
+          },
+          "required": ["op"]
+        },
+        "then": {"required": ["column"]}
+      },
+      {
+        "if": {"properties": {"op": {"const": "breakdown"}}, "required": ["op"]},
+        "then": {"required": ["by"]}
+      },
+      {
+        "if": {"properties": {"op": {"const": "period_series"}}, "required": ["op"]},
+        "then": {"required": ["date_col"]}
+      },
+      {
+        "if": {"properties": {"op": {"const": "ageing"}}, "required": ["op"]},
+        "then": {"required": ["date_col", "as_of"]}
+      },
+      {
+        "if": {
+          "properties": {"op": {"enum": ["concentration", "gini"]}},
+          "required": ["op"]
+        },
+        "then": {
+          "anyOf": [
+            {"required": ["column"]},
+            {"required": ["by"]}
+          ]
+        }
+      },
+      {
+        "if": {"properties": {"op": {"const": "pivot"}}, "required": ["op"]},
+        "then": {"required": ["rows_col", "cols_col"]}
+      },
+      {
+        "if": {
+          "properties": {"op": {"enum": ["trend", "rolling", "seasonality"]}},
+          "required": ["op"]
+        },
+        "then": {"required": ["date_col"]}
+      },
+      {
+        "if": {"properties": {"op": {"const": "rolling"}}, "required": ["op"]},
+        "then": {"required": ["window"]}
+      },
+      {
+        "if": {"properties": {"op": {"const": "seasonality"}}, "required": ["op"]},
+        "then": {
+          "properties": {"grain": {"enum": ["month", "quarter"]}}
+        }
+      },
+      {
+        "if": {"properties": {"op": {"const": "percentile"}}, "required": ["op"]},
+        "then": {"required": ["column", "q"]}
+      },
+      {
+        "if": {"properties": {"op": {"const": "cohort"}}, "required": ["op"]},
+        "then": {"required": ["id_col", "date_col"]}
+      },
+      {
+        "if": {"properties": {"op": {"const": "correlation_matrix"}}, "required": ["op"]},
+        "then": {"required": ["columns"]}
+      },
+      {
+        "if": {"properties": {"op": {"const": "join_on"}}, "required": ["op"]},
+        "then": {"required": ["on"]}
+      },
+      {
+        "if": {"properties": {"op": {"const": "compare_series"}}, "required": ["op"]},
+        "then": {
+          "anyOf": [
+            {"required": ["date_col", "a_value", "b_value"]},
+            {"required": ["left", "right"]}
+          ]
+        }
+      }
+    ],
+    "additionalProperties": false
+  }
+}

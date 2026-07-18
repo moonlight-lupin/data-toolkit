@@ -424,6 +424,18 @@ def validate_plan(plan: dict[str, Any], *, base_dir: str | Path | None = None,
         errors.append("data-convert requires spec")
     if skill == "data-analyse" and not isinstance(plan.get("operations"), list):
         errors.append("data-analyse requires an operations list")
+    if skill == "data-analyse" and isinstance(plan.get("operations"), list):
+        needs_two = False
+        for op in plan["operations"]:
+            if not isinstance(op, dict):
+                continue
+            name = op.get("op")
+            if name == "join_on":
+                needs_two = True
+            elif name == "compare_series" and ("left" in op or "right" in op):
+                needs_two = True
+        if needs_two and len(inputs) != 2:
+            errors.append("join_on and two-input compare_series require exactly two inputs")
     if skill == "data-tidy" and not plan.get("recipe"):
         errors.append("data-tidy requires recipe")
     if skill == "data-extract" and plan.get("mode", "fields") not in ("fields", "table"):
@@ -496,18 +508,47 @@ def _prepare_write(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
 
+_ANALYSE_OPS = frozenset({
+    "numeric_summary", "outliers_iqr", "breakdown", "period_series", "ageing", "currency_mix",
+    "concentration", "pivot", "distribution", "trend", "percentile", "cohort",
+    "correlation_matrix", "rolling", "gini", "seasonality", "join_on", "compare_series",
+})
+
+
+def _table_matrix(table) -> tuple[list[str], list[list[Any]]]:
+    header = table.header
+    rows = [[row.get(c, "") for c in header] for row in table.rows]
+    return header, rows
+
+
+def _period_pairs(ts: dict[str, Any]) -> list[tuple[str, Any]]:
+    """Map period_series output to (period, measure) pairs for trend/rolling/compare."""
+    return [
+        (p["period"], p["total"] if "total" in p else p["count"])
+        for p in ts.get("periods", [])
+    ]
+
+
+def _group_totals(analyse, header, rows, by: str, value: str | None) -> list[Any]:
+    """All group totals for concentration/gini — do not truncate like breakdown's top=."""
+    bd = analyse.breakdown(header, rows, by, value=value, top=max(len(rows), 1))
+    return [g["total"] if "total" in g else g["count"] for g in bd["groups"]]
+
+
 def _run_analyse(plan: dict[str, Any], base: Path, dry_run: bool,
               approval_key: str | bytes | None = None) -> dict[str, Any]:
     import analyse
-    table = read_table(_normalise_inputs(plan)[0], base_dir=base)
-    header = table.header
-    rows = [[row.get(c, "") for c in header] for row in table.rows]
+    inputs = _normalise_inputs(plan)
+    tables = [read_table(source, base_dir=base) for source in inputs]
+    header, rows = _table_matrix(tables[0])
+    right_header = right_rows = None
+    if len(tables) > 1:
+        right_header, right_rows = _table_matrix(tables[1])
     results: list[dict[str, Any]] = []
     warnings: list[str] = []
-    allowed = {"numeric_summary", "outliers_iqr", "breakdown", "period_series", "ageing", "currency_mix"}
     for i, op in enumerate(plan.get("operations", [])):
-        if not isinstance(op, dict) or op.get("op") not in allowed:
-            raise PlanError(f"operations[{i}].op must be one of {sorted(allowed)}")
+        if not isinstance(op, dict) or op.get("op") not in _ANALYSE_OPS:
+            raise PlanError(f"operations[{i}].op must be one of {sorted(_ANALYSE_OPS)}")
         name = op["op"]
         if name == "numeric_summary":
             result = analyse.numeric_summary(analyse.column(header, rows, op["column"]))
@@ -524,20 +565,100 @@ def _run_analyse(plan: dict[str, Any], base: Path, dry_run: bool,
             result = analyse.ageing(header, rows, op["date_col"], as_of=op["as_of"],
                                     buckets=tuple(op.get("buckets", [30, 60, 90])), value=op.get("value"),
                                     dayfirst=op.get("dayfirst", True))
-        else:
+        elif name == "currency_mix":
             values = analyse.column(header, rows, op["column"])
             result = {"currencies": sorted(x for x in analyse.currency_mix(values) if x is not None)}
+        elif name in {"concentration", "gini"}:
+            if op.get("by"):
+                values = _group_totals(analyse, header, rows, op["by"], op.get("value"))
+            else:
+                values = analyse.column(header, rows, op["column"])
+            if name == "concentration":
+                result = analyse.concentration(values, top_n=int(op.get("top_n", 4)))
+            else:
+                result = analyse.gini(values)
+        elif name == "pivot":
+            result = analyse.pivot(header, rows, op["rows_col"], op["cols_col"],
+                                   value=op.get("value"), aggfunc=op.get("aggfunc", "sum"))
+        elif name == "distribution":
+            result = analyse.distribution(analyse.column(header, rows, op["column"]))
+        elif name == "percentile":
+            result = analyse.percentile(analyse.column(header, rows, op["column"]), op["q"])
+        elif name == "cohort":
+            result = analyse.cohort(header, rows, op["id_col"], op["date_col"],
+                                    value=op.get("value"), grain=op.get("grain", "month"),
+                                    dayfirst=op.get("dayfirst", True))
+        elif name == "correlation_matrix":
+            result = analyse.correlation_matrix(header, rows, op["columns"])
+        elif name == "seasonality":
+            grain = op.get("grain", "month")
+            if grain not in ("month", "quarter"):
+                raise PlanError(f"operations[{i}].grain for seasonality must be month or quarter")
+            result = analyse.seasonality(header, rows, op["date_col"], value=op.get("value"),
+                                         grain=grain, dayfirst=op.get("dayfirst", True))
+        elif name in {"trend", "rolling"}:
+            ts = analyse.period_series(header, rows, op["date_col"], value=op.get("value"),
+                                       grain=op.get("grain", "month"), dayfirst=op.get("dayfirst", True))
+            series = _period_pairs(ts)
+            if name == "trend":
+                result = analyse.trend(series)
+            else:
+                smoothed = analyse.rolling(series, int(op["window"]), func=op.get("func", "mean"))
+                result = {
+                    "window": int(op["window"]),
+                    "func": op.get("func", "mean"),
+                    "grain": op.get("grain", "month"),
+                    "series": [{"period": k, "value": v} for k, v in smoothed],
+                }
+        elif name == "join_on":
+            if right_header is None or right_rows is None:
+                raise PlanError("join_on requires exactly two inputs")
+            jh, jr, report = analyse.join_on(
+                header, rows, right_header, right_rows, on=op["on"], how=op.get("how", "inner"),
+            )
+            result = {"header": jh, "rows": jr, "report": report}
+        else:  # compare_series
+            a_label = op.get("a_label", "A")
+            b_label = op.get("b_label", "B")
+            grain = op.get("grain", "month")
+            if "left" in op or "right" in op:
+                if right_header is None or right_rows is None or "left" not in op or "right" not in op:
+                    raise PlanError("two-input compare_series requires left, right, and exactly two inputs")
+                left, right = op["left"], op["right"]
+                a_ts = analyse.period_series(
+                    header, rows, left["date_col"], value=left.get("value"),
+                    grain=grain, dayfirst=left.get("dayfirst", op.get("dayfirst", True)),
+                )
+                b_ts = analyse.period_series(
+                    right_header, right_rows, right["date_col"], value=right.get("value"),
+                    grain=grain, dayfirst=right.get("dayfirst", op.get("dayfirst", True)),
+                )
+            else:
+                a_ts = analyse.period_series(
+                    header, rows, op["date_col"], value=op["a_value"],
+                    grain=grain, dayfirst=op.get("dayfirst", True),
+                )
+                b_ts = analyse.period_series(
+                    header, rows, op["date_col"], value=op["b_value"],
+                    grain=grain, dayfirst=op.get("dayfirst", True),
+                )
+            result = analyse.compare_series(
+                _period_pairs(a_ts), _period_pairs(b_ts), a_label=a_label, b_label=b_label,
+            )
         results.append({"name": op.get("name", name), "op": name, "result": result})
     output = _output_path(plan, base, "analysis.json")
+    sources = [t.path for t in tables]
+    payload = {"source": sources[0], "sources": sources, "results": results}
     if not dry_run:
         _prepare_write(output)
-        output.write_text(json.dumps(_clean_for_json({"source": table.path, "results": results}), indent=2),
-                          encoding="utf-8")
+        output.write_text(json.dumps(_clean_for_json(payload), indent=2), encoding="utf-8")
     return envelope(status="success_with_warnings" if warnings else "success", skill="data-analyse",
                     action="dry-run" if dry_run else "run",
                     artifacts=[] if dry_run else [{"path": str(output), "kind": "analysis_metrics"}],
-                    warnings=warnings, metrics={"rows_in": len(table.rows), "operations": len(results)},
-                    details={"source": table.path, "results": results})
+                    warnings=warnings,
+                    metrics={"rows_in": len(tables[0].rows), "operations": len(results),
+                             "sources": len(tables)},
+                    details=payload)
 
 
 def _run_convert(plan: dict[str, Any], base: Path, dry_run: bool,
