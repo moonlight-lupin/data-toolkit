@@ -55,6 +55,9 @@ For a **multi-tab workbook** it won't guess: `read_any` auto-selects the single 
 but if several tabs hold data it raises `SheetSelectionRequired` — call `ingest.list_sheets(path)`,
 show the tabs, then `read_any(path, sheet="<name>")`.
 
+For files with 10k+ rows, use `ingest.read_large` instead of `read_any` to avoid OOM. See
+`references/large-file-patterns.md` for vectorised operation guidance.
+
 ### 2 — Profile (against the target)
 `dataclean.profile_table(header, rows)` / `dataclean.render_profile(...)` — shows columns,
 inferred types (incl. **categorical** / **ordinal**), % missing, distinct counts, sample

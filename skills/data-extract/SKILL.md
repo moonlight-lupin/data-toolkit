@@ -89,6 +89,23 @@ rows = extract.get_table("report.pdf", page=1, index=0)
 Tesseract OCR** (`ingest.ocr_available()` to check). OCR use is noted in the ingest/read_text
 note as lower-fidelity; it is not tagged per row.
 
+### Image inputs — charts, table screenshots, diagrams
+When the source is a **chart, table screenshot, UI capture, or diagram image** (`.png` /
+`.jpg` / `.jpeg` / `.gif` / `.webp` / `.bmp`), use `scripts/image_extract.py` to extract
+structured data via a vision model — **not** Tesseract (Tesseract mangles tables and cannot
+read chart data points):
+
+```bash
+python scripts/image_extract.py chart.png -o extracted.xlsx
+python scripts/image_extract.py ./screenshots/ -o batch.xlsx   # one sheet per image + combined
+```
+
+Classification + prompts: `references/image-prompts.md`. Requires a vision-capable
+OpenAI-compatible endpoint (`VISION_API_KEY` / `OPENAI_API_KEY`, optional `VISION_BASE_URL` /
+`VISION_MODEL`). Without a key the script exits clearly — it does not silently fall back to
+OCR. Results are cached by file+prompt hash; large images (>5MB / >2048px) are compressed
+before the API call.
+
 ### 3 — Normalise, output, report
 For tables, pass the rows through the shared recipe just like tidy
 (`dataclean.apply_recipe`). For batched forms:
@@ -148,7 +165,10 @@ Word and `.msg` still work; only image/scanned pages need it. Windows install:
   `get_table`, `render_fields_report`; reuses `dataclean` + `ingest`; `--self-test`.
 - `../../scripts/dataclean.py` *(shared)* — the engine + **`emit_runner`** (reuse runners/cards).
 - `../../scripts/ingest.py` *(shared)* — source adapters incl. `read_text` + local-OCR.
+- `scripts/image_extract.py` — vision-model extraction for chart / table / UI / diagram images;
+  `parse_markdown_table`, batch → styled `.xlsx`.
 - `references/extraction-guide.md` — field-list spec, table selection, extract-vs-tidy, reuse.
+- `references/image-prompts.md` — image-type → prompt strategy table.
 - `examples/sample_subscription_confirmation.pdf` — a synthetic form to try `extract_fields`.
 
 ## Principles
@@ -157,13 +177,17 @@ Behavioural charter: `../../PRINCIPLES.md` — drafts not advice, never invent, 
 calibration, plain speech, action boundary.
 
 ## Data handling
-The engine runs **on your machine** and makes no network calls (local OCR only). The documents are
-often sensitive or confidential (subscription confirmations, statements, certificates name parties
-and amounts). **Never send a document, its text, or OCR of it to an external or third-party tool**;
-the extracted `.xlsx` stays in your synced or shared file store. Be aware the AI agent driving this
-skill sends whatever it reads into its context to your AI provider, as in any AI-assisted work. Full
-rule: `../../DATA-HANDLING.md`. (No external connector — files are local paths in your synced
-or shared file store.)
+The engine runs **on your machine** and makes no network calls for PDF/form/table extraction
+(local OCR only). **Image/chart extraction** (`image_extract.py`) is the exception: it sends
+the (possibly compressed) image to a user-configured vision API — treat that like any other
+external tool under `DATA-HANDLING.md` (de-identify first when the image holds PII or
+confidential figures). The documents are often sensitive or confidential (subscription
+confirmations, statements, certificates name parties and amounts). **Never send a document,
+its text, or OCR of it to an external or third-party tool** unless the user has explicitly
+chosen vision extraction for an image; the extracted `.xlsx` stays in your synced or shared
+file store. Be aware the AI agent driving this skill sends whatever it reads into its context
+to your AI provider, as in any AI-assisted work. Full rule: `../../DATA-HANDLING.md`.
+(No external connector — files are local paths in your synced or shared file store.)
 
 ## Feedback
 Have an improvement or found a bug in this skill? Capture it with the toolkit's
@@ -176,4 +200,6 @@ user to file (e.g. in your synced or shared file store) — manual, no fixed des
 Pre-screen: see `../../COMPATIBILITY.md` and run `python ../../scripts/envcheck.py`. Needs
 Python + `PyMuPDF` (PDF), `openpyxl` (output); `pdfplumber` (optional — preferred for messy /
 borderless PDF tables), `python-docx` for `.docx`, `extract_msg` for `.msg`; **local Tesseract**
-only for scanned-document OCR (degrades cleanly without it).
+only for scanned-document OCR (degrades cleanly without it). **Image/chart extraction** needs a
+vision-capable OpenAI-compatible API endpoint + key (`Pillow`, `requests`, `pandas` optional
+helpers) — without it `image_extract.py` exits clearly and does not fall back to Tesseract.

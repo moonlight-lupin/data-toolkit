@@ -7,3 +7,12 @@ jsonschema>=4.18.0
 #   pdfplumber       messy / borderless PDF tables
 #   python-docx      Word .docx
 #   extract-msg      Outlook .msg
+#   pandas           large-file path (ingest.read_large / streaming.optimize_dtypes)
+#   pyarrow          large-file Parquet cache/stream (python_version >= "3.9")
+#   Pillow           image compression for data-extract image_extract.py
+#   requests         vision API calls for image_extract.py (often already present)
+
+# Optional extras (uncomment or pip-install as needed):
+# pandas>=2.0.0
+# pyarrow>=14.0.0; python_version >= "3.9"
+# Pillow>=10.0.0
