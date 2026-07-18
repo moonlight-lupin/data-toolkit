@@ -533,13 +533,27 @@ def test_optimize_dtypes_saves_memory():
     import streaming
     import pandas as pd
     import numpy as np
-    n = 20_000
+    n = 50_000
+    # Mixed finance-shaped frame: wide int64/float64 + long repeated object labels.
+    # Category conversion on long strings is where most of the saving comes from.
+    regions = np.array(
+        ["Asia-Pacific regional coverage office"] * (n // 4)
+        + ["Europe Middle East Africa desk"] * (n // 4)
+        + ["Americas institutional coverage"] * (n // 4)
+        + ["Global multi-strategy allocation"] * (n // 4),
+        dtype=object,
+    )
+    statuses = np.array(
+        ["open - pending settlement review"] * (n // 2)
+        + ["closed - archived prior period"] * (n // 2),
+        dtype=object,
+    )
     df = pd.DataFrame({
-        "id": np.arange(n, dtype="int64"),                    # downcast → int16/int32
-        "flag": np.zeros(n, dtype="int64"),                   # → int8
-        "amt": np.linspace(0.0, 1.0, n).astype("float64"),    # → float32
-        "region": np.array(["APAC", "EMEA", "AMER", "APAC"] * (n // 4), dtype=object),
-        "status": np.array(["open", "closed"] * (n // 2), dtype=object),
+        "id": np.arange(n, dtype="int64"),
+        "flag": np.zeros(n, dtype="int64"),
+        "amt": np.linspace(0.0, 1.0, n).astype("float64"),
+        "region": regions,
+        "status": statuses,
     })
     before = df.memory_usage(deep=True).sum()
     out = streaming.optimize_dtypes(df)

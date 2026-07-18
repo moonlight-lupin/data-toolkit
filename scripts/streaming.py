@@ -315,13 +315,22 @@ def optimize_dtypes(df):
     before = df.memory_usage(deep=True).sum()
     out = df.copy()
 
+    def _is_stringy(s) -> bool:
+        if pd.api.types.is_object_dtype(s):
+            return True
+        # pandas 2.1+ / 3.x may infer Python ``str`` or StringDtype instead of object
+        dt = s.dtype
+        if isinstance(dt, pd.StringDtype):
+            return True
+        return str(dt) in ("string", "str", "string[python]", "string[pyarrow]")
+
     for col in out.columns:
         s = out[col]
         if pd.api.types.is_integer_dtype(s):
             out[col] = pd.to_numeric(s, downcast="integer")
         elif pd.api.types.is_float_dtype(s):
             out[col] = pd.to_numeric(s, downcast="float")
-        elif pd.api.types.is_object_dtype(s) or str(s.dtype) == "string":
+        elif _is_stringy(s):
             n = len(s)
             if n == 0:
                 continue
