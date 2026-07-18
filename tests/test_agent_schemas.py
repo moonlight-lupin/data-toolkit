@@ -93,6 +93,20 @@ def test_visualise_analysis_shortcut_and_new_blocks_schema():
     }) == []
     missing = schemas.validate_payload("data-visualise", {"title": "X", "blocks": [{"type": "heatmap"}]})
     assert any(item["path"] == "/blocks/0" and "matrix" in item["message"] for item in missing)
+    assert schemas.validate_payload("data-visualise", {
+        "title": "Excel charts",
+        "blocks": [{
+            "type": "chart",
+            "chart_type": "column",
+            "title": "By region",
+            "categories": ["North", "South"],
+            "series": [{"name": "Amount", "values": [1, 2]}],
+        }],
+    }) == []
+    bad_chart = schemas.validate_payload("data-visualise", {
+        "title": "X", "blocks": [{"type": "chart", "chart_type": "column"}],
+    })
+    assert bad_chart
 
 
 def test_plan_validation_runs_schema_before_source():

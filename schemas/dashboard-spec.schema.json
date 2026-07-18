@@ -35,11 +35,52 @@
             "table",
             "section",
             "grid",
-            "from_analysis"
+            "from_analysis",
+            "chart"
           ]
         },
         "title": {"type": "string"},
         "unit": {"type": "string"},
+        "chart_type": {
+          "enum": ["column", "bar", "line", "pie", "doughnut", "waterfall"]
+        },
+        "categories": {
+          "type": "array",
+          "items": {}
+        },
+        "series": {
+          "oneOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["name", "values"],
+                "properties": {
+                  "name": {"type": "string"},
+                  "values": {"type": "array"},
+                  "label": {"type": "string"},
+                  "data": {"type": "array"}
+                },
+                "additionalProperties": false
+              }
+            },
+            {"type": "object"}
+          ]
+        },
+        "legend": {"type": "boolean"},
+        "colors": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "anchor": {"type": "string", "minLength": 1},
+        "width": {"type": ["number", "integer"], "minimum": 1},
+        "height": {"type": ["number", "integer"], "minimum": 1},
+        "increase_color": {"type": "string"},
+        "decrease_color": {"type": "string"},
+        "total_color": {"type": "string"},
+        "increaseColor": {"type": "string"},
+        "decreaseColor": {"type": "string"},
+        "totalColor": {"type": "string"},
         "items": {
           "type": "array",
           "items": {
@@ -121,6 +162,16 @@
         {
           "if": {"properties": {"type": {"const": "waterfall"}}, "required": ["type"]},
           "then": {"required": ["steps"]}
+        },
+        {
+          "if": {"properties": {"type": {"const": "chart"}}, "required": ["type"]},
+          "then": {
+            "required": ["chart_type"],
+            "anyOf": [
+              {"required": ["categories", "series"]},
+              {"required": ["steps"]}
+            ]
+          }
         }
       ],
       "additionalProperties": false

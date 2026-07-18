@@ -832,6 +832,19 @@ def _dashboard_needs_analysis(blocks: Any) -> bool:
     return False
 
 
+def _visualise_format(plan: dict[str, Any]) -> str:
+    fmt = str(plan.get("format") or "").strip().lower()
+    if fmt in {"html", "xlsx"}:
+        return fmt
+    output = plan.get("output") or ""
+    if isinstance(output, dict):
+        output = output.get("path") or ""
+    suffix = Path(str(output)).suffix.lower()
+    if suffix in {".xlsx", ".xlsm"}:
+        return "xlsx"
+    return "html"
+
+
 def _expand_viz_blocks(viz: Any, blocks: Any, analysis: dict[str, Any] | None) -> list[dict[str, Any]]:
     if blocks == "$analysis":
         if analysis is None:
@@ -857,6 +870,42 @@ def _expand_viz_blocks(viz: Any, blocks: Any, analysis: dict[str, Any] | None) -
             continue
         expanded.append(block)
     return expanded
+
+
+def _expand_chart_specs(workbook: Any, blocks: Any, analysis: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Expand dashboard.blocks into Excel chart specs for workbook.py."""
+    if blocks == "$analysis":
+        if analysis is None:
+            raise PlanError("blocks=$analysis requires an analysis.json input")
+        return workbook.suggest_charts_from_analysis(analysis)
+    if not isinstance(blocks, list):
+        raise PlanError("dashboard.blocks must be an array or \"$analysis\"")
+    charts: list[dict[str, Any]] = []
+    for i, block in enumerate(blocks):
+        if not isinstance(block, dict):
+            raise PlanError(f"dashboard.blocks[{i}] must be an object")
+        kind = block.get("type")
+        if kind == "from_analysis":
+            if analysis is None:
+                raise PlanError("from_analysis requires an analysis.json input")
+            charts.extend(workbook.suggest_charts_from_analysis(
+                analysis, ops=block.get("ops"), max_groups=int(block.get("max_groups", 12)),
+            ))
+            continue
+        if kind == "chart":
+            spec = {k: v for k, v in block.items() if k != "type"}
+            if "chart_type" not in spec and "type" not in spec:
+                raise PlanError(f"dashboard.blocks[{i}] chart requires chart_type")
+            charts.append(spec)
+            continue
+        if kind in {"section", "grid"}:
+            charts.extend(_expand_chart_specs(workbook, block.get("blocks", []), analysis))
+            continue
+        raise PlanError(
+            f"dashboard.blocks[{i}] type {kind!r} is HTML-only; "
+            "use type 'chart' / 'from_analysis' / '$analysis' for format=xlsx"
+        )
+    return charts
 
 
 def _viz_block(viz: Any, spec: dict[str, Any], source_rows: list[dict[str, Any]]) -> str:
@@ -910,6 +959,7 @@ def _viz_block(viz: Any, spec: dict[str, Any], source_rows: list[dict[str, Any]]
 def _run_visualise(plan: dict[str, Any], base: Path, dry_run: bool,
               approval_key: str | bytes | None = None) -> dict[str, Any]:
     import viz
+    fmt = _visualise_format(plan)
     inputs = _normalise_inputs(plan)
     dash = plan["dashboard"]
     raw_blocks = dash.get("blocks", [])
@@ -919,8 +969,31 @@ def _run_visualise(plan: dict[str, Any], base: Path, dry_run: bool,
         if not inputs:
             raise PlanError("$analysis / from_analysis requires an analysis.json input")
         analysis = _load_analysis_json(inputs[0], base)
-    elif inputs:
+    elif inputs and fmt == "html":
         source_rows = read_table(inputs[0], base_dir=base).rows
+
+    if fmt == "xlsx":
+        import workbook
+        chart_specs = _expand_chart_specs(workbook, raw_blocks, analysis)
+        if not chart_specs:
+            raise PlanError("xlsx visualise produced no charts — provide chart blocks or chartable analysis ops")
+        output = _output_path(plan, base, "charts.xlsx")
+        artifacts = []
+        if not dry_run:
+            _prepare_write(output)
+            workbook.write_charts_xlsx(
+                output, chart_specs, workbook_title=dash.get("title"),
+            )
+            artifacts = [{"path": str(output), "kind": "xlsx_charts"}]
+        return envelope(
+            status="success", skill="data-visualise", action="dry-run" if dry_run else "run",
+            artifacts=artifacts,
+            metrics={"format": "xlsx", "charts": len(chart_specs),
+                     "from_analysis": bool(analysis)},
+            details={"title": dash.get("title"),
+                     "chart_types": [c.get("chart_type") for c in chart_specs]},
+        )
+
     theme = dash.get("theme")
     viz.apply_theme(theme)
     block_specs = _expand_viz_blocks(viz, raw_blocks, analysis)
@@ -935,7 +1008,7 @@ def _run_visualise(plan: dict[str, Any], base: Path, dry_run: bool,
         artifacts = [{"path": str(output), "kind": "html_dashboard"}]
     return envelope(status="success", skill="data-visualise", action="dry-run" if dry_run else "run",
                     artifacts=artifacts,
-                    metrics={"blocks": len(blocks), "source_rows": len(source_rows),
+                    metrics={"format": "html", "blocks": len(blocks), "source_rows": len(source_rows),
                              "from_analysis": bool(analysis)},
                     details={"title": dash.get("title"),
                              "block_types": [b.get("type") for b in block_specs]})

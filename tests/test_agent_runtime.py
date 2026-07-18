@@ -304,6 +304,7 @@ def test_visualise_from_analysis_json():
         result = ar.run_plan(plan, base_dir=td)
         assert result["status"] == "success", result
         assert result["metrics"]["from_analysis"] is True
+        assert result["metrics"].get("format", "html") == "html"
         html = out.read_text(encoding="utf-8")
         assert "Insight board" in html and "Monthly" in html
         assert "period bridge" in html and "spark" in html
@@ -323,6 +324,69 @@ def test_visualise_from_analysis_json():
         assert result2["status"] == "success", result2
         html2 = filtered_out.read_text(encoding="utf-8")
         assert "Amount" in html2 and "period bridge" not in html2
+
+
+def test_visualise_xlsx_charts_from_analysis():
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        analysis = td / "analysis.json"
+        analysis.write_text(json.dumps({
+            "results": [
+                {"op": "breakdown", "name": "By customer", "result": {
+                    "by": "Customer",
+                    "groups": [
+                        {"key": "Acme", "total": "100", "count": 2},
+                        {"key": "Beta", "total": "60", "count": 1},
+                    ],
+                }},
+                {"op": "period_series", "name": "Monthly", "result": {
+                    "grain": "month",
+                    "periods": [
+                        {"period": "2026-01", "total": "100", "delta": None},
+                        {"period": "2026-02", "total": "160", "delta": "60"},
+                    ],
+                }},
+            ],
+        }), encoding="utf-8")
+        out = td / "insight-charts.xlsx"
+        plan = {
+            "version": 1,
+            "skill": "data-visualise",
+            "format": "xlsx",
+            "input": str(analysis),
+            "dashboard": {"title": "Insight charts", "blocks": "$analysis"},
+            "output": str(out),
+        }
+        result = ar.run_plan(plan, base_dir=td)
+        assert result["status"] == "success", result
+        assert result["metrics"]["format"] == "xlsx"
+        assert result["metrics"]["charts"] >= 2
+        assert out.is_file()
+        from openpyxl import load_workbook
+        wb = load_workbook(out)
+        assert wb.sheetnames
+        assert any(ws._charts for ws in wb.worksheets)
+
+        explicit = td / "explicit.xlsx"
+        plan2 = {
+            "version": 1,
+            "skill": "data-visualise",
+            "dashboard": {
+                "title": "Manual",
+                "blocks": [{
+                    "type": "chart",
+                    "chart_type": "pie",
+                    "title": "Mix",
+                    "categories": ["A", "B"],
+                    "series": [{"name": "Share", "values": [60, 40]}],
+                }],
+            },
+            "output": str(explicit),
+        }
+        result2 = ar.run_plan(plan2, base_dir=td)
+        assert result2["status"] == "success", result2
+        assert result2["metrics"]["format"] == "xlsx"
+        assert explicit.is_file()
 
 
 def test_dry_run_writes_nothing():
@@ -494,6 +558,7 @@ def main():
         ("reconcile JSON runtime", test_reconcile_json_runtime),
         ("visualise declarative runtime", test_visualise_declarative_runtime),
         ("visualise from analysis.json", test_visualise_from_analysis_json),
+        ("visualise xlsx charts", test_visualise_xlsx_charts_from_analysis),
         ("dry-run", test_dry_run_writes_nothing),
         ("drift signed receipt", test_drift_requires_bound_receipt_and_blocks_writes),
         ("aggregation signed receipts", test_aggregation_receipts_bind_selection_and_dry_run_action),
