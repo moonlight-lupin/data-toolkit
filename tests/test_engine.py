@@ -930,7 +930,7 @@ def test_concentration_hhi_and_classification():
     assert c["classification"] == "highly concentrated", c
     assert c["top_n_share"] is not None and c["top_n_share"] > Decimal("0.9")
     # Fragmented: 10 equal groups → HHI = 10 * (10%)² = 1000
-    c2 = analyse.concentration([str(i) for i in range(1, 11)])
+    c2 = analyse.concentration(["10"] * 10)
     assert c2["hhi"] < Decimal(1500), c2
     assert c2["classification"] == "fragmented", c2
     # Negatives → unreliable
@@ -964,6 +964,19 @@ def test_pivot_cross_tab_sum_and_count():
     pvc = analyse.pivot(header, rows, "Region", "Customer")
     assert pvc["aggfunc"] == "count" and pvc["measure"] == "rows"
     assert pvc["matrix"][pvc["row_keys"].index("North")][pvc["col_keys"].index("Alpha")] == Decimal(3)
+    # M1 fix: blank amount cells don't crash — they're skipped, not appended as None
+    blank_header = ["Region", "Customer", "Amount"]
+    blank_rows = [
+        ["North", "Alpha", "100"],
+        ["North", "Alpha", ""],     # blank amount — must not crash
+        ["North", "Beta", "junk"],   # unparseable — skipped, counted
+        ["South", "Gamma", "200"],
+    ]
+    pvb = analyse.pivot(blank_header, blank_rows, "Region", "Customer", value="Amount")
+    ni2 = pvb["row_keys"].index("North")
+    ai2 = pvb["col_keys"].index("Alpha")
+    assert pvb["matrix"][ni2][ai2] == Decimal("100"), pvb["matrix"][ni2][ai2]  # only the 100
+    assert pvb["skipped"] == 1  # the "junk"
 
 
 def test_distribution_skewness_kurtosis():
@@ -1042,15 +1055,28 @@ def test_cohort_retention_matrix():
     ch = analyse.cohort(header, rows, "Customer", "Date", grain="month")
     assert ch["cohorts"] == ["2026-01", "2026-02"], ch["cohorts"]
     assert ch["cohort_sizes"] == [2, 1], ch["cohort_sizes"]
+    # Rectangular: all rows padded to max_offset + 1
+    assert ch["max_offset"] == 2, ch["max_offset"]
+    assert all(len(r) == ch["max_offset"] + 1 for r in ch["matrix"]), ch["matrix"]
+    # Jan cohort: offset 0 = 2 entities, offset 1 = 1 (A only), offset 2 = 2 (A+B)
     assert ch["matrix"][0][0] == Decimal(2), ch["matrix"][0]
     assert ch["matrix"][0][1] == Decimal(1), ch["matrix"][0]
     assert ch["matrix"][0][2] == Decimal(2), ch["matrix"][0]
+    # Retention (entity-count-based): 2/2=1.0, 1/2=0.5, 2/2=1.0
     assert ch["retention"][0][0] == Decimal(1), ch["retention"][0]
     assert ch["retention"][0][1] == Decimal("0.5"), ch["retention"][0]
+    # Feb cohort: 1 entity, padded to 3 columns
     assert ch["matrix"][1][0] == Decimal(1), ch["matrix"][1]
+    assert ch["retention"][1][0] == Decimal(1), ch["retention"][1]
+    # Value mode: matrix holds value sums, retention still entity-count-based
     chv = analyse.cohort(header, rows, "Customer", "Date", value="Amount", grain="month")
     assert chv["measure"] == "Amount"
-    assert chv["matrix"][0][0] == Decimal("300"), chv["matrix"][0]
+    assert chv["matrix"][0][0] == Decimal("300"), chv["matrix"][0]  # A(100)+B(200)
+    assert chv["value_matrix"] is not None
+    assert chv["value_matrix"][0][0] == Decimal("300"), chv["value_matrix"][0]
+    # Retention in value mode is STILL entity-count-based (0–1 fractions)
+    assert chv["retention"][0][0] == Decimal(1), chv["retention"][0]  # 2/2, not 300/300
+    assert chv["retention"][0][1] == Decimal("0.5"), chv["retention"][0]  # 1/2
 
 
 def test_correlation_matrix_pairwise():
@@ -1062,9 +1088,17 @@ def test_correlation_matrix_pairwise():
     assert cm["n_cols"] == 3
     assert cm["matrix"][0][0] == 1.0
     assert cm["matrix"][0][1] is not None and cm["matrix"][0][1] > 0.95
-    assert cm["matrix"][1][0] == cm["matrix"][0][1]
+    assert cm["matrix"][1][0] == cm["matrix"][0][1]  # symmetric
     cm2 = analyse.correlation_matrix(["A", "B"], [["1", "2"], ["3", "4"]], ["A", "B"])
-    assert cm2["matrix"][0][1] is None
+    assert cm2["matrix"][0][1] is None  # only 2 rows
+    # M2 fix: junk cell in one column does not shift row pairing
+    # Row 2 has junk in col B; without row-wise alignment, col A's [2,4,6,8]
+    # would pair with col B's [20,6,8] (shifted). With fix, pairs are (2,20?),
+    # (4,junk→skip), (6,6), (8,8) — only rows where BOTH parse.
+    cm3 = analyse.correlation_matrix(["A", "B"],
+        [["2", "10"], ["4", "junk"], ["6", "6"], ["8", "8"]], ["A", "B"])
+    # Only 3 common rows (1,3,4) → correlation computable, not shifted
+    assert cm3["matrix"][0][1] is not None
 
 
 def test_rolling_moving_average():
@@ -1115,7 +1149,10 @@ def test_seasonality_month_and_quarter():
     assert jan["average"] == Decimal("110"), jan
     assert jul["total"] == Decimal("420"), jul
     assert oct_s["count"] == 1 and oct_s["total"] == Decimal("300"), oct_s
-    assert sm["overall_average"] == Decimal("940") / Decimal(12)
+    # Overall average: mean of seasons WITH data (Jan, Jul, Oct = 3 seasons)
+    assert sm["overall_average"] == Decimal("940") / Decimal(3), sm["overall_average"]
+    assert sm["n_seasons_with_data"] == 3
+    # Quarter grain
     sq = analyse.seasonality(header, rows, "Date", value="Revenue", grain="quarter")
     assert sq["grain"] == "quarter" and len(sq["seasons"]) == 4
     q1 = [s for s in sq["seasons"] if s["season"] == 1][0]

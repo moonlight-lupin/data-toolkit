@@ -428,6 +428,11 @@ def compare_series(a, b, a_label="A", b_label="B"):
 def concentration(values, top_n=4):
     """Revenue/customer/portfolio concentration on a parseable numeric column.
 
+    **Pass pre-aggregated group totals, not raw transaction lines** — e.g. the
+    ``total`` column from a ``breakdown(header, rows, by="Customer", value="Revenue")``
+    result, or a list of per-customer annual revenues. Passing raw lines (one
+    value per transaction) inflates ``n_groups`` and understates concentration.
+
     Returns the Herfindahl-Hirschman Index (HHI, 0–10000 scale — the standard
     antitrust metric), top-N share, the count of groups needed to reach 80%,
     and a classification: fragmented / moderate / concentrated / highly concentrated.
@@ -509,8 +514,10 @@ def pivot(header, rows, rows_col, cols_col, value=None, aggfunc="sum"):
         if vi is not None:
             raw = r[vi] if vi < len(r) else ""
             n, _ = parse_number(raw)
-            if n is None and _s(raw) != "":
-                skipped += 1
+            if n is None:
+                # blank or unparseable — skip this cell, not the whole row
+                if _s(raw) != "":
+                    skipped += 1
                 continue
             cell.setdefault((rk, ck), []).append(n)
         else:
@@ -653,9 +660,10 @@ def percentile(values, q):
     between closest ranks (the standard "inclusive" method — matches numpy's
     default and Excel's ``PERCENTILE.INC``).
 
-    ``q`` is a float in [0, 1], or a list of such floats. Returns a single
-    ``Decimal`` when ``q`` is a float, or a dict ``{q: value}`` when ``q`` is a
-    list. Typical uses: p90, p95, p99 for VaR / latency SLOs / top-decile.
+    ``q`` is a float in [0, 1], or a list of such floats. Returns a dict
+    ``{"value": Decimal, "n": int, "skipped": int}`` when ``q`` is a float,
+    or a dict ``{q_float: Decimal}`` when ``q`` is a list. Typical uses:
+    p90, p95, p99 for VaR / latency SLOs / top-decile.
 
     Needs ≥1 parseable value; below that returns None (or a dict of Nones).
     """
@@ -663,8 +671,9 @@ def percentile(values, q):
     qs = [Decimal(str(q))] if single else [Decimal(str(x)) for x in q]
     dec, skipped = numbers(values)
     if not dec:
-        result = None if single else {float(qi): None for qi in qs}
-        return {"value": result, "n": 0, "skipped": skipped} if single else result
+        if single:
+            return {"value": None, "n": 0, "skipped": skipped}
+        return {float(qi): None for qi in qs}
     sv = sorted(dec)
     n = len(sv)
     out = {}
@@ -690,25 +699,32 @@ def percentile(values, q):
 # --------------------------------------------------------------------------- #
 def cohort(header, rows, id_col, date_col, value=None, grain="month", dayfirst=True):
     """Cohort retention matrix: group entities by their first-active period,
-    then track activity (count or value sum) over subsequent periods.
+    then track activity over subsequent periods.
 
     Each row is a cohort (first-period). Each column is "periods since first"
-    (0 = first period, 1 = next, etc.). Cells hold the count of distinct
-    entities active in that cohort×period, or the sum of ``value`` where given.
-    Retention rate = cell / period-0 count.
+    (0 = first period, 1 = next, etc.).
 
-    Returns: cohorts (sorted), period-since columns, matrix, retention matrix
-    (as fractions of period-0), cohort sizes, and skipped counts.
+    - **Count mode** (``value=None``): cells = count of distinct entities active
+      in that cohort×period. Retention = active_entities / cohort_size (0–1).
+    - **Value mode** (``value=``): cells = sum of ``value`` for active entities.
+      Retention is still computed from **entity counts** (active/size), so it
+      stays a 0–1 fraction. The value matrix is returned separately as
+      ``value_matrix``.
 
-    An entity is "active" in a period if it has ≥1 row with a parseable date
-    in that period. Needs a parseable date on the first row of each entity.
+    Returns: cohorts (sorted), ``max_offset``, ``matrix`` (entity counts or value
+    sums), ``retention`` (0–1 fractions, always from entity counts),
+    ``value_matrix`` (value sums, only in value mode; None otherwise),
+    ``cohort_sizes``, and skipped counts.
+
+    All cohort rows are padded to ``max_offset + 1`` (rectangular). An entity is
+    "active" in a period if it has ≥1 row with a parseable date in that period.
     """
     assert grain in ("month", "quarter", "year")
     idi = col_index(header, id_col)
     di = col_index(header, date_col)
     vi = col_index(header, value) if value else None
     # Collect per-entity: first period, set of active periods, per-period value sums
-    entities = {}  # {id_key: {"first": period_str, "periods": {period: total}}}
+    entities = {}  # {id_key: {"first": period_str, "periods": {period: {"count": n, "total": Decimal}}}}
     bad_dates, skipped_vals = 0, 0
     for r in rows:
         eid = _s(r[idi] if idi < len(r) else "")
@@ -723,53 +739,77 @@ def cohort(header, rows, id_col, date_col, value=None, grain="month", dayfirst=T
         ent = entities.setdefault(eid, {"first": None, "periods": {}})
         if ent["first"] is None or p < ent["first"]:
             ent["first"] = p
+        slot = ent["periods"].setdefault(p, {"count": 0, "total": Decimal(0)})
+        slot["count"] += 1
         if vi is not None:
             raw_v = r[vi] if vi < len(r) else ""
             n, _ = parse_number(raw_v)
             if n is None and _s(raw_v) != "":
                 skipped_vals += 1
             elif n is not None:
-                ent["periods"][p] = ent["periods"].get(p, Decimal(0)) + n
-        else:
-            ent["periods"][p] = ent["periods"].get(p, Decimal(0)) + Decimal(1)
+                slot["total"] += n
     if not entities:
         return {"cohorts": [], "max_offset": -1, "matrix": [], "retention": [],
-                "cohort_sizes": [], "bad_dates": bad_dates, "skipped": skipped_vals}
+                "value_matrix": None, "cohort_sizes": [],
+                "bad_dates": bad_dates, "skipped": skipped_vals}
     # Group entities by first period
     cohort_groups = {}  # {first_period: [entity dicts]}
     for ent in entities.values():
         cohort_groups.setdefault(ent["first"], []).append(ent)
     cohort_keys = sorted(cohort_groups.keys())
+    # First pass: compute max_offset across all cohorts
     max_offset = 0
-    # For each cohort, compute period-since activity
+    per_cohort_offsets = {}
+    for ck in cohort_keys:
+        ents = cohort_groups[ck]
+        offset_activity = {}  # {offset: {"count": n, "total": Decimal}}
+        for ent in ents:
+            for p, slot in ent["periods"].items():
+                offset = _periods_between(ck, p, grain)
+                if offset < 0:
+                    continue
+                acc = offset_activity.setdefault(offset, {"count": 0, "total": Decimal(0)})
+                acc["count"] += 1  # one entity active in this period
+                acc["total"] += slot["total"]
+        per_cohort_offsets[ck] = offset_activity
+        if offset_activity:
+            max_offset = max(max_offset, max(offset_activity.keys()))
+    # Second pass: build padded rectangular matrices
     matrix = []
+    value_matrix = [] if vi is not None else None
     retention = []
     cohort_sizes = []
     for ck in cohort_keys:
         ents = cohort_groups[ck]
         size = len(ents)
         cohort_sizes.append(size)
-        # For each offset, count entities active at that offset
-        offset_activity = {}  # {offset: total}
-        for ent in ents:
-            for p, total in ent["periods"].items():
-                offset = _periods_between(ck, p, grain)
-                if offset < 0:
-                    continue  # shouldn't happen (first is earliest)
-                offset_activity[offset] = offset_activity.get(offset, Decimal(0)) + total
-        max_off = max(offset_activity.keys()) if offset_activity else 0
-        max_offset = max(max_offset, max_off)
+        offset_activity = per_cohort_offsets[ck]
         row = []
         ret_row = []
-        for off in range(max_off + 1):
-            val = offset_activity.get(off, Decimal(0))
-            row.append(val)
-            ret_row.append(Decimal(val) / Decimal(size) if size else None)
+        vrow = [] if vi is not None else None
+        for off in range(max_offset + 1):
+            acc = offset_activity.get(off)
+            if acc is None:
+                row.append(Decimal(0))
+                ret_row.append(Decimal(0) / Decimal(size) if size else None)
+                if vrow is not None:
+                    vrow.append(Decimal(0))
+            else:
+                if vi is not None:
+                    row.append(acc["total"])  # value sum
+                    vrow.append(acc["total"])
+                else:
+                    row.append(Decimal(acc["count"]))  # entity count
+                # Retention is ALWAYS entity-count-based (0–1 fraction)
+                ret_row.append(Decimal(acc["count"]) / Decimal(size) if size else None)
         matrix.append(row)
         retention.append(ret_row)
+        if vrow is not None:
+            value_matrix.append(vrow)
     return {"grain": grain, "measure": value or "entities",
             "cohorts": cohort_keys, "max_offset": max_offset,
             "matrix": matrix, "retention": retention,
+            "value_matrix": value_matrix,
             "cohort_sizes": cohort_sizes,
             "bad_dates": bad_dates, "skipped": skipped_vals}
 
@@ -798,25 +838,42 @@ def correlation_matrix(header, rows, columns):
     Diagonal is always 1.0. Needs ≥3 rows per column; below that returns None
     for that pair (matching ``_pearson``'s convention).
 
+    Rows are aligned **row-wise**: for each pair of columns, only rows where
+    BOTH cells parse as numbers are kept (matching ``compare_series``'s
+    align-by-key convention). A junk cell in one column does not shift the
+    pairing of later rows.
+
     Correlation is association, NOT cause — the brief must name confounders.
     """
-    cols = [column(header, rows, c) for c in columns]
+    col_indices = [col_index(header, c) for c in columns]
     n_cols = len(columns)
+    # Pre-parse: for each column, a list of (row_idx, float_value) for parseable cells
+    parsed = []
+    for ci in col_indices:
+        col_vals = []
+        for ri, r in enumerate(rows):
+            raw = r[ci] if ci < len(r) else ""
+            n, _ = parse_number(raw)
+            if n is not None:
+                col_vals.append((ri, float(n)))
+        parsed.append(col_vals)
     matrix = [[None] * n_cols for _ in range(n_cols)]
     for i in range(n_cols):
-        xi = [float(v) for v in numbers(cols[i])[0]]
         for j in range(i, n_cols):
             if i == j:
                 matrix[i][j] = 1.0
                 continue
-            yj = [float(v) for v in numbers(cols[j])[0]]
-            # Align by position (row-wise); trim to min length
-            n = min(len(xi), len(yj))
-            if n < 3:
+            # Align by row index: keep only rows where BOTH columns parsed
+            i_by_row = {ri: v for ri, v in parsed[i]}
+            j_by_row = {ri: v for ri, v in parsed[j]}
+            common_rows = sorted(set(i_by_row) & set(j_by_row))
+            if len(common_rows) < 3:
                 matrix[i][j] = None
                 matrix[j][i] = None
                 continue
-            r = _pearson(xi[:n], yj[:n])
+            xi = [i_by_row[ri] for ri in common_rows]
+            yj = [j_by_row[ri] for ri in common_rows]
+            r = _pearson(xi, yj)
             matrix[i][j] = r
             matrix[j][i] = r
     return {"columns": list(columns), "matrix": matrix, "n_cols": n_cols}
@@ -838,6 +895,10 @@ def rolling(series, window, func="mean"):
         smoothed = rolling([(p["period"], p["total"]) for p in ts["periods"]], 3)
 
     Window must be ≥1. Descriptive smoothing only — never a forecast.
+
+    Note: ``None`` values in the input are skipped, so a window containing
+    ``None`` effectively shortens to the non-None values within it. The first
+    ``window - 1`` entries are always ``None`` (not enough history yet).
     """
     assert func in ("mean", "sum", "median")
     assert window >= 1
@@ -948,7 +1009,11 @@ def seasonality(header, rows, date_col, value=None, grain="month", dayfirst=True
     measure = "total" if value else "count"
     grand = sum(s[measure] for s in seasons.values())
     n_seasons = len(seasons)
-    overall_avg = grand / Decimal(n_seasons) if n_seasons else Decimal(0)
+    # Overall average: mean of seasons that have data (not grand/12, which
+    # dilutes the index when some months have no rows)
+    seasons_with_data = [s for s in seasons.values() if s["count"] > 0]
+    overall_avg = (sum(s[measure] for s in seasons_with_data) / Decimal(len(seasons_with_data))
+                    if seasons_with_data else Decimal(0))
     out = []
     for s in sorted(seasons):
         val = seasons[s][measure]
@@ -959,6 +1024,7 @@ def seasonality(header, rows, date_col, value=None, grain="month", dayfirst=True
                     "average": avg, "share": share, "index": index})
     return {"grain": grain, "measure": value or "rows", "seasons": out,
             "grand_total": grand, "overall_average": overall_avg,
+            "n_seasons_with_data": len(seasons_with_data),
             "bad_dates": bad_dates, "skipped": skipped_vals}
 
 
@@ -1139,8 +1205,8 @@ def _self_test():
     assert conc["hhi"] is not None and conc["hhi"] > Decimal(5000), conc
     assert conc["classification"] == "highly concentrated", conc
     assert conc["top_n_share"] is not None and conc["top_n_share"] > Decimal("0.9")
-    # Fragmented — 10 equal-sized groups
-    conc2 = concentration([str(i) for i in range(1, 11)])
+    # Fragmented — 10 equal-sized groups → HHI = 10 * (10%)² = 1000
+    conc2 = concentration(["10"] * 10)
     assert conc2["hhi"] < Decimal(1500), conc2
     assert conc2["classification"] == "fragmented", conc2
     # Negatives → unreliable
@@ -1323,8 +1389,9 @@ def _self_test():
     assert jan["average"] == Decimal("110"), jan  # 220/2
     assert jul["total"] == Decimal("420"), jul
     assert oct_s["count"] == 1 and oct_s["total"] == Decimal("300"), oct_s
-    # Seasonal index: months with no data have index 0 (well below average)
-    assert sm["overall_average"] == Decimal("940") / Decimal(12), sm["overall_average"]
+    # Overall average: mean of seasons WITH data (Jan, Jul, Oct = 3 seasons)
+    assert sm["overall_average"] == Decimal("940") / Decimal(3), sm["overall_average"]
+    assert sm["n_seasons_with_data"] == 3
     # Quarter grain
     sq = seasonality(seas_header, seas_rows, "Date", value="Revenue", grain="quarter")
     assert sq["grain"] == "quarter" and len(sq["seasons"]) == 4
