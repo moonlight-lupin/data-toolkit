@@ -654,16 +654,35 @@ def _augment_font_stack(base_stack: str, text: str) -> str:
 
 
 def _text_direction(text: str) -> str:
-    """``rtl`` when Arabic/Hebrew is present without a stronger LTR majority cue; else ``ltr``."""
-    scripts = _detect_scripts(text)
-    if scripts & {"arabic", "hebrew"}:
-        return "rtl"
-    return "ltr"
+    """Page ``dir``: ``rtl`` only when Arabic/Hebrew outweighs basic Latin letters.
+
+    Avoids flipping a mostly-English dashboard to RTL because of one Arabic KPI
+    label (review m2). Fully Arabic/Hebrew pages still get ``rtl``.
+    """
+    rtl_chars = ltr_chars = 0
+    for ch in str(text or ""):
+        cp = ord(ch)
+        if _char_in_ranges(cp, _SCRIPT_RANGES["arabic"]) or _char_in_ranges(
+            cp, _SCRIPT_RANGES["hebrew"]
+        ):
+            rtl_chars += 1
+        elif ch.isalpha() and cp < 0x0300:
+            ltr_chars += 1
+    if rtl_chars == 0:
+        return "ltr"
+    return "rtl" if rtl_chars >= ltr_chars else "ltr"
+
+
+def _strip_tags(html: str) -> str:
+    """Drop HTML/SVG tags so script/direction scans see visible text only."""
+    import re
+    return re.sub(r"<[^>]+>", " ", html or "")
 
 
 def _scan_dashboard_text(title, subtitle, body, footnote, brand_name) -> str:
     """Concatenate visible strings used to decide font / direction augmentation."""
-    parts = [title or "", subtitle or "", footnote or "", brand_name or "", body or ""]
+    parts = [title or "", subtitle or "", footnote or "", brand_name or "",
+             _strip_tags(body)]
     return "\n".join(parts)
 
 def dashboard(title, blocks, subtitle=None, as_of=None, out_path=None,

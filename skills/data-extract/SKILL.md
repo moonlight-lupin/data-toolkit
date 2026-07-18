@@ -112,7 +112,6 @@ summarised in the ingest note, not mixed into the table rows. Image-only slides 
 flagged for manual review or vision-model extraction. Legacy `.ppt` is not supported —
 convert to `.pptx` first.
 
-
 ### 3 — Normalise, output, report
 For tables, pass the rows through the shared recipe just like tidy
 (`dataclean.apply_recipe`). For batched forms:

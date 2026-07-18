@@ -61,8 +61,9 @@ enhancement, never a dependency.
 Arabic, Hebrew, Thai, Indic, Cyrillic, …), `dashboard()` **conditionally** inserts a
 browser font-fallback chain (e.g. Microsoft YaHei / PingFang / Noto Sans CJK) before the
 generic family so glyphs render instead of □□□. English-only dashboards are unchanged. No
-fonts are shipped or looked up on disk — the viewer's OS supplies them. Arabic/Hebrew also
-set `dir="rtl"` on the page.
+fonts are shipped or looked up on disk — the viewer's OS supplies them. Page `dir="rtl"`
+is set only when Arabic/Hebrew characters outweigh basic Latin letters (mixed EN+AR
+dashboards stay LTR).
 
 A firm sets its own via the theme's `font` / `font_heading` keys. **Setting only `font`
 applies it to headings too** — so a white-label brand never inherits Space Grotesk by

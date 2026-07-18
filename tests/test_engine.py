@@ -833,13 +833,16 @@ def test_pptx_multi_slide_tables_and_read_any():
     path = Path(d) / "deck.pptx"
     _write_sample_pptx(path, with_image_only=True)
     rows, note = ingest.read_pptx(str(path))
-    # Title text + both tables on slide 1 + table on slide 2
+    # Table rows only — title text frames must NOT pollute the row list (review M1)
     assert any(r == ["Investor", "Commit"] for r in rows)
     assert any(r == ["Acme", "1000000"] for r in rows)
     assert any(r == ["Region", "Share"] for r in rows)
     assert any(r == ["Metric", "Value"] for r in rows)
+    assert not any(r == ["Q2 commitments"] for r in rows)
+    assert all(len(r) >= 2 for r in rows), "text frames must not create 1-col rows"
     assert "tables on slide(s) 1, 2" in note
     assert "image-only slide(s) 3" in note
+    assert "Q2 commitments" in note          # titles live in the note
     # read_any dispatches
     rows2, note2 = ingest.read_any(str(path))
     assert rows2 == rows and "pptx" in note2
@@ -898,10 +901,20 @@ def test_cjk_font_stack_conditional():
     # Chart CSS uses the (augmented) font stack — SVG <text> inherits
     assert ".chart .v{font:11px" in zh.replace(" ", "") or "font:11px" in zh
 
-    # Arabic picks up RTL + Arabic font names without forcing CJK fonts
+    # Fully Arabic page → RTL + Arabic font names
     ar = viz.dashboard("لوحة القيادة", [viz.kpi_row([{"label": "الإيرادات", "value": 12}])])
     assert 'dir="rtl"' in ar
     assert "Noto Naskh Arabic" in ar or "Noto Sans Arabic" in ar
+
+    # Mostly English with one Arabic label must NOT flip the whole page (review m2)
+    mixed = viz.dashboard(
+        "Operations dashboard",
+        [viz.kpi_row([{"label": "Open tasks", "value": 12},
+                      {"label": "الإيرادات", "value": 3}])],
+        subtitle="Weekly",
+    )
+    assert 'dir="ltr"' in mixed
+    assert "Noto Naskh Arabic" in mixed or "Noto Sans Arabic" in mixed
 
 
 # --------------------------------------------------------------------------- #

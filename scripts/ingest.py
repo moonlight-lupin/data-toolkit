@@ -433,11 +433,15 @@ def read_docx(path: str):
 
 
 def read_pptx(path: str):
-    """Extract text frames + tables from every slide of a ``.pptx`` → ``(rows, note)``.
+    """Extract tables from every slide of a ``.pptx`` → ``(rows, note)``.
 
-    Multi-table slides contribute every table (not just the first). Image-only slides
-    (no text, no tables) are flagged in ``note`` for manual review or vision-model
-    extraction — this function does **not** auto-invoke a vision model.
+    Returns **table rows only** (same contract as ``read_docx``) so downstream
+    tidy/analyse/visualise see a consistent column shape. Text-frame content
+    (titles, bullets) is summarised in ``note``, not mixed into ``rows``.
+
+    Multi-table slides contribute every table (not just the first). Image-only
+    slides (no text, no tables) are flagged in ``note`` for manual review or
+    vision-model extraction — this function does **not** auto-invoke a vision model.
 
     Requires optional ``python-pptx``. Legacy ``.ppt`` is rejected by ``read_any``.
     """
@@ -455,6 +459,7 @@ def read_pptx(path: str):
     slides_with_tables = []
     slides_with_text = []
     image_only = []
+    text_snippets = []  # titles/bullets — context for the note, not row data
     n_tables = 0
 
     for sidx, slide in enumerate(prs.slides, start=1):
@@ -472,7 +477,8 @@ def read_pptx(path: str):
                     text = (para.text or "").strip()
                     if text:
                         slide_had_text = True
-                        rows.append([text])
+                        if len(text_snippets) < 8:  # keep the note readable
+                            text_snippets.append(f"s{sidx}: {text[:80]}")
             # Pictures / charts / media alone do not count as text/table content.
             elif shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
                 pass
@@ -485,9 +491,11 @@ def read_pptx(path: str):
             image_only.append(sidx)
 
     n_slides = len(prs.slides)
-    note = f"pptx, {n_slides} slide(s), {n_tables} table(s), {len(rows)} rows"
+    note = f"pptx, {n_slides} slide(s), {n_tables} table(s), {len(rows)} table rows"
     if slides_with_tables:
         note += f"; tables on slide(s) {', '.join(map(str, slides_with_tables))}"
+    if text_snippets:
+        note += f"; text: {' | '.join(text_snippets)}"
     if image_only:
         note += (
             f"; image-only slide(s) {', '.join(map(str, image_only))} "
