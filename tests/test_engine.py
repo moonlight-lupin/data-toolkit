@@ -498,10 +498,10 @@ def test_streaming_count_rows():
 
 def test_streaming_excel_to_parquet_and_read_large():
     import streaming
-    import pandas as pd
     if not streaming.pyarrow_available():
         print("  SKIP  test_streaming_excel_to_parquet_and_read_large (no pyarrow/pandas)")
         return
+    import pandas as pd
     d = tempfile.mkdtemp()
     path = Path(d) / "stream_me.xlsx"
     n = 2500
@@ -564,8 +564,12 @@ def test_parquet_cache_preserves_none_and_nan_literals():
 
 def test_optimize_dtypes_saves_memory():
     import streaming
-    import pandas as pd
-    import numpy as np
+    try:
+        import pandas as pd
+        import numpy as np
+    except ImportError:
+        print("  SKIP  test_optimize_dtypes_saves_memory (no pandas/numpy)")
+        return
     n = 50_000
     # Mixed finance-shaped frame: wide int64/float64 + long repeated object labels.
     # Category conversion on long strings is where most of the saving comes from.
@@ -626,16 +630,24 @@ Done.
     assert df is not None
     assert list(df.columns) == ["Region", "Revenue", "Growth", "Fee"]
     assert len(df) == 3
-    assert df.iloc[0]["Revenue"] == 1234.5
-    assert abs(df.iloc[0]["Growth"] - 0.125) < 1e-9
-    assert df.iloc[1]["Revenue"] == 2000
-    assert df.iloc[2]["Revenue"] == -500
-    assert df.iloc[1]["Fee"] == 1100
+    # Works with pandas DataFrame or the no-pandas stand-in
+    row0 = df.iloc[0] if hasattr(df, "iloc") else dict(zip(df.columns, df._data[0]))
+    row1 = df.iloc[1] if hasattr(df, "iloc") else dict(zip(df.columns, df._data[1]))
+    row2 = df.iloc[2] if hasattr(df, "iloc") else dict(zip(df.columns, df._data[2]))
+    assert row0["Revenue"] == 1234.5
+    assert abs(row0["Growth"] - 0.125) < 1e-9
+    assert row1["Revenue"] == 2000
+    assert row2["Revenue"] == -500
+    assert row1["Fee"] == 1100
 
 
 def test_image_extract_chart_and_table_mocked():
     ie = _load_image_extract()
-    from PIL import Image
+    try:
+        from PIL import Image
+    except ImportError:
+        print("  SKIP  test_image_extract_chart_and_table_mocked (no Pillow)")
+        return
 
     d = Path(tempfile.mkdtemp())
     chart = d / "sales_bar_chart.png"
@@ -714,7 +726,11 @@ def test_image_extract_chart_and_table_mocked():
 
 def test_image_extract_batch_and_compress():
     ie = _load_image_extract()
-    from PIL import Image
+    try:
+        from PIL import Image
+    except ImportError:
+        print("  SKIP  test_image_extract_batch_and_compress (no Pillow)")
+        return
 
     d = Path(tempfile.mkdtemp())
     imgs = d / "shots"

@@ -366,13 +366,33 @@ def parse_markdown_table(text: str):
         import pandas as pd
     except ImportError:
         # Minimal stand-in so callers without pandas still get structure.
+        class _MiniRow:
+            def __init__(self, columns, row):
+                self._map = dict(zip(columns, row))
+
+            def __getitem__(self, key):
+                return self._map[key]
+
+        class _MiniILoc:
+            def __init__(self, parent):
+                self._parent = parent
+
+            def __getitem__(self, idx):
+                return _MiniRow(self._parent.columns, self._parent._data[idx])
+
         class _Mini:
             def __init__(self, columns, data):
                 self.columns = list(columns)
                 self._data = data
+                self.iloc = _MiniILoc(self)
 
             def __len__(self):
                 return len(self._data)
+
+            def __getitem__(self, key):
+                # Column access → list of values (enough for set()/sum() in tests)
+                i = self.columns.index(key)
+                return [row[i] for row in self._data]
 
             def to_dict(self, orient="records"):
                 return [dict(zip(self.columns, row)) for row in self._data]
