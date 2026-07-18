@@ -24,6 +24,39 @@ contract (`analysis.json` or declarative specs):
 
 Both are local, offline, and draft-for-review. PowerPoint and letters stay out of scope.
 
+## HTML / Excel parity (treat them as peers)
+
+**Neither path requires data-analyse.** A simple table (CSV / JSON / `.xlsx`) is enough for
+both. What differs is only the *renderer* and how you declare the series — not whether the
+job is allowed.
+
+| Starting point | HTML | Excel |
+|---|---|---|
+| Plain table | `input` + block `data` / `"rows": "$source"` | `type: "chart"` with `categories` + `series` (derive from the same table in Python) |
+| `analysis.json` | `"blocks": "$analysis"` / `from_analysis` | same shortcut → chart sheets |
+| Both artefacts | same numbers → HTML blocks **and** Excel chart specs | |
+
+**Do not** steer every Excel request through analyse first, and **do not** treat HTML as the
+only “simple data” path. Build the category/value series once from the table, then:
+
+- HTML → `bar_chart` / `line_chart` / `donut_chart` / `waterfall` / `table`…
+- Excel → `chart_type` `column` / `line` / `pie` / `doughnut` / `waterfall`…
+
+Rough block ↔ chart mapping (same story, different file):
+
+| Intent | HTML block | Excel `chart_type` |
+|---|---|---|
+| Category comparison | `bar_chart` | `column` (or `bar`) |
+| Trend over time | `line_chart` / `sparkline` | `line` |
+| Share of total | `donut_chart` | `pie` / `doughnut` |
+| Bridge / walk | `waterfall` | `waterfall` |
+| Detail rows | `table` (`$source`) | (sheet data under the chart; no separate table block) |
+| KPI strip | `kpi_row` | omit, or a one-row summary sheet later |
+
+Use **data-analyse** when the brief needs engine-exact metrics (ageing, concentration, MoM,
+currency gates) or you want one `analysis.json` to drive HTML and Excel together. For “chart
+this column by that column”, skip analyse and declare the series directly on both paths.
+
 ## 0 — Pick the artefact (do this first)
 
 Ask (briefly) who reads it and where it will live:
@@ -31,8 +64,8 @@ Ask (briefly) who reads it and where it will live:
 1. **HTML** if they want a branded board, print-to-PDF, or an in-chat artifact.
 2. **Excel** if they say “charts in a spreadsheet”, will filter/annotate further, or the
    pack lives in a shared drive as `.xlsx`.
-3. **Both** is fine — same `analysis.json` feeds `viz.suggest_blocks_from_analysis` and
-   `workbook.suggest_charts_from_analysis`.
+3. **Both** is fine — same table-derived series, or the same `analysis.json` via
+   `suggest_blocks_from_analysis` **and** `suggest_charts_from_analysis`.
 
 Infer from the plan when unspoken: `format: "xlsx"` or `output` ending in `.xlsx` → Excel;
 otherwise HTML.
@@ -47,19 +80,18 @@ otherwise HTML.
 - A weekly **operations / task** one-pager (HTML).
 - A **compliance** status board — what's due, overdue, by owner (HTML).
 - A **finance / pipeline** scorecard — KPI cards + trend + breakdown (HTML or Excel).
-- **Native Excel charts** from an analyse run for a finance/ops pack (Excel).
+- **Native Excel charts** from a simple export or an analyse run (Excel).
 
-To clean or extract first, run **data-tidy** / **data-extract**. To compute trusted metrics,
-run **data-analyse** then hand the `analysis.json` here.
+To clean or extract first, run **data-tidy** / **data-extract**. Optional: **data-analyse**
+when metrics must be engine-exact or shared across HTML + Excel.
 
 ## Workflow
 
 1. **Intent** — purpose, reader, and artefact (HTML vs Excel). Don't render twelve charts
    when four KPIs and one trend answer the question.
-2. **Data** — table rows, or `analysis.json` from data-analyse (preferred when numbers must
-   match the brief).
-3. **Propose** — HTML: declarative blocks (`suggest_blocks_from_analysis` / block list).
-   Excel: chart specs (`suggest_charts_from_analysis` / `type: chart` list). Confirm.
+2. **Data** — plain table rows, *or* `analysis.json` when you need the analyse engine.
+3. **Propose** — derive the same category/value series for either path. HTML: block list
+   (or `$analysis`). Excel: `type: chart` list (or `$analysis`). Confirm.
 4. **Render & review** — HTML → `dashboard(...)` / open in browser; Excel →
    `write_charts_xlsx` / `charts_from_analysis`. Draft for a qualified person; never auto-send.
 
@@ -134,11 +166,11 @@ Chart-only workbook: one sheet per chart, data in cells, embedded native Excel c
 Vocabulary aligned with OfficeCLI (`column` / `bar` / `line` / `pie` / `doughnut` /
 `waterfall`). Full prop list: `references/workbook-charts.md`.
 
+From a **simple table** (parity with HTML — no analyse):
+
 ```python
-from workbook import suggest_charts_from_analysis, charts_from_analysis, write_charts_xlsx
-specs = suggest_charts_from_analysis(analysis)
-charts_from_analysis(analysis, "insight-charts.xlsx")
-# or explicit:
+from workbook import write_charts_xlsx
+# same series you'd pass to viz.bar_chart([(lab, val), ...])
 write_charts_xlsx("charts.xlsx", [
     {"chart_type": "column", "title": "By region",
      "categories": ["North", "South"],
@@ -146,17 +178,32 @@ write_charts_xlsx("charts.xlsx", [
 ])
 ```
 
-Plan (format from `format: "xlsx"` or `.xlsx` output):
+Optional — from `analysis.json`:
+
+```python
+from workbook import suggest_charts_from_analysis, charts_from_analysis
+charts_from_analysis(analysis, "insight-charts.xlsx")
+```
+
+Plans (format from `format: "xlsx"` or `.xlsx` output):
 
 ```json
 {
   "skill": "data-visualise",
   "format": "xlsx",
-  "input": "out/analysis.json",
-  "dashboard": {"title": "Insight charts", "blocks": "$analysis"},
-  "output": "out/insight-charts.xlsx"
+  "dashboard": {
+    "title": "By region",
+    "blocks": [{
+      "type": "chart", "chart_type": "column", "title": "By region",
+      "categories": ["North", "South"],
+      "series": [{"name": "Amount", "values": [120, 80]}]
+    }]
+  },
+  "output": "out/charts.xlsx"
 }
 ```
+
+Or `"input": "out/analysis.json"` with `"blocks": "$analysis"` when an analyse run exists.
 
 ## Theming (neutral default, fully brandable)
 

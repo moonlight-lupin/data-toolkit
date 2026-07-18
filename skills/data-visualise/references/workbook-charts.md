@@ -13,7 +13,12 @@ OfficeCLI itself is **not** required at runtime.
 - Native Excel charts matter more than a branded printable one-pager.
 
 Prefer `viz.py` HTML for shareable / print / artifact dashboards. The skill
-orchestrator (`SKILL.md`) picks the artefact; both can share one `analysis.json`.
+orchestrator (`SKILL.md`) picks the artefact.
+
+**Parity with HTML:** a plain table is enough — you do not need `analysis.json`. Derive
+`categories` / `series` from the table (same numbers you’d put in an HTML `bar_chart` /
+`line_chart`), or use `$analysis` when an analyse run already exists. See SKILL.md
+“HTML / Excel parity”.
 
 ## Chart types (OfficeCLI-aligned names)
 
@@ -31,6 +36,23 @@ histogram, boxWhisker, combo, pareto. Stay on the types above unless a later
 optional OfficeCLI backend is added.
 
 ## Spec shape
+
+From a **simple table** (no analyse) — same shape as an HTML bar chart’s data:
+
+```python
+# rows = [{"Region": "North", "Amount": 120}, {"Region": "South", "Amount": 80}]
+categories = [r["Region"] for r in rows]
+values = [r["Amount"] for r in rows]
+spec = {
+  "chart_type": "column",
+  "title": "By region",
+  "categories": categories,
+  "series": [{"name": "Amount", "values": values}],
+}
+write_charts_xlsx("by-region.xlsx", [spec])
+```
+
+Full fields:
 
 ```python
 {

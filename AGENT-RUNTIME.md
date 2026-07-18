@@ -274,6 +274,10 @@ Format: `"format": "html"` (default) or `"xlsx"`, or infer from the output suffi
 Excel chart types use OfficeCLI-aligned names (`column`, `bar`, `line`, `pie`, `doughnut`,
 `waterfall`).
 
+Parity: a plain table input is enough for HTML (`$source` + block `data`) and for Excel
+(explicit `type: "chart"` with `categories` / `series`). `$analysis` is optional on both
+paths when an analyse run already exists — it is not a prerequisite for Excel.
+
 ### Convert
 
 The conversion plan may use an inline spec, a JSON spec, or a Markdown conversion card. It supports
