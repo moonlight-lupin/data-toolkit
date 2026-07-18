@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.8.0 — 2026-07-19
+
+**Three chart types and a filtering primitive** — closing the gaps that forced agents to
+hand-roll the same code every run.
+
+- **`scatter_chart(x, y, …, trend_line=False)`** — paired observations for correlation and
+  outlier spotting; both axes float to the data via `_nice_ticks` (as `line_chart` does).
+  `trend_line=True` overlays an OLS fit **across the observed x-range only** — descriptive,
+  never a forecast, with slope / Pearson r / n in its tooltip so the reader can judge it. A
+  cloud with no x-variance has no defensible slope, so no line is drawn at all.
+- **`histogram(values, bins=10, …)`** — distribution shape. `bins` is a count (equal-width) or
+  explicit edges like `[0, 30, 60, 90, 365]`; edges are half-open `[lo, hi)` except the last,
+  which includes its upper bound so the maximum observation is never silently dropped. The
+  y-axis is **forced to zero** (histogram convention — a floated frequency axis misstates every
+  bar) and bars touch to signal a continuous scale. Unparseable values and values outside the
+  caller's own edges are counted and reported *separately*, since they mean different things.
+- **`stacked_bar(data, …)`** — composition per category. Accepts a `pivot()` result straight
+  from analyse, `{segment: [(cat, value)]}`, or `{categories, series}`. **Negative segments
+  stack below the zero line** rather than folding into the positive stack, so a credit note or
+  reversal reads as the reduction it is instead of inflating the bar it belongs to.
+- **`filter_rows(header, rows, filters)`** (analyse) — the standard form of the ad-hoc filtering
+  that otherwise gets written differently every run. Twelve operators, ANDed, with a
+  `(rows, report)` return carrying in/out totals and per-filter removed counts.
+
+  Two comparison rules exist because the alternatives produce a *plausible wrong answer* rather
+  than an error, which is worse:
+  - **Dates compare as dates.** `parse_number('15/02/2026')` returns `15022026` — it strips the
+    separators — so a naive number-first coercion sorts 15 Feb *after* 1 Mar. Values that look
+    like dates are tested as dates first.
+  - **A type mismatch is incomparable, not a string compare.** Falling back to text would make
+    `'n/a' > 1000` **true**. Such rows are excluded *and* counted in `report["incomparable"]`.
+
+  Unknown columns and operators raise rather than matching nothing — a typo must not look like
+  "no results".
+- All three charts reuse the engine's `parse_number` when reachable (`'15%'` → 0.15, `'1.2m'` →
+  1200000, `'(500)'` → -500) instead of inventing a second numeric dialect, so the chart and the
+  working paper always show the same number. Non-numeric inputs are skipped and reported, never
+  plotted at the origin where they would read as a real zero.
+- Wired through the runtime (`_viz_block`) and `schemas/dashboard-spec.schema.json`. HTML-only:
+  the xlsx path refuses them with the existing clear message.
+- **Docs accuracy fix.** The README's "no network calls / no cloud OCR / no credentials" claims
+  and `DATA-HANDLING.md`'s "no external APIs" bullet predated the opt-in vision image extract
+  shipped in #19, which calls a user-configured vision endpoint. All three now carve out that
+  one exception explicitly. `SKILL.md` and `COMPATIBILITY.md` already disclosed it correctly;
+  it was the top-level pitch that overstated.
+
 ## 0.7.0 — 2026-07-18
 
 **`data-visualise` becomes an orchestrator** — the same metrics contract now drives two artefacts,

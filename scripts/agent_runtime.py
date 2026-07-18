@@ -934,6 +934,18 @@ def _viz_block(viz: Any, spec: dict[str, Any], source_rows: list[dict[str, Any]]
     if kind == "waterfall":
         return viz.waterfall(spec.get("steps", []), title=spec.get("title"),
                              unit=spec.get("unit", ""))
+    if kind == "scatter_chart":
+        return viz.scatter_chart(spec.get("x", []), spec.get("y", []),
+                                 title=spec.get("title"), unit=spec.get("unit", ""),
+                                 x_unit=spec.get("x_unit", ""), labels=spec.get("labels"),
+                                 trend_line=spec.get("trend_line", False))
+    if kind == "histogram":
+        return viz.histogram(spec.get("values", []), bins=spec.get("bins", 10),
+                             title=spec.get("title"), unit=spec.get("unit", ""))
+    if kind == "stacked_bar":
+        return viz.stacked_bar(spec.get("data", {}), title=spec.get("title"),
+                               unit=spec.get("unit", ""),
+                               legend=spec.get("legend", True))
     if kind == "table":
         rag = {}
         for column_name, rule in (spec.get("rag") or {}).items():

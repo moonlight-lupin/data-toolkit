@@ -292,6 +292,65 @@ def _nice_ticks(lo, hi, n=5):
     return ticks, nlo, nhi
 
 
+_PARSE_NUMBER = None       # lazily resolved by _num(); False once known unreachable
+
+
+def _load_parse_number():
+    """The engine's `parse_number` if the shared `scripts/` is reachable, else None.
+
+    Mirrors `_load_ingest`: viz.py stays stdlib-only and standalone, but when the
+    toolkit engine *is* present the charts parse values exactly as the rest of the
+    toolkit does (`'15%'` → 0.15, `'1.2m'` → 1200000, `'(500)'` → -500) instead of
+    inventing a second, divergent numeric dialect."""
+    import importlib
+    from pathlib import Path as _P
+    for p in (_P(__file__).resolve().parents[3] / "scripts",   # toolkit-root engine
+              _P(__file__).resolve().parent / "scripts"):      # vendored sibling
+        if (p / "dataclean.py").is_file():
+            if str(p) not in sys.path:
+                sys.path.insert(0, str(p))
+            try:
+                return importlib.import_module("dataclean").parse_number
+            except (ImportError, AttributeError):
+                return None
+    return None
+
+
+def _num(v):
+    """Coerce a chart input to float, or None when it is not a number.
+
+    Returning None rather than 0.0 is deliberate: a stray header, blank or free-text
+    cell must be *skipped*, never plotted at the origin where it reads as a real
+    observation of zero."""
+    global _PARSE_NUMBER
+    if isinstance(v, bool):                       # avoid True/False -> 1/0
+        return None
+    if isinstance(v, (int, float, Decimal)):
+        f = float(v)
+        return f if (f == f and f not in (float("inf"), float("-inf"))) else None
+    if _PARSE_NUMBER is None:
+        _PARSE_NUMBER = _load_parse_number() or False
+    if _PARSE_NUMBER:
+        val, _note = _PARSE_NUMBER(v)
+        return float(val) if val is not None else None
+    s = str(v).strip().replace(",", "")           # stdlib fallback: plain + accounting negatives
+    if s.startswith("(") and s.endswith(")"):
+        s = "-" + s[1:-1]
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _skipped_note(n: int, what: str = "value") -> str:
+    """Footnote for values a chart could not plot. Surfaced under the chart rather
+    than dropped, so a half-empty plot is never mistaken for the whole story."""
+    if not n:
+        return ""
+    return (f'<div class="note">{n} non-numeric {_e(what)}'
+            f'{"s" if n != 1 else ""} skipped</div>')
+
+
 def bar_chart(data, title=None, height=220, unit="") -> str:
     """A horizontal-axis bar chart as inline SVG. data: [(label, value)] or dicts.
     Geometry uses float coordinates; labels preserve Decimal formatting where supplied.
@@ -659,6 +718,289 @@ def waterfall(steps, title=None, height=240, unit="") -> str:
            f'preserveAspectRatio="xMidYMid meet">{grid}{"".join(connectors)}'
            f'{"".join(shapes)}</svg>')
     return _chart_block(title, svg)
+
+
+def scatter_chart(x, y, title=None, height=260, unit="", x_unit="",
+                  labels=None, trend_line=False) -> str:
+    """Scatter plot of paired observations — for correlation and outlier spotting.
+
+    ``x`` and ``y`` are parallel sequences; a pair is plotted only when *both* sides
+    parse as numbers, and the skipped count is reported under the chart. ``labels``
+    optionally names each point for its hover tooltip.
+
+    ``trend_line=True`` overlays an ordinary least-squares fit, drawn only across the
+    observed x-range — it is **descriptive, never a forecast**, and is not
+    extrapolated. Its tooltip carries the fitted slope and Pearson r so the reader can
+    judge how much the line is worth.
+
+    Both axes float to the data via ``_nice_ticks`` (as ``line_chart`` does): a
+    tightly-clustered scatter forced against a zero baseline shows nothing.
+    """
+    xs_raw = list(x or [])
+    ys_raw = list(y or [])
+    labs = list(labels or [])
+    pts, skipped = [], 0
+    for i in range(min(len(xs_raw), len(ys_raw))):
+        fx, fy = _num(xs_raw[i]), _num(ys_raw[i])
+        if fx is None or fy is None:
+            skipped += 1
+            continue
+        pts.append((fx, fy, labs[i] if i < len(labs) else None,
+                    xs_raw[i], ys_raw[i]))
+    # a length mismatch is a data error, not a plot: count the unpaired tail as skipped
+    skipped += abs(len(xs_raw) - len(ys_raw))
+    if not pts:
+        return _empty_block(title, "No plottable pairs")
+
+    xticks, x_lo, x_hi = _nice_ticks(min(p[0] for p in pts), max(p[0] for p in pts))
+    yticks, y_lo, y_hi = _nice_ticks(min(p[1] for p in pts), max(p[1] for p in pts))
+    W, pad_l, pad_b, pad_t, pad_r = 640, 44, 32, 16, 12
+    plot_h = height - pad_b - pad_t
+    plot_w = W - pad_l - pad_r
+    xrng = (x_hi - x_lo) or 1.0
+    yrng = (y_hi - y_lo) or 1.0
+
+    def _px(v):
+        return pad_l + ((float(v) - x_lo) / xrng) * plot_w
+
+    def _py(v):
+        return pad_t + plot_h - ((float(v) - y_lo) / yrng) * plot_h
+
+    grid = "".join(
+        f'<line x1="{pad_l}" y1="{_py(t):.1f}" x2="{W - pad_r}" y2="{_py(t):.1f}" '
+        f'stroke="{BRAND["grey_lt"]}" stroke-width="1"/>'
+        f'<text x="{pad_l - 5}" y="{_py(t) + 3:.1f}" text-anchor="end" class="x">'
+        f'{_fmt_num(_strip(t))}{_e(unit)}</text>' for t in yticks)
+    grid += "".join(
+        f'<line x1="{_px(t):.1f}" y1="{pad_t}" x2="{_px(t):.1f}" y2="{pad_t + plot_h:.1f}" '
+        f'stroke="{BRAND["grey_lt"]}" stroke-width="1"/>'
+        f'<text x="{_px(t):.1f}" y="{height - 10:.1f}" text-anchor="middle" class="x">'
+        f'{_fmt_num(_strip(t))}{_e(x_unit)}</text>' for t in xticks)
+
+    col = BRAND["burgundy"]
+    dots = "".join(
+        f'<circle cx="{_px(fx):.1f}" cy="{_py(fy):.1f}" r="4" fill="{col}" '
+        f'fill-opacity="0.72"><title>{_e(lab) + ": " if lab else ""}'
+        f'{_fmt_num(rx)}{_e(x_unit)}, {_fmt_num(ry)}{_e(unit)}</title></circle>'
+        for fx, fy, lab, rx, ry in pts)
+
+    fit = ""
+    if trend_line and len(pts) >= 2:
+        n = len(pts)
+        mx = sum(p[0] for p in pts) / n
+        my = sum(p[1] for p in pts) / n
+        sxx = sum((p[0] - mx) ** 2 for p in pts)
+        sxy = sum((p[0] - mx) * (p[1] - my) for p in pts)
+        syy = sum((p[1] - my) ** 2 for p in pts)
+        if sxx > 0:                       # vertical cloud has no OLS slope — draw nothing
+            slope = sxy / sxx
+            intercept = my - slope * mx
+            r = sxy / ((sxx * syy) ** 0.5) if syy > 0 else 0.0
+            xa, xb = min(p[0] for p in pts), max(p[0] for p in pts)
+            fit = (f'<line x1="{_px(xa):.1f}" y1="{_py(slope * xa + intercept):.1f}" '
+                   f'x2="{_px(xb):.1f}" y2="{_py(slope * xb + intercept):.1f}" '
+                   f'stroke="{BRAND["grey"]}" stroke-width="1.5" stroke-dasharray="5 4">'
+                   f'<title>OLS fit (descriptive, not a forecast): '
+                   f'slope {slope:,.4g}, r {r:,.3f}, n {n}</title></line>')
+    svg = (f'<svg viewBox="0 0 {W} {height}" class="chart" '
+           f'preserveAspectRatio="xMidYMid meet">{grid}{fit}{dots}</svg>')
+    return _chart_block(title, svg + _skipped_note(skipped, "pair"))
+
+
+def histogram(values, bins=10, title=None, height=240, unit="") -> str:
+    """Distribution shape as contiguous frequency bars.
+
+    ``bins`` is either a bin *count* (equal-width across the observed range) or an
+    explicit list of *edges* — e.g. ``[0, 30, 60, 90, 365]`` for ageing-style
+    buckets. Edges are half-open ``[lo, hi)`` except the last, which includes its
+    upper bound so the maximum observation is never dropped.
+
+    Non-numeric values are skipped and reported under the chart rather than silently
+    discarded. Unlike the other charts the y-axis is **forced to zero**: a frequency
+    axis that floats misstates how tall a bar is relative to nothing, which is the
+    entire point of a histogram. Bars touch, signalling a continuous scale.
+    """
+    nums, skipped = [], 0
+    for v in (values or []):
+        f = _num(v)
+        if f is None:
+            if str(v).strip() != "":       # blanks are absence, not bad data
+                skipped += 1
+            continue
+        nums.append(f)
+    if not nums:
+        return _empty_block(title, "No numeric values")
+
+    if isinstance(bins, (list, tuple)):
+        edges = sorted(float(e) for e in bins if _num(e) is not None)
+        if len(edges) < 2:
+            return _empty_block(title, "Need at least two bin edges")
+    else:
+        k = max(int(bins or 10), 1)
+        lo, hi = min(nums), max(nums)
+        if hi <= lo:                       # every value identical — one honest bin
+            lo, hi = lo - 0.5, hi + 0.5
+        step = (hi - lo) / k
+        edges = [lo + i * step for i in range(k + 1)]
+
+    counts = [0] * (len(edges) - 1)
+    outside = 0
+    for f in nums:
+        if f < edges[0] or f > edges[-1]:
+            outside += 1                   # numeric, but outside the caller's edges
+            continue
+        for i in range(len(counts)):
+            hi_edge = edges[i + 1]
+            if f < hi_edge or (i == len(counts) - 1 and f <= hi_edge):
+                counts[i] += 1
+                break
+
+    ticks, _lo, axis_hi = _nice_ticks(0, max(counts) or 1)
+    axis_hi = axis_hi or 1
+    W, pad_l, pad_b, pad_t, pad_r = 640, 40, 34, 18, 12
+    plot_h = height - pad_b - pad_t
+    plot_w = W - pad_l - pad_r
+    bw = plot_w / len(counts)
+
+    def _y(c):
+        return pad_t + plot_h - (float(c) / axis_hi) * plot_h
+
+    grid = "".join(
+        f'<line x1="{pad_l}" y1="{_y(t):.1f}" x2="{W - pad_r}" y2="{_y(t):.1f}" '
+        f'stroke="{BRAND["grey_lt"]}" stroke-width="1"/>'
+        f'<text x="{pad_l - 5}" y="{_y(t) + 3:.1f}" text-anchor="end" class="x">'
+        f'{_fmt_num(_strip(t))}</text>' for t in ticks)
+    bars = []
+    for i, c in enumerate(counts):
+        x = pad_l + i * bw
+        y = _y(c)
+        h = max(pad_t + plot_h - y, 0)
+        bars.append(
+            f'<rect x="{x:.1f}" y="{y:.1f}" width="{bw:.1f}" height="{h:.1f}" '
+            f'fill="{BRAND["burgundy"]}" stroke="{BRAND["white"]}" stroke-width="0.5">'
+            f'<title>{_fmt_num(_strip(round(edges[i], 6)))}{_e(unit)} to '
+            f'{_fmt_num(_strip(round(edges[i + 1], 6)))}{_e(unit)}: {c}</title></rect>')
+    # label the edges, thinned so they stay legible on a many-bin histogram
+    every = max(1, (len(edges) + 9) // 10)
+    xlabs = "".join(
+        f'<text x="{pad_l + i * bw:.1f}" y="{height - 10:.1f}" text-anchor="middle" '
+        f'class="x">{_fmt_num(_strip(round(e, 6)))}{_e(unit)}</text>'
+        for i, e in enumerate(edges) if i % every == 0 or i == len(edges) - 1)
+    svg = (f'<svg viewBox="0 0 {W} {height}" class="chart" '
+           f'preserveAspectRatio="xMidYMid meet">{grid}{"".join(bars)}{xlabs}</svg>')
+    # two distinct exclusions, reported distinctly: unparseable data vs values the
+    # caller's own bin edges do not cover (the latter is a spec gap, not dirty data)
+    note = _skipped_note(skipped)
+    if outside:
+        note += (f'<div class="note">{outside} value{"s" if outside != 1 else ""} '
+                 f'outside the bin range '
+                 f'({_fmt_num(_strip(round(edges[0], 6)))}'
+                 f'–{_fmt_num(_strip(round(edges[-1], 6)))}) excluded</div>')
+    return _chart_block(title, svg + note)
+
+
+def _norm_stacked(data) -> tuple[list, list, list]:
+    """Normalise stacked_bar input to (categories, series_names, matrix[cat][series]).
+
+    Accepts a ``pivot()`` result from analyse.py (row_keys → bars, col_keys →
+    segments), ``{segment: [(category, value)]}``, or
+    ``{"categories": [...], "series": {name: [values]}}``."""
+    if isinstance(data, dict) and "row_keys" in data and "matrix" in data:
+        cats = [_strip(k) for k in data.get("row_keys", [])]
+        names = [_strip(k) for k in data.get("col_keys", [])]
+        matrix = [[_num(v) or 0.0 for v in row] for row in data.get("matrix", [])]
+        return cats, names, matrix
+    if isinstance(data, dict) and "series" in data:
+        cats = list(data.get("categories", []))
+        series = data.get("series") or {}
+        names = list(series.keys())
+        matrix = [[_num(series[nm][i]) or 0.0 if i < len(series[nm]) else 0.0
+                   for nm in names] for i in range(len(cats))]
+        return cats, names, matrix
+    if isinstance(data, dict):
+        names = list(data.keys())
+        cats, seen = [], set()
+        for nm in names:
+            for lab, _v in _norm_pairs(data[nm]):
+                if lab not in seen:
+                    seen.add(lab)
+                    cats.append(lab)
+        lookup = {nm: dict(_norm_pairs(data[nm])) for nm in names}
+        matrix = [[_num(lookup[nm].get(c)) or 0.0 for nm in names] for c in cats]
+        return cats, names, matrix
+    return [], [], []
+
+
+def stacked_bar(data, title=None, height=260, unit="", legend=True) -> str:
+    """Composition over time: one bar per category, split into stacked segments.
+
+    ``data`` accepts a ``pivot()`` result straight from ``analyse.py`` (``row_keys``
+    become the bars, ``col_keys`` the segments), ``{segment: [(category, value)]}``,
+    or ``{"categories": [...], "series": {name: [values]}}``.
+
+    **Negative segments stack downward from the zero line** rather than being folded
+    into the positive stack — a contra, credit note or reversal stays visible as a
+    reduction instead of silently inflating the bar it belongs to.
+    """
+    cats, names, matrix = _norm_stacked(data)
+    if not cats or not names:
+        return _empty_block(title, "No data")
+
+    tops = [sum(v for v in row if v > 0) for row in matrix]
+    bots = [sum(v for v in row if v < 0) for row in matrix]
+    ticks, axis_lo, axis_hi = _nice_ticks(min(bots + [0.0]), max(tops + [0.0]))
+    rng = (axis_hi - axis_lo) or 1.0
+    W, pad_l, pad_b, pad_t, pad_r = 640, 44, 30, 18, 12
+    plot_h = height - pad_b - pad_t
+    plot_w = W - pad_l - pad_r
+    gap = 12
+    bw = plot_w / len(cats) - gap
+
+    def _y(v):
+        return pad_t + plot_h - ((float(v) - axis_lo) / rng) * plot_h
+
+    grid = "".join(
+        f'<line x1="{pad_l}" y1="{_y(t):.1f}" x2="{W - pad_r}" y2="{_y(t):.1f}" '
+        f'stroke="{BRAND["grey_lt"]}" stroke-width="1"/>'
+        f'<text x="{pad_l - 5}" y="{_y(t) + 3:.1f}" text-anchor="end" class="x">'
+        f'{_fmt_num(_strip(t))}{_e(unit)}</text>' for t in ticks)
+    if any(v < 0 for row in matrix for v in row):
+        grid += (f'<line x1="{pad_l}" y1="{_y(0):.1f}" x2="{W - pad_r}" y2="{_y(0):.1f}" '
+                 f'stroke="{BRAND["grey"]}" stroke-width="1.5"/>')
+
+    shapes = []
+    for ci, cat in enumerate(cats):
+        x = pad_l + ci * (bw + gap) + gap / 2
+        up = 0.0     # running top of the positive stack
+        down = 0.0   # running bottom of the negative stack
+        for si, nm in enumerate(names):
+            v = matrix[ci][si]
+            if not v:
+                continue
+            col = _SERIES[si % len(_SERIES)]
+            if v > 0:
+                y0, y1 = up, up + v
+                up = y1
+            else:
+                y0, y1 = down + v, down
+                down = y0
+            y = _y(y1)
+            h = abs(_y(y0) - _y(y1))
+            shapes.append(
+                f'<rect x="{x:.1f}" y="{y:.1f}" width="{bw:.1f}" height="{max(h, 1):.1f}" '
+                f'fill="{col}"><title>{_e(cat)} — {_e(nm)}: {_fmt_num(_strip(v))}'
+                f'{_e(unit)}</title></rect>')
+        shapes.append(
+            f'<text x="{x + bw/2:.1f}" y="{height - 9:.1f}" text-anchor="middle" '
+            f'class="x">{_e(cat)}</text>')
+    svg = (f'<svg viewBox="0 0 {W} {height}" class="chart" '
+           f'preserveAspectRatio="xMidYMid meet">{grid}{"".join(shapes)}</svg>')
+    leg = ""
+    if legend:
+        leg = ('<div class="legend">' + "".join(
+            f'<span class="lg"><i style="background:{_SERIES[si % len(_SERIES)]}"></i>'
+            f'{_e(nm)}</span>' for si, nm in enumerate(names)) + '</div>')
+    return _chart_block(title, svg + leg)
 
 
 def table(rows: list[dict], columns: list[str] | None = None, title=None,
@@ -1034,6 +1376,7 @@ letter-spacing:.4px}}
 .spark-meta{{display:flex;flex-direction:column;gap:2px;font-size:12px}}
 .spark-last{{font-family:{font_heading};font-size:18px;font-weight:700;color:var(--ink)}}
 .spark-delta{{color:var(--grey)}}
+.note{{color:var(--grey);font-size:11px;margin-top:6px;font-style:italic}}
 .legend{{display:flex;flex-wrap:wrap;gap:10px 16px;margin-top:8px;font-size:12px}}
 .legend.col{{flex-direction:column;gap:6px}}
 .lg{{display:inline-flex;align-items:center;gap:6px;color:var(--ink)}}

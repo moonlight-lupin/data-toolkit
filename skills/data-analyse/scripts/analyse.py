@@ -13,7 +13,9 @@ derivation shown in the brief) — never a number produced free-form.
     python analyse.py --self-test
 """
 
+import datetime as dt
 import pathlib
+import re
 import sys
 from collections import OrderedDict
 from decimal import Decimal
@@ -130,6 +132,182 @@ def outliers_iqr(values, k=Decimal("1.5"), cap=10):
 # --------------------------------------------------------------------------- #
 # Category breakdown + concentration
 # --------------------------------------------------------------------------- #
+FILTER_OPS = ("==", "!=", ">", ">=", "<", "<=", "in", "not_in",
+              "between", "not_between", "contains", "is_empty", "not_empty")
+
+_NEEDS_VALUE = tuple(op for op in FILTER_OPS if op not in ("is_empty", "not_empty"))
+
+
+_DATE_HINT = re.compile(
+    r"[/]|\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)|\d{4}-\d{1,2}-\d{1,2}", re.I)
+
+
+def _kind_of(v) -> str:
+    """Classify a value for comparison: ``date`` | ``number`` | ``string``.
+
+    Dates are tested **before** numbers, but only for values that actually look like
+    a date. Both halves of that rule are load-bearing:
+
+    - `parse_number('15/02/2026')` returns `15022026` — it strips the separators — so
+      without date-first a date column compares as huge integers and 15 Feb sorts
+      *after* 1 Mar.
+    - Without the "looks like a date" guard, a plain integer would be read as an Excel
+      serial and silently become a date.
+    """
+    if isinstance(v, (dt.date, dt.datetime)):
+        return "date"
+    if isinstance(v, bool):
+        return "string"
+    if isinstance(v, (int, float, Decimal)):
+        return "number"
+    s = _s(v)
+    if s == "":
+        return "string"
+    if _DATE_HINT.search(s) and parse_date(s)[0] is not None:
+        return "date"
+    if parse_number(s)[0] is not None:
+        return "number"
+    if parse_date(s)[0] is not None:
+        return "date"
+    return "string"
+
+
+def _coerce_pair(a, b):
+    """Coerce two cells to a shared comparable type. Returns ``(a, b, kind)`` where
+    kind is ``date`` | ``number`` | ``string`` | ``mixed``.
+
+    ``mixed`` means the two sides have genuinely different types — a text cell against
+    a numeric threshold, say. That is reported, never quietly resolved: falling back to
+    a string compare would make `'n/a' > 1000` **true**, which is exactly the kind of
+    silent wrong answer this toolkit exists to avoid."""
+    ka, kb = _kind_of(a), _kind_of(b)
+    if ka == kb == "date":
+        return parse_date(a)[0], parse_date(b)[0], "date"
+    if ka == kb == "number":
+        return parse_number(a)[0], parse_number(b)[0], "number"
+    if ka == kb == "string":
+        return _s(a).lower(), _s(b).lower(), "string"
+    return _s(a).lower(), _s(b).lower(), "mixed"
+
+
+def _cmp_pass(cell, op, target) -> tuple[bool, bool]:
+    """Evaluate one comparison. Returns (passed, comparable).
+
+    `comparable` is False when the operator needed an ordering but the two sides
+    would not coerce to a shared comparable type — the row is excluded and counted,
+    never quietly treated as passing."""
+    if op == "is_empty":
+        return _s(cell) == "", True
+    if op == "not_empty":
+        return _s(cell) != "", True
+    if op == "contains":
+        return _s(target).lower() in _s(cell).lower(), True
+    if op in ("in", "not_in"):
+        items = target if isinstance(target, (list, tuple, set)) else [target]
+        hit = False
+        for t in items:
+            a, b, _kind = _coerce_pair(cell, t)   # coerce per item: a list may mix types
+            if a == b:
+                hit = True
+                break
+        return (hit if op == "in" else not hit), True
+    if op in ("between", "not_between"):
+        if not isinstance(target, (list, tuple)) or len(target) != 2:
+            raise ValueError(f"{op!r} needs a two-item [lo, hi] value, got {target!r}")
+        lo_c, hi_c = target
+        a1, lo, k1 = _coerce_pair(cell, lo_c)
+        a2, hi, k2 = _coerce_pair(cell, hi_c)
+        if k1 != k2 or "mixed" in (k1, k2):
+            return False, False           # excluded and counted, never assumed inside
+        try:
+            inside = lo <= a1 and a2 <= hi        # inclusive of BOTH ends
+        except TypeError:
+            return False, False
+        return (inside if op == "between" else not inside), True
+
+    a, b, kind = _coerce_pair(cell, target)
+    # Equality survives a type mismatch — '' == 1000 is simply false, no ambiguity.
+    if op == "==":
+        return a == b, True
+    if op == "!=":
+        return a != b, True
+    # Ordering does not: a text cell against a numeric threshold has no defensible
+    # answer, so the row drops out and the count is reported.
+    if kind == "mixed":
+        return False, False
+    try:
+        if op == ">":
+            return a > b, True
+        if op == ">=":
+            return a >= b, True
+        if op == "<":
+            return a < b, True
+        if op == "<=":
+            return a <= b, True
+    except TypeError:
+        return False, False
+    raise ValueError(f"unsupported filter op {op!r}; supported: {list(FILTER_OPS)}")
+
+
+def filter_rows(header, rows, filters):
+    """Filter rows declaratively — the standard form of the ad-hoc filtering that
+    otherwise gets hand-written differently on every run.
+
+    ``filters`` is a list of ``{"column": ..., "op": ..., "value": ...}``. Filters
+    combine with **AND** — a row must pass every one.
+
+    Operator semantics, chosen to match what a finance reader expects:
+
+    - ``== != > >= < <=`` — numeric when both sides parse as numbers (via
+      ``parse_number``, so ``'1,200'`` and ``'(500)'`` work), else dates when both
+      parse as dates, else case-insensitive string comparison.
+    - ``in`` / ``not_in`` — membership in a list, same coercion per item.
+    - ``between`` / ``not_between`` — ``"value": [lo, hi]``, **inclusive of both
+      ends**, because finance ranges are quoted inclusively ("30–60 days" contains
+      both 30 and 60).
+    - ``contains`` — case-insensitive substring.
+    - ``is_empty`` / ``not_empty`` — blank or whitespace-only; no ``value`` needed.
+
+    Returns ``(filtered_rows, report)``. The report gives ``n_in``/``n_out`` and,
+    per filter, how many rows it removed and how many it could not compare — so a
+    filter that silently ate the dataset is visible rather than mysterious.
+    Per-filter ``removed`` is attributed in order (each filter sees what survived
+    the previous one); the totals are exact either way.
+
+    Unknown columns and unknown operators raise, rather than matching nothing —
+    a typo'd column name must not look like "no results".
+    """
+    kept = list(rows)
+    per_filter = []
+    for f in (filters or []):
+        if not isinstance(f, dict):
+            raise ValueError(f"each filter must be a dict, got {f!r}")
+        col = f.get("column")
+        op = _s(f.get("op") or "==")
+        if op not in FILTER_OPS:
+            raise ValueError(f"unsupported filter op {op!r}; supported: {list(FILTER_OPS)}")
+        if op in _NEEDS_VALUE and "value" not in f:
+            raise ValueError(f"filter on {col!r} with op {op!r} needs a 'value'")
+        j = col_index(header, col)                # raises with the real names on a typo
+        target = f.get("value")
+        before = len(kept)
+        survivors, incomparable = [], 0
+        for r in kept:
+            cell = r[j] if j < len(r) else ""
+            passed, comparable = _cmp_pass(cell, op, target)
+            if not comparable:
+                incomparable += 1
+            if passed:
+                survivors.append(r)
+        kept = survivors
+        per_filter.append({"column": _s(col), "op": op, "value": target,
+                           "removed": before - len(kept), "incomparable": incomparable})
+    report = {"n_in": len(rows), "n_out": len(kept),
+              "removed": len(rows) - len(kept), "filters": per_filter,
+              "incomparable": sum(p["incomparable"] for p in per_filter)}
+    return kept, report
+
+
 def breakdown(header, rows, by, value=None, top=10):
     """Group by `by`; measure = row count, or the sum of `value` where given.
     Returns the groups sorted largest-first with shares, plus concentration

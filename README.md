@@ -79,8 +79,10 @@ That writes working papers and HTML dashboards under `examples/out/`. Full notes
 
 ## Why teams choose it
 
-- **Local engine, no third-party services.** No network calls, no cloud OCR, no CDN,
-  no credentials, no connectors. Shared drives (SharePoint / OneDrive / Drive) are
+- **Local engine, no third-party services.** No network calls in the core path, no
+  cloud OCR, no CDN, no connectors. One opt-in exception, stated plainly: image/chart
+  extract calls a vision API *you* configure, and is the only feature that needs a key.
+  Shared drives (SharePoint / OneDrive / Drive) are
   read as synced local paths, so nothing is pushed through a cloud connector. And to
   be straight about the limit: an AI agent drives these skills, so whatever it reads
   into its context goes to your AI provider — we don't claim "it never left." What we
@@ -118,7 +120,7 @@ That writes working papers and HTML dashboards under `examples/out/`. Full notes
 | Small one-off file, strong model, careful prompt | Correctness parity — you’re buying standardised artefacts and an audit trail, not magic arithmetic |
 | Recurring exports, multi-thousand-row reconciles, reviewable working papers | Cheaper, faster, flatter cost — and a smaller error surface than hand-rolled agent code |
 | Large spreadsheets (10k–100k+ rows) | Streaming / Parquet path via `ingest.read_large` (optional `pandas` + `pyarrow`) so you don’t OOM the tidy/analyse step |
-| Client / financial data that must not reach third-party services | Local engine by design — no cloud OCR, no connectors, no uploads (your own AI provider still sees what the agent reads) |
+| Client / financial data that must not reach third-party services | Local engine by design — no cloud OCR, no connectors, no uploads (your own AI provider still sees what the agent reads; opt-in image/chart extract calls a vision API you configure) |
 | Stakeholder one-pager by end of day | Brandable HTML dashboard → browser → print to PDF — **or** a native Excel chart workbook when the reader wants to keep poking at the numbers |
 
 ## What you can do
