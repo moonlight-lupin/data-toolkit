@@ -6,7 +6,8 @@ list of them and pass it to `dashboard(...)`. Import once:
 ```python
 import sys; sys.path.insert(0, "scripts")   # or the path to viz.py
 from viz import (kpi_card, kpi_row, bar_chart, line_chart, donut_chart,
-                 table, status_pill, section, grid, dashboard,
+                 heatmap, sparkline, waterfall, table, status_pill, section, grid,
+                 suggest_blocks_from_analysis, blocks_from_analysis, dashboard,
                  apply_theme, rows_from_xlsx, open_in_browser)
 ```
 
@@ -53,6 +54,55 @@ donut_chart([("Compliance", 8), ("Finance", 5), ("Marketing", 3), ("Legal", 4)],
             title="Open tasks by function")          # centre shows the total
 donut_chart(data, title="Mix", centre="FY26")        # override the centre label
 ```
+
+## Heat map
+
+```python
+heatmap([[12, 4], [3, 9]],
+        row_labels=["North", "South"], col_labels=["Retail", "Wholesale"],
+        title="Region × channel")
+heatmap(corr_matrix, row_labels=cols, col_labels=cols,
+        title="Correlation", scale="diverging", mid=0)
+```
+
+`scale="sequential"` (default) maps magnitude tint→primary. `diverging` centres on `mid`
+(use for correlations / signed gaps).
+
+## Sparkline
+
+```python
+sparkline([("W1", 10), ("W2", 14), ("W3", 9), ("W4", 12)], title="Volume shape")
+```
+
+A compact path for “is it rising?” — no axis ticks. Prefer `line_chart` when the scale must
+be readable.
+
+## Waterfall (bridge)
+
+```python
+waterfall([
+    {"label": "Opening", "value": 100, "kind": "start"},
+    {"label": "Wins", "value": 30, "kind": "delta"},
+    {"label": "Losses", "value": -12, "kind": "delta"},
+    {"label": "Closing", "value": 118, "kind": "total"},
+], title="Pipeline bridge")
+```
+
+If `kind` is omitted: first step is `start`, last is `total`, middle steps are `delta`.
+
+## From data-analyse (`analysis.json`)
+
+```python
+specs = suggest_blocks_from_analysis(analysis)           # editable block dicts
+specs = suggest_blocks_from_analysis(analysis, ops=["breakdown", "period_series"])
+html_blocks = blocks_from_analysis(analysis)             # already rendered
+```
+
+Mapping is intentional, not a dump: breakdown→bar/donut, period_series→line+sparkline+waterfall
+bridge, pivot/cohort/correlation→heatmap, concentration/trend/…→KPI rows. Numbers are not
+recomputed.
+
+Agent plan shortcuts: `"blocks": "$analysis"` or `{"type": "from_analysis", "ops": ["ageing"]}`.
 
 ## Table with RAG conditional formatting
 

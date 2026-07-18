@@ -1,72 +1,109 @@
 ---
 name: data-visualise
 description: >-
-  Turn data into a brandable, self-contained HTML dashboard / visualisation that opens
-  in a browser and prints cleanly to PDF. Use when the user says "build a dashboard",
-  "visualise this", "make a chart / KPI cards / scorecard", "a one-pager of these
-  numbers", "turn this spreadsheet into a dashboard", "RAG status board", or wants a
-  shareable visual summary of tasks, compliance, pipeline, finance or any tabular data.
-  Composes KPI cards, bar / line / donut charts (inline SVG — no external JS/chart
-  libraries, no CDN, no remote images; optional inline JS for sorting/filtering), tables with RAG conditional formatting, status pills, sections and
-  grids into a single HTML file. Ships unbranded (a neutral default) and is fully
-  brandable (colours, font, logo). Output is a draft for review, not advice;
-  nothing is auto-distributed. NOT for PowerPoint decks or letters; for cleaning /
-  extracting the underlying data first, see data-tidy / data-extract.
+  Orchestrate visual output from tabular data or a data-analyse analysis.json into either
+  (1) a brandable self-contained HTML dashboard (print/PDF / artifact) or (2) an Excel
+  workbook of native charts for analysts. Use when the user says "build a dashboard",
+  "visualise this", "make a chart / KPI cards / scorecard", "Excel charts", "chart this
+  in a spreadsheet", "a one-pager of these numbers", "RAG status board", or wants a
+  shareable visual summary. HTML path: inline SVG, no CDN. Excel path: openpyxl charts
+  with OfficeCLI-aligned chartType names (column/bar/line/pie/doughnut/waterfall).
+  Draft for review, not advice. NOT PowerPoint or letters; clean/extract first via
+  data-tidy / data-extract; compute metrics via data-analyse when numbers must be exact.
 ---
 
 # Data Visualise
 
-Build a **self-contained HTML dashboard** from tabular data — KPI cards, charts, RAG
-tables — in **one self-contained file** that opens in a browser and prints straight to PDF.
+This skill **orchestrates** which visual artefact to build. Two renderers, one metrics
+contract (`analysis.json` or declarative specs):
 
-It ships **unbranded** — a neutral default (a teal / cool-paper palette and a clean type
-pairing, no logo) — and is **fully brandable**: a firm sets its own name, colours, fonts and
-logo without touching the code (see `references/brand.md`).
+| Artefact | Engine | Choose when |
+|---|---|---|
+| **HTML dashboard** (`.html`) | `scripts/viz.py` | Shareable one-pager, print/PDF, branded board, Cowork/Claude artifact |
+| **Excel charts** (`.xlsx`) | `scripts/workbook.py` | Analysts will keep working in Excel; native charts matter |
 
-> **Self-contained & offline by design.** Pure HTML + CSS + **inline SVG** charts —
-> no JavaScript chart libraries, no CDN, no remote images. The file works with no
-> network, prints reliably, travels as a single attachment, and keeps sensitive data
-> off any cloud (the toolkit's data-handling rule). The only script is a one-line
-> "Print / Save PDF" button (inline, no dependency).
+Both are local, offline, and draft-for-review. PowerPoint and letters stay out of scope.
 
-> **Renders as a live Artifact in Cowork / Claude.ai.** Because the output is a
-> *single-page, dependency-free* HTML document, it is exactly what Claude treats as a
-> live HTML **Artifact** — it runs and previews in the artifact panel (interactive
-> charts, hover tooltips), and can be edited, published and shared there. Hand over the
-> `.html` **as the skill writes it** — no transform needed (the embedded base64 logo +
-> inline SVG mean nothing to fetch, so the sandboxed artifact iframe renders it in full;
-> anything CDN-loaded would be blocked). In **Claude Code** (local terminal) there is no
-> artifact panel — open the file in a browser instead.
+## HTML / Excel parity (treat them as peers)
+
+**Neither path requires data-analyse.** A simple table (CSV / JSON / `.xlsx`) is enough for
+both. What differs is only the *renderer* and how you declare the series — not whether the
+job is allowed.
+
+| Starting point | HTML | Excel |
+|---|---|---|
+| Plain table | `input` + block `data` / `"rows": "$source"` | `type: "chart"` with `categories` + `series` (derive from the same table in Python) |
+| `analysis.json` | `"blocks": "$analysis"` / `from_analysis` | same shortcut → chart sheets |
+| Both artefacts | same numbers → HTML blocks **and** Excel chart specs | |
+
+**Do not** steer every Excel request through analyse first, and **do not** treat HTML as the
+only “simple data” path. Build the category/value series once from the table, then:
+
+- HTML → `bar_chart` / `line_chart` / `donut_chart` / `waterfall` / `table`…
+- Excel → `chart_type` `column` / `line` / `pie` / `doughnut` / `waterfall`…
+
+Rough block ↔ chart mapping (same story, different file):
+
+| Intent | HTML block | Excel `chart_type` |
+|---|---|---|
+| Category comparison | `bar_chart` | `column` (or `bar`) |
+| Trend over time | `line_chart` / `sparkline` | `line` |
+| Share of total | `donut_chart` | `pie` / `doughnut` |
+| Bridge / walk | `waterfall` | `waterfall` |
+| Detail rows | `table` (`$source`) | (sheet data under the chart; no separate table block) |
+| KPI strip | `kpi_row` | omit, or a one-row summary sheet later |
+
+Use **data-analyse** when the brief needs engine-exact metrics (ageing, concentration, MoM,
+currency gates) or you want one `analysis.json` to drive HTML and Excel together. For “chart
+this column by that column”, skip analyse and declare the series directly on both paths.
+
+## 0 — Pick the artefact (do this first)
+
+Ask (briefly) who reads it and where it will live:
+
+1. **HTML** if they want a branded board, print-to-PDF, or an in-chat artifact.
+2. **Excel** if they say “charts in a spreadsheet”, will filter/annotate further, or the
+   pack lives in a shared drive as `.xlsx`.
+3. **Both** is fine — same table-derived series, or the same `analysis.json` via
+   `suggest_blocks_from_analysis` **and** `suggest_charts_from_analysis`.
+
+Infer from the plan when unspoken: `format: "xlsx"` or `output` ending in `.xlsx` → Excel;
+otherwise HTML.
+
+> Excel charts use **openpyxl** (toolkit hard dep). Chart prop names follow
+> [OfficeCLI / AionUi](https://github.com/iOfficeAI/OfficeCLI/wiki/excel-chart-add)
+> (`chartType`, `categories`, `series`, waterfall colours) — OfficeCLI is **not** required
+> at runtime. See `references/workbook-charts.md`.
 
 ## When to use it
 
-- A weekly **operations / task** one-pager.
-- A **compliance** status board — what's due, overdue, by owner.
-- A **finance / pipeline** scorecard — KPI cards + a trend line + a breakdown donut.
-- Any time someone hands you numbers and wants a **shareable visual**, not a raw table.
+- A weekly **operations / task** one-pager (HTML).
+- A **compliance** status board — what's due, overdue, by owner (HTML).
+- A **finance / pipeline** scorecard — KPI cards + trend + breakdown (HTML or Excel).
+- **Native Excel charts** from a simple export or an analyse run (Excel).
 
-To clean or extract the underlying data first, run **data-tidy** / **data-extract** —
-their clean `.xlsx` feeds straight in via `rows_from_xlsx`. PowerPoint decks and letters
-are out of scope for this skill.
+To clean or extract first, run **data-tidy** / **data-extract**. Optional: **data-analyse**
+when metrics must be engine-exact or shared across HTML + Excel.
 
 ## Workflow
 
-1. **Ask intent first** (economical, like the other data skills): what's the dashboard
-   *for*, who reads it, and what are the few numbers that matter? Don't render twelve
-   charts when four KPI cards and one trend answer the question.
-2. **Get the data** — a list of dicts, or point `rows_from_xlsx(path)` at any header+rows
-   `.xlsx` (e.g. a clean table from data-tidy / data-extract). Compute the KPIs/series in
-   plain Python.
-3. **Compose blocks** with the engine (see Building blocks), then `dashboard(...)` to
-   assemble the page. Pick an honest `as_of` stamp. To brand the output, pass a `theme`
-   (and call `apply_theme(theme)` first to re-skin chart colours) — see Theming below.
-4. **Render & review** — write the `.html`, `open_in_browser(path)`, eyeball it, then
-   the user prints to PDF from the browser (Ctrl-P → Save as PDF) if they want a PDF.
-   It's a **draft for a qualified person**; never auto-send it.
+1. **Intent** — purpose, reader, and artefact (HTML vs Excel). Don't render twelve charts
+   when four KPIs and one trend answer the question.
+2. **Data** — plain table rows, *or* `analysis.json` when you need the analyse engine.
+3. **Propose** — derive the same category/value series for either path. HTML: block list
+   (or `$analysis`). Excel: `type: chart` list (or `$analysis`). Confirm.
+4. **Render & review** — HTML → `dashboard(...)` / open in browser; Excel →
+   `write_charts_xlsx` / `charts_from_analysis`. Draft for a qualified person; never auto-send.
 
-## Building blocks
+## HTML path (`viz.py`)
 
-All in `scripts/viz.py`; each returns an HTML fragment, `dashboard()` assembles them.
+Brandable, self-contained HTML — inline SVG, no CDN/remote images; prints to PDF. Ships
+unbranded (teal / cool-paper) and is fully brandable (`references/brand.md`). Renders as a
+live Artifact in Cowork / Claude.ai when handed over as written.
+
+### Building blocks
+
+Each returns an HTML fragment; `dashboard()` assembles them.
 
 | Block | What it makes |
 |---|---|
@@ -74,9 +111,14 @@ All in `scripts/viz.py`; each returns an HTML fragment, `dashboard()` assembles 
 | `bar_chart(data, title, unit)` | vertical bars (inline SVG); `data` = `[(label, value)]` or dicts |
 | `line_chart(series, title, unit, toggle)` | one line `[(label, value)]` or many `{name: [...]}` with a legend; floated y-axis + gridlines; `toggle=True` → click legend to show/hide a series |
 | `donut_chart(data, title, centre)` | donut with a centre total; themed slice colours |
+| `heatmap(matrix, row_labels, col_labels, …)` | matrix heat map (pivot / cohort / correlation); `scale="sequential"` or `"diverging"` |
+| `sparkline(data, …)` | compact trend path for KPI strips; shape over scale |
+| `waterfall(steps, …)` | bridge chart (`start` / `delta` / `total`) for period or variance walks |
 | `table(rows, columns, title, rag, sortable, filter_by)` | themed table; `rag={col: value->status}` colours cells (RAG conditional formatting); `sortable=True` → click-to-sort headers; `filter_by=[col]` → a dropdown row-filter |
 | `status_pill(text, status)` | a small RAG pill |
 | `section(title, *blocks)` / `grid(*blocks, cols)` | titled section / N-column layout |
+| `suggest_blocks_from_analysis(analysis.json)` | map a data-analyse metrics payload → editable declarative blocks (no recomputation) |
+| `blocks_from_analysis(analysis.json)` | same mapping, already rendered to HTML fragments |
 | `dashboard(title, blocks, subtitle, as_of, out_path, footnote, theme)` | full page: header, as-of stamp, print CSS, footer disclaimer; `theme` re-skins the shell |
 | `apply_theme(theme)` | rebind the active palette/font/logo so blocks built afterwards use a firm's brand |
 | `rows_from_xlsx(path, sheet)` | read a header+rows `.xlsx` → list of dicts (needs `openpyxl`); multi-tab safe — auto-reads the single data sheet, raises if several hold data (pass `sheet=`) |
@@ -105,6 +147,63 @@ open_in_browser(path)
 
 See `references/blocks.md` for the full cookbook and `references/brand.md` for the theming
 guide. `examples/operations-dashboard.html` is a built sample.
+
+### From data-analyse (HTML)
+
+```python
+from viz import suggest_blocks_from_analysis, blocks_from_analysis, dashboard
+specs = suggest_blocks_from_analysis(analysis)   # declarative — show the user
+path = dashboard("Insight board", blocks_from_analysis(analysis),
+                 as_of="18 Jul 2026", out_path="insight.html")
+```
+
+Plan: `"blocks": "$analysis"` or `{"type": "from_analysis", "ops": [...]}` with
+`analysis.json` as the input.
+
+## Excel path (`workbook.py`)
+
+Chart-only workbook: one sheet per chart, data in cells, embedded native Excel chart.
+Vocabulary aligned with OfficeCLI (`column` / `bar` / `line` / `pie` / `doughnut` /
+`waterfall`). Full prop list: `references/workbook-charts.md`.
+
+From a **simple table** (parity with HTML — no analyse):
+
+```python
+from workbook import write_charts_xlsx
+# same series you'd pass to viz.bar_chart([(lab, val), ...])
+write_charts_xlsx("charts.xlsx", [
+    {"chart_type": "column", "title": "By region",
+     "categories": ["North", "South"],
+     "series": [{"name": "Amount", "values": [120, 80]}]},
+])
+```
+
+Optional — from `analysis.json`:
+
+```python
+from workbook import suggest_charts_from_analysis, charts_from_analysis
+charts_from_analysis(analysis, "insight-charts.xlsx")
+```
+
+Plans (format from `format: "xlsx"` or `.xlsx` output):
+
+```json
+{
+  "skill": "data-visualise",
+  "format": "xlsx",
+  "dashboard": {
+    "title": "By region",
+    "blocks": [{
+      "type": "chart", "chart_type": "column", "title": "By region",
+      "categories": ["North", "South"],
+      "series": [{"name": "Amount", "values": [120, 80]}]
+    }]
+  },
+  "output": "out/charts.xlsx"
+}
+```
+
+Or `"input": "out/analysis.json"` with `"blocks": "$analysis"` when an analyse run exists.
 
 ## Theming (neutral default, fully brandable)
 
@@ -160,16 +259,14 @@ the common case: a clean, branded, printable dashboard that also opens as a live
 
 ## Files
 
-- `scripts/viz.py` — the engine: default theme + `apply_theme`, building blocks,
-  `dashboard()`, `rows_from_xlsx`, `open_in_browser`; `python viz.py [out.html]` builds an
-  offline self-test dashboard (no data, no network).
-- `references/brand.md` — the theming guide: the neutral default and how a firm sets its own
-  brand.
-- `references/blocks.md` — the building-block cookbook with worked snippets.
-- No default logo ships — the header shows a text wordmark of the brand name. A firm supplies
-  its own by pointing `theme["logo_path"]` at a transparent PNG or SVG (base64-embedded so the
-  artefact stays self-contained).
-- `examples/operations-dashboard.html` — a built sample (the self-test output).
+- `scripts/viz.py` — HTML engine: theme, blocks, `dashboard()`, analysis→blocks handoff;
+  `python viz.py [out.html]` self-test.
+- `scripts/workbook.py` — Excel chart engine: OfficeCLI-aligned chart specs, analysis→charts;
+  `python workbook.py [out.xlsx]` self-test.
+- `references/brand.md` — HTML theming guide.
+- `references/blocks.md` — HTML building-block cookbook.
+- `references/workbook-charts.md` — Excel chart types, props, analysis mapping.
+- `examples/operations-dashboard.html` — built HTML sample.
 
 ## Principles
 

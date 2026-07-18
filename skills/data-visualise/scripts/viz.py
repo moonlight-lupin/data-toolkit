@@ -17,9 +17,11 @@ Design principles
   primary/accent colours, fonts, optional logo path) to re-skin every artefact.
   See DEFAULT_THEME below.
 * **Composable.** Small building blocks (kpi_card, bar_chart, line_chart,
-  donut_chart, table, status_pill, section, grid) each return an HTML string;
-  `dashboard(...)` assembles them into a full page with a header, an "as-of"
-  stamp, a print stylesheet and a footer disclaimer.
+  donut_chart, heatmap, sparkline, waterfall, table, status_pill, section, grid)
+  each return an HTML string; `dashboard(...)` assembles them into a full page
+  with a header, an "as-of" stamp, a print stylesheet and a footer disclaimer.
+  `suggest_blocks_from_analysis` turns a data-analyse `analysis.json` into
+  editable declarative blocks (compute stays in analyse; this skill only draws).
 * **Drafts, not advice.** Output is a draft artefact for a qualified person
   to review — never auto-distributed.
 
@@ -421,6 +423,244 @@ def donut_chart(data, title=None, height=240, centre=None) -> str:
                                f'<div class="legend col">{"".join(legend)}</div></div>')
 
 
+def _hex_to_rgb(h: str) -> tuple[int, int, int]:
+    h = (h or "#000000").lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+def _rgb_to_hex(r: float, g: float, b: float) -> str:
+    return f"#{max(0, min(255, int(round(r)))):02x}{max(0, min(255, int(round(g)))):02x}{max(0, min(255, int(round(b)))):02x}"
+
+
+def _colour_at(t: float, scale: str = "sequential") -> str:
+    """Map t∈[0,1] onto the active theme. sequential = tint→primary; diverging =
+    red→paper→green (association / correlation)."""
+    t = 0.0 if t is None else max(0.0, min(1.0, float(t)))
+    if scale == "diverging":
+        lo, mid, hi = (_hex_to_rgb(BRAND["red"]), _hex_to_rgb(BRAND["white"]),
+                       _hex_to_rgb(BRAND["green"]))
+        if t < 0.5:
+            u = t * 2
+            rgb = tuple(lo[i] + (mid[i] - lo[i]) * u for i in range(3))
+        else:
+            u = (t - 0.5) * 2
+            rgb = tuple(mid[i] + (hi[i] - mid[i]) * u for i in range(3))
+    else:
+        lo, hi = _hex_to_rgb(BRAND["pink_vlt"]), _hex_to_rgb(BRAND["burgundy"])
+        rgb = tuple(lo[i] + (hi[i] - lo[i]) * t for i in range(3))
+    return _rgb_to_hex(*rgb)
+
+
+def _contrast_ink(fill: str) -> str:
+    r, g, b = _hex_to_rgb(fill)
+    # Relative luminance shortcut — dark cells get white labels.
+    return BRAND["white"] if (0.299 * r + 0.587 * g + 0.114 * b) < 140 else BRAND["ink"]
+
+
+def heatmap(matrix, row_labels=None, col_labels=None, title=None,
+            scale="sequential", mid=0, unit="", cell_w=48, cell_h=32) -> str:
+    """Matrix as an inline-SVG heat map. `matrix` is a list of rows (each a list of
+    numbers); missing/None cells render empty. `scale`: ``sequential`` (magnitude)
+    or ``diverging`` (centred on `mid`, e.g. 0 for correlations). Built for pivot
+    tables, cohort retention and correlation matrices — not a generic Excel dump."""
+    if not matrix:
+        return _empty_block(title, "No data")
+    rows = [list(r) for r in matrix]
+    n_r, n_c = len(rows), max(len(r) for r in rows)
+    row_labels = list(row_labels) if row_labels is not None else [str(i + 1) for i in range(n_r)]
+    col_labels = list(col_labels) if col_labels is not None else [str(i + 1) for i in range(n_c)]
+    nums = []
+    for r in rows:
+        for v in r:
+            if v is None or v == "":
+                continue
+            try:
+                nums.append(float(v))
+            except (TypeError, ValueError):
+                continue
+    if not nums:
+        return _empty_block(title, "No numeric cells")
+    if scale == "diverging":
+        span = max(abs(v - float(mid)) for v in nums) or 1.0
+    else:
+        lo, hi = min(nums), max(nums)
+        span = (hi - lo) or 1.0
+    pad_l, pad_t = 90, 28
+    W = pad_l + n_c * cell_w + 8
+    H = pad_t + n_r * cell_h + 8
+    cells, xlabs, ylabs = [], [], []
+    for j, lab in enumerate(col_labels[:n_c]):
+        xlabs.append(
+            f'<text x="{pad_l + j * cell_w + cell_w/2:.1f}" y="{pad_t - 8}" '
+            f'text-anchor="middle" class="x">{_e(lab)}</text>')
+    for i, lab in enumerate(row_labels[:n_r]):
+        ylabs.append(
+            f'<text x="{pad_l - 6}" y="{pad_t + i * cell_h + cell_h/2 + 4:.1f}" '
+            f'text-anchor="end" class="x">{_e(lab)}</text>')
+        row = rows[i] + [None] * (n_c - len(rows[i]))
+        for j, raw in enumerate(row[:n_c]):
+            x, y = pad_l + j * cell_w, pad_t + i * cell_h
+            if raw is None or raw == "":
+                cells.append(
+                    f'<rect x="{x}" y="{y}" width="{cell_w - 2}" height="{cell_h - 2}" '
+                    f'rx="3" fill="{BRAND["pink_vlt"]}" opacity=".35"/>')
+                continue
+            try:
+                v = float(raw)
+            except (TypeError, ValueError):
+                cells.append(
+                    f'<rect x="{x}" y="{y}" width="{cell_w - 2}" height="{cell_h - 2}" '
+                    f'rx="3" fill="{BRAND["pink_vlt"]}" opacity=".35"/>')
+                continue
+            if scale == "diverging":
+                t = 0.5 + (v - float(mid)) / (2 * span)
+            else:
+                t = (v - lo) / span
+            fill = _colour_at(t, scale=scale)
+            ink = _contrast_ink(fill)
+            cells.append(
+                f'<rect x="{x}" y="{y}" width="{cell_w - 2}" height="{cell_h - 2}" '
+                f'rx="3" fill="{fill}"><title>{_e(row_labels[i])} × {_e(col_labels[j])}: '
+                f'{_fmt_num(_strip(v))}{_e(unit)}</title></rect>'
+                f'<text x="{x + (cell_w - 2)/2:.1f}" y="{y + cell_h/2 + 3:.1f}" '
+                f'text-anchor="middle" class="hm-v" fill="{ink}">{_fmt_num(_strip(v))}</text>')
+    svg = (f'<svg viewBox="0 0 {W} {H}" class="chart heatmap" '
+           f'preserveAspectRatio="xMidYMid meet">{"".join(xlabs)}{"".join(ylabs)}'
+           f'{"".join(cells)}</svg>')
+    return _chart_block(title, svg)
+
+
+def sparkline(data, title=None, width=180, height=42, show_last=True, unit="") -> str:
+    """Compact inline trend — a single path sized for a KPI strip or tight grid.
+    Prefer this when the shape matters more than axis ticks; use `line_chart` for
+    a readable scale. data: [(label, value)] or bare values."""
+    if data and not isinstance(data[0], (list, tuple, dict)):
+        pairs = [(str(i + 1), v) for i, v in enumerate(data)]
+    else:
+        pairs = _norm_pairs(data)
+    if len(pairs) < 2:
+        return _empty_block(title, "Need ≥2 points")
+    vals = [float(v or 0) for _, v in pairs]
+    lo, hi = min(vals), max(vals)
+    rng = (hi - lo) or 1.0
+    pad_x, pad_y = 4, 6
+    plot_w = width - 2 * pad_x
+    plot_h = height - 2 * pad_y
+    pts = []
+    for i, v in enumerate(vals):
+        x = pad_x + (i / (len(vals) - 1)) * plot_w
+        y = pad_y + plot_h - ((v - lo) / rng) * plot_h
+        pts.append((x, y))
+    d = "M" + " L".join(f"{x:.1f},{y:.1f}" for x, y in pts)
+    area = d + f" L{pts[-1][0]:.1f},{height - pad_y:.1f} L{pts[0][0]:.1f},{height - pad_y:.1f} Z"
+    col = BRAND["burgundy"]
+    last = pairs[-1]
+    delta = vals[-1] - vals[0]
+    tip = f'{_e(last[0])}: {_fmt_num(last[1])}{_e(unit)}'
+    svg = (
+        f'<svg viewBox="0 0 {width} {height}" class="chart spark" '
+        f'preserveAspectRatio="none" width="{width}" height="{height}">'
+        f'<path d="{area}" fill="{col}" opacity=".12"/>'
+        f'<path d="{d}" fill="none" stroke="{col}" stroke-width="2"/>'
+        f'<circle cx="{pts[-1][0]:.1f}" cy="{pts[-1][1]:.1f}" r="2.5" fill="{col}">'
+        f'<title>{tip}</title></circle></svg>'
+    )
+    meta = ""
+    if show_last:
+        sign = "+" if delta > 0 else ""
+        meta = (f'<div class="spark-meta"><span class="spark-last">{_fmt_num(last[1])}'
+                f'{_e(unit)}</span><span class="spark-delta">'
+                f'{sign}{_fmt_num(_strip(delta))} overall</span></div>')
+    return _chart_block(title, f'<div class="spark-wrap">{svg}{meta}</div>')
+
+
+def waterfall(steps, title=None, height=240, unit="") -> str:
+    """Bridge chart: how a total moves through signed steps. Each step is
+    ``(label, value, kind)`` or ``{"label","value","kind"}`` where kind is
+    ``start`` | ``delta`` | ``total``. If kind is omitted: first→start, last→total,
+    middle→delta. Deltas float from the running total; start/total rise from zero.
+    Descriptive only — never a forecast."""
+    norm = []
+    for i, s in enumerate(steps or []):
+        if isinstance(s, dict):
+            lab, val, kind = s.get("label"), s.get("value", 0), s.get("kind")
+        else:
+            lab = s[0]
+            val = s[1] if len(s) > 1 else 0
+            kind = s[2] if len(s) > 2 else None
+        if kind is None:
+            kind = "start" if i == 0 else ("total" if i == len(steps) - 1 else "delta")
+        if kind not in ("start", "delta", "total"):
+            kind = "delta"
+        norm.append((lab, val, kind))
+    if not norm:
+        return _empty_block(title, "No data")
+    running = 0.0
+    geometry = []  # (label, raw, y0, y1, kind)
+    for lab, raw, kind in norm:
+        v = float(raw or 0)
+        if kind == "start":
+            y0, y1, running = 0.0, v, v
+        elif kind == "total":
+            y0, y1 = 0.0, v
+            running = v
+        else:
+            y0, y1 = running, running + v
+            running = y1
+        geometry.append((lab, raw, y0, y1, kind))
+    ys = [y for _, _, a, b, _ in geometry for y in (a, b)]
+    vmin, vmax = min(ys + [0.0]), max(ys + [0.0])
+    ticks, axis_lo, axis_hi = _nice_ticks(vmin, vmax)
+    rng = (axis_hi - axis_lo) or 1.0
+    W, pad_l, pad_b, pad_t, pad_r = 640, 40, 30, 18, 10
+    plot_h = height - pad_b - pad_t
+    n = len(geometry)
+    gap = 12
+    bw = (W - pad_l - pad_r) / n - gap
+
+    def _y(v):
+        return pad_t + plot_h - ((float(v) - axis_lo) / rng) * plot_h
+
+    grid = "".join(
+        f'<line x1="{pad_l}" y1="{_y(t):.1f}" x2="{W - pad_r}" y2="{_y(t):.1f}" '
+        f'stroke="{BRAND["grey_lt"]}" stroke-width="1"/>'
+        f'<text x="{pad_l - 5}" y="{_y(t) + 3:.1f}" text-anchor="end" class="x">'
+        f'{_fmt_num(_strip(t))}{_e(unit)}</text>' for t in ticks)
+    shapes, connectors = [], []
+    prev_top = None
+    for i, (lab, raw, y0, y1, kind) in enumerate(geometry):
+        x = pad_l + i * (bw + gap)
+        top, bot = max(y0, y1), min(y0, y1)
+        y = _y(top)
+        h = abs(_y(y0) - _y(y1))
+        if kind == "delta":
+            col = BRAND["green"] if float(raw or 0) >= 0 else BRAND["red"]
+        elif kind == "total":
+            col = BRAND["burgundy"]
+        else:
+            col = BRAND["rose"]
+        shapes.append(
+            f'<rect x="{x:.1f}" y="{y:.1f}" width="{bw:.1f}" height="{max(h, 1):.1f}" '
+            f'rx="3" fill="{col}"><title>{_e(lab)}: {_fmt_num(raw)}{_e(unit)}</title></rect>'
+            f'<text x="{x + bw/2:.1f}" y="{y - 4:.1f}" text-anchor="middle" class="v">'
+            f'{_fmt_num(raw)}</text>'
+            f'<text x="{x + bw/2:.1f}" y="{height - 9:.1f}" text-anchor="middle" class="x">'
+            f'{_e(lab)}</text>')
+        if prev_top is not None and kind == "delta":
+            x0 = prev_top[0]
+            connectors.append(
+                f'<line x1="{x0:.1f}" y1="{_y(prev_top[1]):.1f}" x2="{x:.1f}" '
+                f'y2="{_y(y0):.1f}" stroke="{BRAND["grey"]}" stroke-width="1" '
+                f'stroke-dasharray="3 3"/>')
+        prev_top = (x + bw, y1)
+    svg = (f'<svg viewBox="0 0 {W} {height}" class="chart" '
+           f'preserveAspectRatio="xMidYMid meet">{grid}{"".join(connectors)}'
+           f'{"".join(shapes)}</svg>')
+    return _chart_block(title, svg)
+
+
 def table(rows: list[dict], columns: list[str] | None = None, title=None,
           rag: dict | None = None, sortable=False, filter_by=None) -> str:
     """An on-brand data table. `rows` = list of dicts. `columns` selects/orders
@@ -788,6 +1028,12 @@ letter-spacing:.4px}}
 .donut{{max-width:240px}}
 .dn-c{{font:700 26px {font};fill:var(--burg)}}
 .dn-l{{font:11px {font};fill:var(--grey)}}
+.heatmap .hm-v{{font:10px {font};pointer-events:none}}
+.spark-wrap{{display:flex;align-items:center;gap:12px}}
+.spark{{flex:0 0 auto}}
+.spark-meta{{display:flex;flex-direction:column;gap:2px;font-size:12px}}
+.spark-last{{font-family:{font_heading};font-size:18px;font-weight:700;color:var(--ink)}}
+.spark-delta{{color:var(--grey)}}
 .legend{{display:flex;flex-wrap:wrap;gap:10px 16px;margin-top:8px;font-size:12px}}
 .legend.col{{flex-direction:column;gap:6px}}
 .lg{{display:inline-flex;align-items:center;gap:6px;color:var(--ink)}}
@@ -952,6 +1198,254 @@ def rows_from_xlsx(path, sheet=None) -> list[dict]:
 
 
 # --------------------------------------------------------------------------- #
+# Analyse → visualise handoff
+# --------------------------------------------------------------------------- #
+def _as_number(v):
+    if v is None or v == "":
+        return None
+    if isinstance(v, (int, float, Decimal)):
+        return v
+    try:
+        return Decimal(str(v))
+    except Exception:
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+
+def _analysis_results(analysis) -> list[dict]:
+    if isinstance(analysis, list):
+        return analysis
+    if isinstance(analysis, dict):
+        return list(analysis.get("results") or [])
+    return []
+
+
+def _blocks_for_analysis_op(op: str, name: str, result: dict, *, max_groups: int = 10) -> list[dict]:
+    """Map one analyse engine result onto declarative visualise blocks.
+
+    Numbers stay whatever the engine produced — this never recomputes metrics.
+    Unknown ops are skipped (so older/newer analysis.json files degrade cleanly).
+    """
+    result = result or {}
+    title = name or op
+    out: list[dict] = []
+
+    if op == "numeric_summary":
+        items = [
+            {"label": "n", "value": result.get("n"), "status": "brand"},
+            {"label": "Total", "value": result.get("total"), "status": "brand"},
+            {"label": "Mean", "value": result.get("mean"), "status": "grey"},
+            {"label": "Median", "value": result.get("median"), "status": "grey"},
+        ]
+        out.append({"type": "kpi_row", "items": [i for i in items if i["value"] is not None]})
+    elif op == "breakdown":
+        groups = (result.get("groups") or [])[:max_groups]
+        measure = "total" if groups and "total" in groups[0] else "count"
+        data = [{"label": g.get("key"), "value": g.get(measure)} for g in groups]
+        if data:
+            out.append({"type": "bar_chart", "title": f"{title} — by {result.get('by', 'group')}",
+                        "data": data})
+            if measure == "total" and any(g.get("share") is not None for g in groups):
+                out.append({"type": "donut_chart", "title": f"{title} — share", "data": data})
+    elif op == "period_series":
+        periods = result.get("periods") or []
+        measure = "total" if periods and "total" in periods[0] else "count"
+        series = [(p.get("period"), p.get(measure)) for p in periods]
+        if series:
+            out.append({"type": "line_chart", "title": f"{title} — {result.get('grain', 'period')}",
+                        "data": [{"label": a, "value": b} for a, b in series]})
+            out.append({"type": "sparkline", "title": f"{title} — shape",
+                        "data": [{"label": a, "value": b} for a, b in series]})
+            if len(series) >= 2:
+                steps = [{"label": series[0][0], "value": series[0][1], "kind": "start"}]
+                for i in range(1, len(series)):
+                    lab, val = series[i]
+                    delta = periods[i].get("delta")
+                    if delta is None:
+                        cur, base = _as_number(val), _as_number(series[i - 1][1])
+                        delta = (cur - base) if cur is not None and base is not None else 0
+                    steps.append({"label": f"Δ {lab}", "value": delta, "kind": "delta"})
+                steps.append({"label": series[-1][0], "value": series[-1][1], "kind": "total"})
+                out.append({"type": "waterfall", "title": f"{title} — period bridge", "steps": steps})
+    elif op == "ageing":
+        buckets = [b for b in (result.get("buckets") or []) if b.get("count")]
+        measure = "total" if buckets and "total" in buckets[0] else "count"
+        data = [{"label": b.get("bucket"), "value": b.get(measure)} for b in buckets]
+        if data:
+            out.append({"type": "bar_chart", "title": f"{title} — ageing", "data": data})
+    elif op == "outliers_iqr":
+        items = [
+            {"label": "Outliers", "value": result.get("n_outliers", len(result.get("outliers") or [])),
+             "status": "amber"},
+            {"label": "Fence low", "value": result.get("fence_low"), "status": "grey"},
+            {"label": "Fence high", "value": result.get("fence_high"), "status": "grey"},
+        ]
+        out.append({"type": "kpi_row", "items": [i for i in items if i["value"] is not None]})
+    elif op == "currency_mix":
+        currencies = result.get("currencies") or []
+        out.append({"type": "kpi_row", "items": [
+            {"label": "Currencies", "value": len(currencies), "sub": ", ".join(currencies) or "—",
+             "status": "amber" if len(currencies) > 1 else "green"}
+        ]})
+    elif op == "concentration":
+        out.append({"type": "kpi_row", "items": [
+            {"label": "HHI", "value": result.get("hhi"), "status": "brand"},
+            {"label": "Top-N share", "value": result.get("top_n_share"), "status": "brand"},
+            {"label": "Groups to 80%", "value": result.get("groups_to_80"), "status": "grey"},
+            {"label": "Class", "value": result.get("classification"), "status": "amber"},
+        ]})
+    elif op == "gini":
+        out.append({"type": "kpi_row", "items": [
+            {"label": "Gini", "value": result.get("gini"), "status": "brand"},
+            {"label": "Class", "value": result.get("classification"), "status": "grey"},
+            {"label": "n", "value": result.get("n"), "status": "grey"},
+        ]})
+    elif op == "distribution":
+        out.append({"type": "kpi_row", "items": [
+            {"label": "Skewness", "value": result.get("skewness"), "status": "brand"},
+            {"label": "Kurtosis", "value": result.get("kurtosis"), "status": "brand"},
+            {"label": "Shape", "value": result.get("classification"), "status": "grey"},
+        ]})
+    elif op == "percentile":
+        if "value" in result:
+            out.append({"type": "kpi_row", "items": [
+                {"label": "Percentile", "value": result.get("value"), "status": "brand"},
+                {"label": "n", "value": result.get("n"), "status": "grey"},
+            ]})
+        else:
+            items = [{"label": f"p{float(k)*100:g}", "value": v, "status": "brand"}
+                     for k, v in result.items() if _as_number(k) is not None]
+            if items:
+                out.append({"type": "kpi_row", "items": items})
+    elif op == "trend":
+        out.append({"type": "kpi_row", "items": [
+            {"label": "Slope", "value": result.get("slope"), "status": "brand"},
+            {"label": "R²", "value": result.get("r_squared"), "status": "grey"},
+            {"label": "Direction", "value": result.get("classification"), "status": "amber"},
+        ]})
+    elif op == "rolling":
+        series = result.get("series") or []
+        data = [{"label": p.get("period"), "value": p.get("value")}
+                for p in series if p.get("value") is not None]
+        if data:
+            out.append({"type": "line_chart",
+                        "title": f"{title} — rolling {result.get('func', 'mean')}",
+                        "data": data})
+    elif op == "seasonality":
+        seasons = result.get("seasons") or []
+        grain = result.get("grain", "month")
+        label = (lambda s: f"Q{s}" if grain == "quarter" else f"M{s:02d}")
+        data = [{"label": label(s.get("season")), "value": s.get("average")}
+                for s in seasons if s.get("count")]
+        if data:
+            out.append({"type": "bar_chart", "title": f"{title} — seasonal average", "data": data})
+    elif op == "pivot":
+        matrix = result.get("matrix") or []
+        if matrix:
+            out.append({"type": "heatmap", "title": title,
+                        "matrix": matrix,
+                        "row_labels": result.get("row_keys") or result.get("rows"),
+                        "col_labels": result.get("col_keys") or result.get("cols"),
+                        "scale": "sequential"})
+    elif op == "correlation_matrix":
+        matrix = result.get("matrix") or []
+        if matrix:
+            out.append({"type": "heatmap", "title": f"{title} — correlation",
+                        "matrix": matrix, "row_labels": result.get("columns"),
+                        "col_labels": result.get("columns"), "scale": "diverging", "mid": 0})
+    elif op == "cohort":
+        matrix = result.get("retention") or result.get("matrix") or []
+        if matrix:
+            max_off = result.get("max_offset", len(matrix[0]) - 1 if matrix else 0)
+            out.append({"type": "heatmap", "title": f"{title} — retention",
+                        "matrix": matrix,
+                        "row_labels": result.get("cohorts"),
+                        "col_labels": [f"+{i}" for i in range(int(max_off) + 1)],
+                        "scale": "sequential"})
+    elif op == "compare_series":
+        points = result.get("points") or []
+        a_label = result.get("a_label", "A")
+        b_label = result.get("b_label", "B")
+        if points:
+            out.append({"type": "line_chart", "title": f"{title} — {a_label} vs {b_label}",
+                        "data": {
+                            a_label: [{"label": p.get("key"), "value": p.get(a_label)} for p in points],
+                            b_label: [{"label": p.get("key"), "value": p.get(b_label)} for p in points],
+                        }, "toggle": True})
+        out.append({"type": "kpi_row", "items": [
+            {"label": "n paired", "value": result.get("n"), "status": "brand"},
+            {"label": "Correlation", "value": result.get("correlation"), "status": "grey"},
+            {"label": "Best align", "value": result.get("best_alignment"), "status": "amber"},
+        ]})
+    elif op == "join_on":
+        report = result.get("report") or result
+        out.append({"type": "kpi_row", "items": [
+            {"label": "Matched", "value": report.get("matched"), "status": "green"},
+            {"label": "Left only", "value": report.get("left_only"), "status": "amber"},
+            {"label": "Right only", "value": report.get("right_only"), "status": "amber"},
+        ]})
+    return [b for b in out if b.get("type") != "kpi_row" or b.get("items")]
+
+
+def suggest_blocks_from_analysis(analysis, *, ops=None, max_groups: int = 10) -> list[dict]:
+    """Turn a data-analyse ``analysis.json`` (or its ``results`` list) into
+    declarative dashboard blocks the agent can show, edit, then render.
+
+    This is the handoff contract: analyse computes; visualise proposes drawings.
+    Pass ``ops`` to keep only named operations (by ``op`` or ``name``).
+    """
+    wanted = set(ops) if ops else None
+    blocks: list[dict] = []
+    for item in _analysis_results(analysis):
+        if not isinstance(item, dict):
+            continue
+        op = item.get("op")
+        name = item.get("name") or op
+        if wanted is not None and op not in wanted and name not in wanted:
+            continue
+        mapped = _blocks_for_analysis_op(op, name, item.get("result") or {}, max_groups=max_groups)
+        if mapped:
+            blocks.append({"type": "section", "title": str(name), "blocks": mapped})
+    return blocks
+
+
+def blocks_from_analysis(analysis, *, ops=None, max_groups: int = 10) -> list[str]:
+    """Convenience: ``suggest_blocks_from_analysis`` rendered to HTML fragments."""
+    specs = suggest_blocks_from_analysis(analysis, ops=ops, max_groups=max_groups)
+
+    def _render(spec: dict) -> str:
+        kind = spec.get("type")
+        if kind == "kpi_row":
+            return kpi_row(spec.get("items", []))
+        if kind == "bar_chart":
+            return bar_chart(spec.get("data", []), title=spec.get("title"), unit=spec.get("unit", ""))
+        if kind == "line_chart":
+            return line_chart(spec.get("data", []), title=spec.get("title"),
+                              unit=spec.get("unit", ""), toggle=spec.get("toggle", False))
+        if kind == "donut_chart":
+            return donut_chart(spec.get("data", []), title=spec.get("title"), centre=spec.get("centre"))
+        if kind == "heatmap":
+            return heatmap(spec.get("matrix", []), row_labels=spec.get("row_labels"),
+                           col_labels=spec.get("col_labels"), title=spec.get("title"),
+                           scale=spec.get("scale", "sequential"), mid=spec.get("mid", 0),
+                           unit=spec.get("unit", ""))
+        if kind == "sparkline":
+            return sparkline(spec.get("data", []), title=spec.get("title"),
+                             show_last=spec.get("show_last", True), unit=spec.get("unit", ""))
+        if kind == "waterfall":
+            return waterfall(spec.get("steps", []), title=spec.get("title"), unit=spec.get("unit", ""))
+        if kind == "section":
+            return section(spec.get("title", ""), *[_render(c) for c in spec.get("blocks", [])])
+        if kind == "grid":
+            return grid(*[_render(c) for c in spec.get("blocks", [])], cols=int(spec.get("cols", 2)))
+        raise ValueError(f"unsupported block type from analysis: {kind!r}")
+
+    return [_render(spec) for spec in specs]
+
+
+# --------------------------------------------------------------------------- #
 # Self-test — builds a demo dashboard (no external data, no network).
 # --------------------------------------------------------------------------- #
 if __name__ == "__main__":
@@ -976,9 +1470,21 @@ if __name__ == "__main__":
                              ("Legal", 4)], title="Open tasks by function"),
             )),
         section("Trend",
-            line_chart({"Opened": [("W1", 10), ("W2", 14), ("W3", 9), ("W4", 12)],
-                        "Closed": [("W1", 8), ("W2", 11), ("W3", 13), ("W4", 10)]},
-                       title="Opened vs closed (4 weeks)")),
+            grid(
+                line_chart({"Opened": [("W1", 10), ("W2", 14), ("W3", 9), ("W4", 12)],
+                            "Closed": [("W1", 8), ("W2", 11), ("W3", 13), ("W4", 10)]},
+                           title="Opened vs closed (4 weeks)"),
+                sparkline([("W1", 10), ("W2", 14), ("W3", 9), ("W4", 12)],
+                          title="Opened — sparkline"),
+                cols=2)),
+        section("Composition",
+            grid(
+                heatmap([[8, 3], [2, 5]], row_labels=["Compliance", "Finance"],
+                        col_labels=["Open", "Done"], title="Load matrix"),
+                waterfall([("Open", 12, "start"), ("Done", -5, "delta"),
+                           ("New", 4, "delta"), ("Close", 11, "total")],
+                          title="Open → close bridge"),
+                cols=2)),
         section("Detail",
             table(tasks, columns=["ID", "Task", "Owner", "Days late"],
                   title="Outstanding tasks",

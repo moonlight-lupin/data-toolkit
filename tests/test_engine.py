@@ -42,6 +42,7 @@ import extract          # noqa: E402
 import ingest           # noqa: E402
 import reconcile        # noqa: E402
 import viz              # noqa: E402
+import workbook         # noqa: E402
 
 
 # --------------------------------------------------------------------------- #
@@ -175,6 +176,136 @@ def test_viz_rows_from_xlsx_multisheet_safe():
     except Exception as e:                                   # SheetSelectionRequired or ValueError
         assert "sheet" in str(e).lower() or "Data" in str(e)
     assert viz.rows_from_xlsx(str(multi), sheet="Data") == [{"k": 1, "v": 2}]
+
+
+def test_workbook_excel_charts_and_analysis_handoff():
+    path = workbook.write_charts_xlsx(
+        Path(tempfile.mkdtemp()) / "charts.xlsx",
+        [
+            {"chart_type": "column", "title": "By day",
+             "categories": ["Mon", "Tue"], "series": [{"name": "Done", "values": [4, 7]}]},
+            {"chart_type": "line", "title": "Trend",
+             "categories": ["W1", "W2", "W3"],
+             "series": [{"name": "Open", "values": [10, 14, 9]},
+                        {"name": "Closed", "values": [8, 11, 13]}]},
+            {"chart_type": "waterfall", "title": "Bridge",
+             "steps": [
+                 {"label": "Open", "value": 12, "kind": "start"},
+                 {"label": "Done", "value": -5, "kind": "delta"},
+                 {"label": "Close", "value": 7, "kind": "total"},
+             ]},
+        ],
+        workbook_title="Self-test",
+    )
+    assert path.is_file() and path.stat().st_size > 1000
+    from openpyxl import load_workbook
+    wb = load_workbook(path)
+    assert "By day" in wb.sheetnames and len(wb["By day"]._charts) == 1
+    assert len(wb["Bridge"]._charts) == 1
+
+    analysis = {
+        "results": [
+            {"op": "breakdown", "name": "Cust", "result": {
+                "by": "Customer",
+                "groups": [{"key": "A", "total": "100", "count": 1},
+                           {"key": "B", "total": "40", "count": 1}],
+            }},
+            {"op": "period_series", "name": "Monthly", "result": {
+                "grain": "month",
+                "periods": [
+                    {"period": "2026-01", "total": "100", "delta": None},
+                    {"period": "2026-02", "total": "130", "delta": "30"},
+                ],
+            }},
+            {"op": "concentration", "name": "skip", "result": {"hhi": 2000}},
+        ]
+    }
+    specs = workbook.suggest_charts_from_analysis(analysis)
+    types = [s["chart_type"] for s in specs]
+    assert "column" in types and "pie" in types and "line" in types and "waterfall" in types
+    assert all(s["chart_type"] != "concentration" for s in specs)
+    out = workbook.charts_from_analysis(analysis, Path(tempfile.mkdtemp()) / "from-analysis.xlsx")
+    assert out.is_file()
+
+
+def test_workbook_charts_follow_the_visualise_theme():
+    """A white-label theme must colour the Excel workbook as it colours the HTML dashboard —
+    one palette drives both artefacts (regression: the xlsx path used to ignore `theme`)."""
+    import re
+    import zipfile
+
+    charts = [{"chart_type": "column", "title": "By region",
+               "categories": ["N", "S"], "series": {"Amount": [10, 20]}}]
+    out = Path(tempfile.mkdtemp())
+
+    def series_fills(path):
+        with zipfile.ZipFile(path) as z:
+            xml = "".join(z.read(n).decode("utf8", "ignore")
+                          for n in z.namelist() if "charts/chart" in n)
+        return set(re.findall(r'srgbClr val="([0-9A-Fa-f]{6})"', xml))
+
+    default_fills = series_fills(workbook.write_charts_xlsx(out / "default.xlsx", charts))
+    acme_fills = series_fills(workbook.write_charts_xlsx(
+        out / "acme.xlsx", charts, theme={"colours": {"burgundy": "#0B3D91"}}))
+
+    assert "163F3A" in default_fills, default_fills          # neutral default palette
+    assert "0B3D91" in acme_fills, acme_fills                # the theme reached the chart
+    assert "0B3D91" not in default_fills
+    try:
+        workbook.write_charts_xlsx(Path(tempfile.mkdtemp()) / "x.xlsx", [])
+        raise AssertionError("empty charts should fail")
+    except ValueError:
+        pass
+
+
+def test_viz_heatmap_sparkline_waterfall_and_analysis_handoff():
+    hm = viz.heatmap([[1, -1], [0.5, 0.2]], row_labels=["A", "B"], col_labels=["X", "Y"],
+                     title="Corr", scale="diverging", mid=0)
+    assert 'class="chart heatmap"' in hm and "Corr" in hm and "A" in hm
+    sp = viz.sparkline([("W1", 10), ("W2", 14), ("W3", 9)], title="Shape")
+    assert "spark" in sp and "overall" in sp
+    wf = viz.waterfall([
+        {"label": "Open", "value": 100, "kind": "start"},
+        {"label": "Win", "value": 20, "kind": "delta"},
+        {"label": "Loss", "value": -5, "kind": "delta"},
+        {"label": "Close", "value": 115, "kind": "total"},
+    ], title="Bridge")
+    assert "Bridge" in wf and wf.count("<rect") >= 4
+    empty = viz.heatmap([], title="Empty")
+    assert "No data" in empty
+
+    analysis = {
+        "results": [
+            {"op": "breakdown", "name": "By customer", "result": {
+                "by": "Customer",
+                "groups": [
+                    {"key": "Acme", "count": 2, "total": "100", "share": "0.625"},
+                    {"key": "Beta", "count": 1, "total": "60", "share": "0.375"},
+                ],
+            }},
+            {"op": "period_series", "name": "Monthly", "result": {
+                "grain": "month",
+                "periods": [
+                    {"period": "2026-01", "count": 1, "total": "100", "delta": None},
+                    {"period": "2026-02", "count": 1, "total": "130", "delta": "30"},
+                ],
+            }},
+            {"op": "correlation_matrix", "name": "Corr", "result": {
+                "columns": ["A", "B"], "matrix": [[1.0, 0.5], [0.5, 1.0]],
+            }},
+            {"op": "forecast", "name": "skip me", "result": {"value": 1}},
+        ]
+    }
+    specs = viz.suggest_blocks_from_analysis(analysis)
+    assert [s["type"] for s in specs] == ["section", "section", "section"]
+    assert any(b["type"] == "waterfall" for s in specs for b in s["blocks"])
+    assert any(b["type"] == "heatmap" and b.get("scale") == "diverging"
+               for s in specs for b in s["blocks"])
+    filtered = viz.suggest_blocks_from_analysis(analysis, ops=["breakdown"])
+    assert len(filtered) == 1 and filtered[0]["title"] == "By customer"
+    html_blocks = viz.blocks_from_analysis(analysis)
+    page = viz.dashboard("Insight board", html_blocks, as_of="18 Jul 2026")
+    assert "By customer" in page and "period bridge" in page and "heatmap" in page
 
 
 # --------------------------------------------------------------------------- #

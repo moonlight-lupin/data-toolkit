@@ -456,12 +456,19 @@ def validate_plan(plan: dict[str, Any], *, base_dir: str | Path | None = None,
         except Exception as exc:
             errors.append(str(exc))
     if check_sources and not errors:
+        analysis_input = (
+            skill == "data-visualise"
+            and _dashboard_needs_analysis((plan.get("dashboard") or {}).get("blocks"))
+        )
         for source in inputs:
             try:
                 if skill == "data-extract" and plan.get("mode", "fields") == "fields":
                     path = _resolved_source_path(source, base)
                     if not path.exists():
                         raise PlanError(f"input not found: {path}")
+                    continue
+                if analysis_input:
+                    _load_analysis_json(source, base or Path.cwd())
                     continue
                 info = read_table(source, base_dir=base)
                 if not info.header:
@@ -796,6 +803,111 @@ def _rag_callable(rule: dict[str, Any]):
     return lambda value: mapping.get(str(value), default)
 
 
+def _load_analysis_json(source: dict[str, Any] | str, base: Path) -> dict[str, Any]:
+    path = Path(source["path"] if isinstance(source, dict) else source)
+    if not path.is_absolute():
+        path = (base / path).resolve()
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise PlanError(f"could not read analysis.json at {path}: {exc}") from exc
+    if isinstance(payload, dict) and isinstance(payload.get("results"), list):
+        return payload
+    if isinstance(payload, list):
+        return {"results": payload}
+    raise PlanError("analysis input must be analysis.json with a results list")
+
+
+def _dashboard_needs_analysis(blocks: Any) -> bool:
+    if blocks == "$analysis":
+        return True
+    if not isinstance(blocks, list):
+        return False
+    for block in blocks:
+        if isinstance(block, dict) and block.get("type") == "from_analysis":
+            return True
+        if isinstance(block, dict) and block.get("type") in {"section", "grid"}:
+            if _dashboard_needs_analysis(block.get("blocks", [])):
+                return True
+    return False
+
+
+def _visualise_format(plan: dict[str, Any]) -> str:
+    fmt = str(plan.get("format") or "").strip().lower()
+    if fmt in {"html", "xlsx"}:
+        return fmt
+    output = plan.get("output") or ""
+    if isinstance(output, dict):
+        output = output.get("path") or ""
+    suffix = Path(str(output)).suffix.lower()
+    if suffix in {".xlsx", ".xlsm"}:
+        return "xlsx"
+    return "html"
+
+
+def _expand_viz_blocks(viz: Any, blocks: Any, analysis: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if blocks == "$analysis":
+        if analysis is None:
+            raise PlanError("blocks=$analysis requires an analysis.json input")
+        return viz.suggest_blocks_from_analysis(analysis)
+    if not isinstance(blocks, list):
+        raise PlanError("dashboard.blocks must be an array or \"$analysis\"")
+    expanded: list[dict[str, Any]] = []
+    for block in blocks:
+        if not isinstance(block, dict):
+            raise PlanError("dashboard blocks must be objects")
+        if block.get("type") == "from_analysis":
+            if analysis is None:
+                raise PlanError("from_analysis requires an analysis.json input")
+            expanded.extend(viz.suggest_blocks_from_analysis(
+                analysis, ops=block.get("ops"), max_groups=int(block.get("max_groups", 10)),
+            ))
+            continue
+        if block.get("type") in {"section", "grid"}:
+            child = dict(block)
+            child["blocks"] = _expand_viz_blocks(viz, block.get("blocks", []), analysis)
+            expanded.append(child)
+            continue
+        expanded.append(block)
+    return expanded
+
+
+def _expand_chart_specs(workbook: Any, blocks: Any, analysis: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Expand dashboard.blocks into Excel chart specs for workbook.py."""
+    if blocks == "$analysis":
+        if analysis is None:
+            raise PlanError("blocks=$analysis requires an analysis.json input")
+        return workbook.suggest_charts_from_analysis(analysis)
+    if not isinstance(blocks, list):
+        raise PlanError("dashboard.blocks must be an array or \"$analysis\"")
+    charts: list[dict[str, Any]] = []
+    for i, block in enumerate(blocks):
+        if not isinstance(block, dict):
+            raise PlanError(f"dashboard.blocks[{i}] must be an object")
+        kind = block.get("type")
+        if kind == "from_analysis":
+            if analysis is None:
+                raise PlanError("from_analysis requires an analysis.json input")
+            charts.extend(workbook.suggest_charts_from_analysis(
+                analysis, ops=block.get("ops"), max_groups=int(block.get("max_groups", 12)),
+            ))
+            continue
+        if kind == "chart":
+            spec = {k: v for k, v in block.items() if k != "type"}
+            if "chart_type" not in spec and "type" not in spec:
+                raise PlanError(f"dashboard.blocks[{i}] chart requires chart_type")
+            charts.append(spec)
+            continue
+        if kind in {"section", "grid"}:
+            charts.extend(_expand_chart_specs(workbook, block.get("blocks", []), analysis))
+            continue
+        raise PlanError(
+            f"dashboard.blocks[{i}] type {kind!r} is HTML-only; "
+            "use type 'chart' / 'from_analysis' / '$analysis' for format=xlsx"
+        )
+    return charts
+
+
 def _viz_block(viz: Any, spec: dict[str, Any], source_rows: list[dict[str, Any]]) -> str:
     kind = spec.get("type")
     if kind == "kpi_row":
@@ -810,6 +922,18 @@ def _viz_block(viz: Any, spec: dict[str, Any], source_rows: list[dict[str, Any]]
     if kind == "donut_chart":
         return viz.donut_chart(_resolve_data(spec.get("data", []), source_rows),
                                title=spec.get("title"), centre=spec.get("centre"))
+    if kind == "heatmap":
+        return viz.heatmap(spec.get("matrix", []), row_labels=spec.get("row_labels"),
+                           col_labels=spec.get("col_labels"), title=spec.get("title"),
+                           scale=spec.get("scale", "sequential"), mid=spec.get("mid", 0),
+                           unit=spec.get("unit", ""))
+    if kind == "sparkline":
+        return viz.sparkline(_resolve_data(spec.get("data", []), source_rows),
+                             title=spec.get("title"), show_last=spec.get("show_last", True),
+                             unit=spec.get("unit", ""))
+    if kind == "waterfall":
+        return viz.waterfall(spec.get("steps", []), title=spec.get("title"),
+                             unit=spec.get("unit", ""))
     if kind == "table":
         rag = {}
         for column_name, rule in (spec.get("rag") or {}).items():
@@ -835,12 +959,46 @@ def _viz_block(viz: Any, spec: dict[str, Any], source_rows: list[dict[str, Any]]
 def _run_visualise(plan: dict[str, Any], base: Path, dry_run: bool,
               approval_key: str | bytes | None = None) -> dict[str, Any]:
     import viz
+    fmt = _visualise_format(plan)
     inputs = _normalise_inputs(plan)
-    source_rows = read_table(inputs[0], base_dir=base).rows if inputs else []
     dash = plan["dashboard"]
+    raw_blocks = dash.get("blocks", [])
+    analysis = None
+    source_rows: list[dict[str, Any]] = []
+    if _dashboard_needs_analysis(raw_blocks):
+        if not inputs:
+            raise PlanError("$analysis / from_analysis requires an analysis.json input")
+        analysis = _load_analysis_json(inputs[0], base)
+    elif inputs and fmt == "html":
+        source_rows = read_table(inputs[0], base_dir=base).rows
+
+    if fmt == "xlsx":
+        import workbook
+        chart_specs = _expand_chart_specs(workbook, raw_blocks, analysis)
+        if not chart_specs:
+            raise PlanError("xlsx visualise produced no charts — provide chart blocks or chartable analysis ops")
+        output = _output_path(plan, base, "charts.xlsx")
+        artifacts = []
+        if not dry_run:
+            _prepare_write(output)
+            workbook.write_charts_xlsx(
+                output, chart_specs, workbook_title=dash.get("title"),
+                theme=dash.get("theme"),   # brand the workbook like the HTML dashboard
+            )
+            artifacts = [{"path": str(output), "kind": "xlsx_charts"}]
+        return envelope(
+            status="success", skill="data-visualise", action="dry-run" if dry_run else "run",
+            artifacts=artifacts,
+            metrics={"format": "xlsx", "charts": len(chart_specs),
+                     "from_analysis": bool(analysis)},
+            details={"title": dash.get("title"),
+                     "chart_types": [c.get("chart_type") for c in chart_specs]},
+        )
+
     theme = dash.get("theme")
     viz.apply_theme(theme)
-    blocks = [_viz_block(viz, block, source_rows) for block in dash.get("blocks", [])]
+    block_specs = _expand_viz_blocks(viz, raw_blocks, analysis)
+    blocks = [_viz_block(viz, block, source_rows) for block in block_specs]
     output = _output_path(plan, base, "dashboard.html")
     artifacts = []
     if not dry_run:
@@ -850,8 +1008,11 @@ def _run_visualise(plan: dict[str, Any], base: Path, dry_run: bool,
                       out_path=str(output), footnote=dash.get("footnote"), theme=theme)
         artifacts = [{"path": str(output), "kind": "html_dashboard"}]
     return envelope(status="success", skill="data-visualise", action="dry-run" if dry_run else "run",
-                    artifacts=artifacts, metrics={"blocks": len(blocks), "source_rows": len(source_rows)},
-                    details={"title": dash.get("title")})
+                    artifacts=artifacts,
+                    metrics={"format": "html", "blocks": len(blocks), "source_rows": len(source_rows),
+                             "from_analysis": bool(analysis)},
+                    details={"title": dash.get("title"),
+                             "block_types": [b.get("type") for b in block_specs]})
 
 
 RUNNERS = {
