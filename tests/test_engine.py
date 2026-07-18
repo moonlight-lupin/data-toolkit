@@ -32,7 +32,8 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[1]
 for _p in (_ROOT / "scripts",
            _ROOT / "skills" / "data-reconcile" / "scripts",
-           _ROOT / "skills" / "data-visualise" / "scripts"):
+           _ROOT / "skills" / "data-visualise" / "scripts",
+           _ROOT / "skills" / "data-analyse" / "scripts"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
@@ -915,6 +916,98 @@ def test_cjk_font_stack_conditional():
     )
     assert 'dir="ltr"' in mixed
     assert "Noto Naskh Arabic" in mixed or "Noto Sans Arabic" in mixed
+
+
+# --------------------------------------------------------------------------- #
+# 18. New analysis functions: concentration, pivot, distribution, trend
+# --------------------------------------------------------------------------- #
+def test_concentration_hhi_and_classification():
+    import analyse
+    # Highly concentrated: one group = 90% of total
+    c = analyse.concentration(["900", "50", "30", "20"])
+    assert c["n"] == 4 and c["n_groups"] == 4
+    assert c["hhi"] is not None and c["hhi"] > Decimal(5000), c
+    assert c["classification"] == "highly concentrated", c
+    assert c["top_n_share"] is not None and c["top_n_share"] > Decimal("0.9")
+    # Fragmented: 10 equal groups → HHI = 10 * (10%)² = 1000
+    c2 = analyse.concentration([str(i) for i in range(1, 11)])
+    assert c2["hhi"] < Decimal(1500), c2
+    assert c2["classification"] == "fragmented", c2
+    # Negatives → unreliable
+    c3 = analyse.concentration(["100", "-50", "60"])
+    assert c3["hhi"] is None and "negatives" in c3["classification"]
+    # Empty
+    c4 = analyse.concentration([])
+    assert c4["hhi"] is None and c4["classification"] == "no data"
+
+
+def test_pivot_cross_tab_sum_and_count():
+    import analyse
+    header = ["Date", "Customer", "Region", "Amount"]
+    rows = [
+        ["05/01/2026", "Alpha", "North", "1,000"],
+        ["12/01/2026", "Beta", "South", "2,000"],
+        ["20/01/2026", "Alpha", "North", "1,500"],
+        ["15/03/2026", "Gamma", "South", "(500)"],
+        ["18/03/2026", "Alpha", "North", "9,000"],
+        ["25/03/2026", "Delta", "East", "junk"],
+        ["", "Echo", "", "250"],
+    ]
+    pv = analyse.pivot(header, rows, "Region", "Customer", value="Amount")
+    assert pv["n_rows"] == 4 and pv["n_cols"] == 5  # incl (blank)
+    assert "North" in pv["row_keys"] and "Alpha" in pv["col_keys"]
+    ni, ai = pv["row_keys"].index("North"), pv["col_keys"].index("Alpha")
+    assert pv["matrix"][ni][ai] == Decimal("11500"), pv["matrix"][ni][ai]
+    assert pv["grand_total"] == Decimal("13250"), pv["grand_total"]
+    assert pv["skipped"] == 1  # the "junk" amount
+    # count aggfunc (no value) — auto-selected
+    pvc = analyse.pivot(header, rows, "Region", "Customer")
+    assert pvc["aggfunc"] == "count" and pvc["measure"] == "rows"
+    assert pvc["matrix"][pvc["row_keys"].index("North")][pvc["col_keys"].index("Alpha")] == Decimal(3)
+
+
+def test_distribution_skewness_kurtosis():
+    import analyse
+    # Symmetric: 1,2,3,4,5 → skewness ~0
+    d = analyse.distribution(["1", "2", "3", "4", "5"])
+    assert d["n"] == 5 and d["skewness"] is not None
+    assert abs(d["skewness"]) < 0.1, d["skewness"]
+    assert d["classification"] == "symmetric", d
+    # Right-skewed with outlier → heavy skew
+    d2 = analyse.distribution(["1", "1", "1", "1", "100"])
+    assert d2["skewness"] > 1.0, d2
+    assert d2["classification"] in ("highly skewed", "heavy-tailed"), d2
+    # Insufficient data
+    d3 = analyse.distribution(["1", "2"])
+    assert d3["skewness"] is None and "insufficient" in d3["classification"]
+    # Constant
+    d4 = analyse.distribution(["5", "5", "5", "5"])
+    assert d4["classification"] == "constant (no spread)"
+
+
+def test_trend_slope_r2_direction():
+    import analyse
+    # Rising: y = 2x → slope=2, R²=1
+    rising = [("W1", Decimal("2")), ("W2", Decimal("4")), ("W3", Decimal("6")), ("W4", Decimal("8"))]
+    t = analyse.trend(rising)
+    assert t["n"] == 4 and t["slope"] == 2.0, t
+    assert t["r_squared"] == 1.0, t
+    assert t["classification"] == "rising", t
+    # Falling
+    falling = [("W1", Decimal("10")), ("W2", Decimal("8")), ("W3", Decimal("6")), ("W4", Decimal("4"))]
+    t2 = analyse.trend(falling)
+    assert t2["slope"] == -2.0 and t2["classification"] == "falling", t2
+    # Flat (constant)
+    flat = [("W1", Decimal("5")), ("W2", Decimal("5")), ("W3", Decimal("5"))]
+    t3 = analyse.trend(flat)
+    assert t3["classification"] == "flat", t3
+    # Insufficient
+    t4 = analyse.trend([("W1", Decimal("1")), ("W2", Decimal("2"))])
+    assert t4["slope"] is None and "insufficient" in t4["classification"]
+    # Noisy / weak (low R²)
+    noisy = [("W1", Decimal("1")), ("W2", Decimal("5")), ("W3", Decimal("2")), ("W4", Decimal("4"))]
+    t5 = analyse.trend(noisy)
+    assert t5["r_squared"] < 0.5, t5
 
 
 # --------------------------------------------------------------------------- #

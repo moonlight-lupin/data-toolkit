@@ -423,6 +423,229 @@ def compare_series(a, b, a_label="A", b_label="B"):
 
 
 # --------------------------------------------------------------------------- #
+# Concentration — HHI + top-N share + classification
+# --------------------------------------------------------------------------- #
+def concentration(values, top_n=4):
+    """Revenue/customer/portfolio concentration on a parseable numeric column.
+
+    Returns the Herfindahl-Hirschman Index (HHI, 0–10000 scale — the standard
+    antitrust metric), top-N share, the count of groups needed to reach 80%,
+    and a classification: fragmented / moderate / concentrated / highly concentrated.
+    HHI uses squared shares; a monopoly (one group = 100%) scores 10000.
+
+    ``values`` is a raw column (like ``numeric_summary``). Negative totals are
+    treated as unreliable — HHI and shares return None when negatives net off,
+    matching ``breakdown``'s convention.
+    """
+    dec, skipped = numbers(values)
+    if not dec:
+        return {"n": 0, "skipped": skipped, "hhi": None, "top_n_share": None,
+                "groups_to_80": None, "classification": "no data"}
+    if any(v < 0 for v in dec):
+        return {"n": len(dec), "skipped": skipped, "hhi": None, "top_n_share": None,
+                "groups_to_80": None, "classification": "unreliable (negatives present)"}
+    total = sum(dec)
+    if total == 0:
+        return {"n": len(dec), "skipped": skipped, "hhi": None, "top_n_share": None,
+                "groups_to_80": None, "classification": "unreliable (total is zero)"}
+    # Each value is one group's total (e.g. one customer's revenue). Share = value / total.
+    shares = [(v, Decimal(v) / total) for v in dec]
+    shares.sort(key=lambda t: t[1], reverse=True)
+    # HHI on the 0–10000 scale: sum of squared percentage shares (share*100)²
+    hhi = sum((s * Decimal(100)) ** 2 for _, s in shares)
+    top_share = sum(s for _, s in shares[:top_n])
+    cum, g80 = Decimal(0), None
+    for rank, (_, s) in enumerate(shares, 1):
+        cum += s
+        if g80 is None and cum >= Decimal("0.8"):
+            g80 = rank
+    n_groups = len(shares)
+    if hhi < Decimal(1500):
+        cls = "fragmented"
+    elif hhi < Decimal(2500):
+        cls = "moderate"
+    elif hhi < Decimal(5000):
+        cls = "concentrated"
+    else:
+        cls = "highly concentrated"
+    return {"n": len(dec), "skipped": skipped, "n_groups": n_groups,
+            "hhi": hhi, "top_n_share": top_share, "groups_to_80": g80,
+            "classification": cls}
+
+
+# --------------------------------------------------------------------------- #
+# Pivot / cross-tab — 2D aggregation matrix
+# --------------------------------------------------------------------------- #
+def pivot(header, rows, rows_col, cols_col, value=None, aggfunc="sum"):
+    """Cross-tabulate: group by ``rows_col`` (rows) × ``cols_col`` (columns),
+    aggregating ``value`` (or row counts when ``value`` is None).
+
+    ``aggfunc``: ``"sum"`` (default) | ``"count"`` | ``"mean"``.
+
+    Returns a dict with the row keys, column keys (both sorted), the matrix
+    (list of lists, aligned to the key order), row/column grand totals, and a
+    skipped count (unparseable values). Like ``breakdown``, negative sums make
+    shares unreliable — the caller decides whether to show them.
+
+    Blank cells in either dimension group under ``(blank)`` (matching
+    ``breakdown``'s convention).
+    """
+    assert aggfunc in ("sum", "count", "mean")
+    if value is None:
+        aggfunc = "count"  # no value → always row counts
+    ri = col_index(header, rows_col)
+    ci = col_index(header, cols_col)
+    vi = col_index(header, value) if value else None
+    cell = {}  # {(row_key, col_key): [list of Decimal values]}
+    row_keys, col_keys = [], []
+    skipped = 0
+    for r in rows:
+        rk = _s(r[ri] if ri < len(r) else "") or "(blank)"
+        ck = _s(r[ci] if ci < len(r) else "") or "(blank)"
+        if rk not in row_keys:
+            row_keys.append(rk)
+        if ck not in col_keys:
+            col_keys.append(ck)
+        if vi is not None:
+            raw = r[vi] if vi < len(r) else ""
+            n, _ = parse_number(raw)
+            if n is None and _s(raw) != "":
+                skipped += 1
+                continue
+            cell.setdefault((rk, ck), []).append(n)
+        else:
+            cell.setdefault((rk, ck), []).append(Decimal(1))
+    row_keys.sort()
+    col_keys.sort()
+    matrix = []
+    for rk in row_keys:
+        row_vals = []
+        for ck in col_keys:
+            vals = cell.get((rk, ck), [])
+            if not vals:
+                row_vals.append(None)
+            elif aggfunc == "sum":
+                row_vals.append(sum(vals, Decimal(0)))
+            elif aggfunc == "count":
+                row_vals.append(Decimal(len(vals)))
+            else:  # mean
+                row_vals.append(sum(vals, Decimal(0)) / Decimal(len(vals)))
+        matrix.append(row_vals)
+    # Grand totals
+    row_totals = []
+    for row_vals in matrix:
+        nums = [v for v in row_vals if v is not None]
+        row_totals.append(sum(nums, Decimal(0)) if nums else None)
+    col_totals = []
+    for j in range(len(col_keys)):
+        nums = [matrix[i][j] for i in range(len(row_keys)) if matrix[i][j] is not None]
+        col_totals.append(sum(nums, Decimal(0)) if nums else None)
+    grand = sum((t for t in col_totals if t is not None), Decimal(0))
+    return {"rows_col": rows_col, "cols_col": cols_col, "measure": value or "rows",
+            "aggfunc": aggfunc, "row_keys": row_keys, "col_keys": col_keys,
+            "matrix": matrix, "row_totals": row_totals, "col_totals": col_totals,
+            "grand_total": grand, "n_rows": len(row_keys), "n_cols": len(col_keys),
+            "skipped": skipped}
+
+
+# --------------------------------------------------------------------------- #
+# Distribution shape — skewness + kurtosis
+# --------------------------------------------------------------------------- #
+def distribution(values):
+    """Skewness and (excess) kurtosis on the parseable cells.
+
+    Uses the sample-standardised Fisher-Pearson coefficients (the same
+    definitions as Excel's SKEW and KURT). Both are float (shape coefficients,
+    not money). Returns a normality classification:
+
+    - ``symmetric`` — |skewness| < 0.5 and |kurtosis| < 1
+    - ``moderately skewed`` — 0.5 ≤ |skewness| < 1
+    - ``highly skewed`` — |skewness| ≥ 1
+    - ``heavy-tailed`` — kurtosis > 3 (excess) regardless of skew
+
+    Needs ≥ 4 points; below that shape metrics are not meaningful.
+    """
+    dec, skipped = numbers(values)
+    n = len(dec)
+    if n < 4:
+        return {"n": n, "skipped": skipped, "skewness": None, "kurtosis": None,
+                "classification": "insufficient data (need ≥4 values)"}
+    xs = [float(v) for v in dec]
+    mean = sum(xs) / n
+    # Sample standard deviation (n-1 denominator)
+    var = sum((x - mean) ** 2 for x in xs) / (n - 1)
+    sd = var ** 0.5
+    if sd == 0:
+        return {"n": n, "skipped": skipped, "skewness": None, "kurtosis": None,
+                "classification": "constant (no spread)"}
+    # Fisher-Pearson skewness (g1)
+    z3 = sum(((x - mean) / sd) ** 3 for x in xs)
+    g1 = (n / ((n - 1) * (n - 2))) * z3
+    # Excess kurtosis (g2)
+    z4 = sum(((x - mean) / sd) ** 4 for x in xs)
+    g2 = ((n * (n + 1)) / ((n - 1) * (n - 2) * (n - 3))) * z4 \
+         - (3 * (n - 1) ** 2) / ((n - 2) * (n - 3))
+    abs_skew = abs(g1)
+    if g2 > 3:
+        cls = "heavy-tailed"
+    elif abs_skew >= 1:
+        cls = "highly skewed"
+    elif abs_skew >= 0.5:
+        cls = "moderately skewed"
+    else:
+        cls = "symmetric"
+    return {"n": n, "skipped": skipped, "skewness": round(g1, 3),
+            "kurtosis": round(g2, 3), "classification": cls}
+
+
+# --------------------------------------------------------------------------- #
+# Trend — linear regression slope + R² + direction
+# --------------------------------------------------------------------------- #
+def trend(series):
+    """Simple linear trend on an ordered series of ``(key, value)`` tuples.
+
+    Fits y = a + b·x (ordinary least squares) and returns the slope, R², and a
+    directional classification. ``series`` is the same shape ``compare_series``
+    accepts — e.g. the ``periods`` from ``period_series`` mapped to
+    ``[(p["period"], p["total"]) for p in ts["periods"]]``.
+
+    Classification:
+    - ``rising`` / ``falling`` — |slope| meaningful and R² ≥ 0.5
+    - ``weakly rising`` / ``weakly falling`` — R² 0.25–0.5
+    - ``flat`` — |slope| near zero OR R² < 0.25
+    - ``insufficient data`` — fewer than 3 points
+
+    Slope is per-period (the unit of the input keys). Descriptive only — never
+    a forecast. A trend over 3 periods is "early"; over 2 it is not a trend.
+    """
+    pts = [(i, float(v)) for i, (_, v) in enumerate(series) if v is not None]
+    n = len(pts)
+    if n < 3:
+        return {"n": n, "slope": None, "r_squared": None,
+                "classification": "insufficient data (need ≥3 points)"}
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    mx, my = sum(xs) / n, sum(ys) / n
+    sxx = sum((x - mx) ** 2 for x in xs)
+    sxy = sum((xs[i] - mx) * (ys[i] - my) for i in range(n))
+    syy = sum((y - my) ** 2 for y in ys)
+    if sxx == 0:
+        return {"n": n, "slope": 0.0, "r_squared": None,
+                "classification": "flat (no variation in x)"}
+    slope = sxy / sxx
+    r2 = (sxy ** 2) / (sxx * syy) if syy > 0 else None
+    r2v = r2 if r2 is not None else 0.0
+    if abs(slope) < 1e-12 or r2v < 0.25:
+        cls = "flat"
+    elif r2v >= 0.5:
+        cls = "rising" if slope > 0 else "falling"
+    else:
+        cls = "weakly rising" if slope > 0 else "weakly falling"
+    return {"n": n, "slope": round(slope, 6), "r_squared": round(r2v, 3),
+            "classification": cls}
+
+
+# --------------------------------------------------------------------------- #
 # Shape detection (advisory — suggests the playbook, never decides silently)
 # --------------------------------------------------------------------------- #
 def suggest_playbook(header, rows):
@@ -591,6 +814,80 @@ def _self_test():
     assert cmp["n"] == 4 and cmp["points"][0]["gap"] == Decimal("1")
     assert cmp["correlation"] == 1.0, cmp["correlation"]      # perfectly co-moving
     assert cmp["points"][1]["pct_diff"] == Decimal("11") / Decimal("10") - 1
+
+    # concentration — HHI + top-N share + classification
+    # One dominant customer (90% of revenue) = highly concentrated
+    conc = concentration(["900", "50", "30", "20"])
+    assert conc["n"] == 4 and conc["n_groups"] == 4, conc
+    assert conc["hhi"] is not None and conc["hhi"] > Decimal(5000), conc
+    assert conc["classification"] == "highly concentrated", conc
+    assert conc["top_n_share"] is not None and conc["top_n_share"] > Decimal("0.9")
+    # Fragmented — 10 equal-sized groups
+    conc2 = concentration([str(i) for i in range(1, 11)])
+    assert conc2["hhi"] < Decimal(1500), conc2
+    assert conc2["classification"] == "fragmented", conc2
+    # Negatives → unreliable
+    conc3 = concentration(["100", "-50", "60"])
+    assert conc3["hhi"] is None and "negatives" in conc3["classification"], conc3
+    # Empty
+    conc4 = concentration([])
+    assert conc4["hhi"] is None and conc4["classification"] == "no data"
+
+    # pivot — cross-tab Region × Customer by Amount (sum)
+    pv = pivot(header, rows, "Region", "Customer", value="Amount")
+    assert pv["n_rows"] == 4 and pv["n_cols"] == 5, (pv["n_rows"], pv["n_cols"])  # incl (blank)
+    assert "North" in pv["row_keys"] and "Alpha" in pv["col_keys"]
+    # North × Alpha = 1000 + 1500 + 9000 = 11500
+    ni = pv["row_keys"].index("North")
+    ai = pv["col_keys"].index("Alpha")
+    assert pv["matrix"][ni][ai] == Decimal("11500"), pv["matrix"][ni][ai]
+    assert pv["grand_total"] == Decimal("13250"), pv["grand_total"]
+    assert pv["skipped"] == 1  # the "junk" amount
+    # count aggfunc (no value)
+    pvc = pivot(header, rows, "Region", "Customer")
+    assert pvc["aggfunc"] == "count" and pvc["measure"] == "rows"
+    # North × Alpha count = 3
+    assert pvc["matrix"][pvc["row_keys"].index("North")][pvc["col_keys"].index("Alpha")] == Decimal(3)
+
+    # distribution — skewness + kurtosis
+    # Symmetric: [1,2,3,4,5] → skewness ~0, kurtosis ~0 (excess)
+    dist = distribution(["1", "2", "3", "4", "5"])
+    assert dist["n"] == 5 and dist["skewness"] is not None
+    assert abs(dist["skewness"]) < 0.1, dist["skewness"]
+    assert dist["classification"] == "symmetric", dist
+    # Right-skewed: [1,1,1,1,100] → heavy positive skew, heavy-tailed
+    dist2 = distribution(["1", "1", "1", "1", "100"])
+    assert dist2["skewness"] > 1.0, dist2
+    assert dist2["classification"] in ("highly skewed", "heavy-tailed"), dist2
+    # Insufficient data
+    dist3 = distribution(["1", "2"])
+    assert dist3["skewness"] is None and "insufficient" in dist3["classification"]
+    # Constant
+    dist4 = distribution(["5", "5", "5", "5"])
+    assert dist4["classification"] == "constant (no spread)"
+
+    # trend — linear regression slope + R² + direction
+    # Rising: y = 2x → slope=2, R²=1
+    rising = [("W1", Decimal("2")), ("W2", Decimal("4")), ("W3", Decimal("6")), ("W4", Decimal("8"))]
+    tr = trend(rising)
+    assert tr["n"] == 4 and tr["slope"] == 2.0, tr
+    assert tr["r_squared"] == 1.0, tr
+    assert tr["classification"] == "rising", tr
+    # Falling
+    falling = [("W1", Decimal("10")), ("W2", Decimal("8")), ("W3", Decimal("6")), ("W4", Decimal("4"))]
+    tr2 = trend(falling)
+    assert tr2["slope"] == -2.0 and tr2["classification"] == "falling", tr2
+    # Flat (constant)
+    flat = [("W1", Decimal("5")), ("W2", Decimal("5")), ("W3", Decimal("5"))]
+    tr3 = trend(flat)
+    assert tr3["classification"] == "flat", tr3
+    # Insufficient
+    tr4 = trend([("W1", Decimal("1")), ("W2", Decimal("2"))])
+    assert tr4["slope"] is None and "insufficient" in tr4["classification"]
+    # Noisy / weak (low R²)
+    noisy = [("W1", Decimal("1")), ("W2", Decimal("5")), ("W3", Decimal("2")), ("W4", Decimal("4"))]
+    tr5 = trend(noisy)
+    assert tr5["r_squared"] < 0.5, tr5  # should be weak or flat
 
     print("analyse.py self-test OK")
 
