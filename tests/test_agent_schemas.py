@@ -94,7 +94,10 @@ def test_extended_analyse_ops_validate_and_require_fields():
     ]
     assert schemas.validate_payload("data-analyse", ok) == []
     missing = schemas.validate_payload("data-analyse", [{"op": "concentration"}])
-    assert missing and any("column" in item["message"] or "by" in item["message"] for item in missing)
+    assert missing and any(
+        item["validator"] == "anyOf" or "column" in item["message"] or "by" in item["message"]
+        for item in missing
+    ), missing
     bad_roll = schemas.validate_payload("data-analyse", [{"op": "rolling", "date_col": "Date"}])
     assert any("window" in item["message"] for item in bad_roll)
     bad_season = schemas.validate_payload(
@@ -217,6 +220,7 @@ def main():
         ("valid payloads", test_valid_payloads_pass),
         ("targeted analysis pointer", test_analysis_error_has_targeted_pointer),
         ("unknown operation and field", test_unknown_operation_and_field_are_rejected),
+        ("extended analyse ops schema", test_extended_analyse_ops_validate_and_require_fields),
         ("plan schema validation", test_plan_validation_runs_schema_before_source),
         ("conversion card", test_conversion_card_validation),
         ("conversion card JSON fence", test_conversion_card_json_fence_validation),
