@@ -74,9 +74,14 @@ All in `scripts/viz.py`; each returns an HTML fragment, `dashboard()` assembles 
 | `bar_chart(data, title, unit)` | vertical bars (inline SVG); `data` = `[(label, value)]` or dicts |
 | `line_chart(series, title, unit, toggle)` | one line `[(label, value)]` or many `{name: [...]}` with a legend; floated y-axis + gridlines; `toggle=True` → click legend to show/hide a series |
 | `donut_chart(data, title, centre)` | donut with a centre total; themed slice colours |
+| `heatmap(matrix, row_labels, col_labels, …)` | matrix heat map (pivot / cohort / correlation); `scale="sequential"` or `"diverging"` |
+| `sparkline(data, …)` | compact trend path for KPI strips; shape over scale |
+| `waterfall(steps, …)` | bridge chart (`start` / `delta` / `total`) for period or variance walks |
 | `table(rows, columns, title, rag, sortable, filter_by)` | themed table; `rag={col: value->status}` colours cells (RAG conditional formatting); `sortable=True` → click-to-sort headers; `filter_by=[col]` → a dropdown row-filter |
 | `status_pill(text, status)` | a small RAG pill |
 | `section(title, *blocks)` / `grid(*blocks, cols)` | titled section / N-column layout |
+| `suggest_blocks_from_analysis(analysis.json)` | map a data-analyse metrics payload → editable declarative blocks (no recomputation) |
+| `blocks_from_analysis(analysis.json)` | same mapping, already rendered to HTML fragments |
 | `dashboard(title, blocks, subtitle, as_of, out_path, footnote, theme)` | full page: header, as-of stamp, print CSS, footer disclaimer; `theme` re-skins the shell |
 | `apply_theme(theme)` | rebind the active palette/font/logo so blocks built afterwards use a firm's brand |
 | `rows_from_xlsx(path, sheet)` | read a header+rows `.xlsx` → list of dicts (needs `openpyxl`); multi-tab safe — auto-reads the single data sheet, raises if several hold data (pass `sheet=`) |
@@ -105,6 +110,21 @@ open_in_browser(path)
 
 See `references/blocks.md` for the full cookbook and `references/brand.md` for the theming
 guide. `examples/operations-dashboard.html` is a built sample.
+
+### From data-analyse
+
+When metrics already live in an `analysis.json` from **data-analyse**, do not redraw numbers by
+hand. Propose blocks, confirm, then render:
+
+```python
+from viz import suggest_blocks_from_analysis, blocks_from_analysis, dashboard
+specs = suggest_blocks_from_analysis(analysis)   # declarative — show the user
+path = dashboard("Insight board", blocks_from_analysis(analysis),
+                 as_of="18 Jul 2026", out_path="insight.html")
+```
+
+Via the agent runtime, point the plan input at that file and set
+`"blocks": "$analysis"` (or a `from_analysis` block with optional `ops`).
 
 ## Theming (neutral default, fully brandable)
 

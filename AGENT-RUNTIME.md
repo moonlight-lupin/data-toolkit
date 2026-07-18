@@ -262,8 +262,11 @@ Supported operations are `numeric_summary`, `outliers_iqr`, `breakdown`, `period
 }
 ```
 
-Supported blocks are `kpi_row`, `bar_chart`, `line_chart`, `donut_chart`, `table`, `section`
-and `grid`. `$source` refers to rows read from the plan input.
+Supported blocks are `kpi_row`, `bar_chart`, `line_chart`, `donut_chart`, `heatmap`,
+`sparkline`, `waterfall`, `table`, `section`, `grid`, and `from_analysis`. `$source` refers
+to rows read from the plan input. Set `"blocks": "$analysis"` (or a `from_analysis` block)
+with an `analysis.json` input from data-analyse to expand metrics into proposed drawings —
+the runtime does not recompute figures.
 
 ### Convert
 

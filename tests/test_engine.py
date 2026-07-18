@@ -177,6 +177,56 @@ def test_viz_rows_from_xlsx_multisheet_safe():
     assert viz.rows_from_xlsx(str(multi), sheet="Data") == [{"k": 1, "v": 2}]
 
 
+def test_viz_heatmap_sparkline_waterfall_and_analysis_handoff():
+    hm = viz.heatmap([[1, -1], [0.5, 0.2]], row_labels=["A", "B"], col_labels=["X", "Y"],
+                     title="Corr", scale="diverging", mid=0)
+    assert 'class="chart heatmap"' in hm and "Corr" in hm and "A" in hm
+    sp = viz.sparkline([("W1", 10), ("W2", 14), ("W3", 9)], title="Shape")
+    assert "spark" in sp and "overall" in sp
+    wf = viz.waterfall([
+        {"label": "Open", "value": 100, "kind": "start"},
+        {"label": "Win", "value": 20, "kind": "delta"},
+        {"label": "Loss", "value": -5, "kind": "delta"},
+        {"label": "Close", "value": 115, "kind": "total"},
+    ], title="Bridge")
+    assert "Bridge" in wf and wf.count("<rect") >= 4
+    empty = viz.heatmap([], title="Empty")
+    assert "No data" in empty
+
+    analysis = {
+        "results": [
+            {"op": "breakdown", "name": "By customer", "result": {
+                "by": "Customer",
+                "groups": [
+                    {"key": "Acme", "count": 2, "total": "100", "share": "0.625"},
+                    {"key": "Beta", "count": 1, "total": "60", "share": "0.375"},
+                ],
+            }},
+            {"op": "period_series", "name": "Monthly", "result": {
+                "grain": "month",
+                "periods": [
+                    {"period": "2026-01", "count": 1, "total": "100", "delta": None},
+                    {"period": "2026-02", "count": 1, "total": "130", "delta": "30"},
+                ],
+            }},
+            {"op": "correlation_matrix", "name": "Corr", "result": {
+                "columns": ["A", "B"], "matrix": [[1.0, 0.5], [0.5, 1.0]],
+            }},
+            {"op": "forecast", "name": "skip me", "result": {"value": 1}},
+        ]
+    }
+    specs = viz.suggest_blocks_from_analysis(analysis)
+    assert [s["type"] for s in specs] == ["section", "section", "section"]
+    assert any(b["type"] == "waterfall" for s in specs for b in s["blocks"])
+    assert any(b["type"] == "heatmap" and b.get("scale") == "diverging"
+               for s in specs for b in s["blocks"])
+    filtered = viz.suggest_blocks_from_analysis(analysis, ops=["breakdown"])
+    assert len(filtered) == 1 and filtered[0]["title"] == "By customer"
+    html_blocks = viz.blocks_from_analysis(analysis)
+    page = viz.dashboard("Insight board", html_blocks, as_of="18 Jul 2026")
+    assert "By customer" in page and "period bridge" in page and "heatmap" in page
+
+
 # --------------------------------------------------------------------------- #
 # 7 & 8. form extraction: next-line + dotted-leader layouts
 # --------------------------------------------------------------------------- #

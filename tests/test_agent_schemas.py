@@ -41,6 +41,13 @@ def valid_payloads():
             "title": "Status", "blocks": [
                 {"type": "kpi_row", "items": [{"label": "Open", "value": 3, "status": "amber"}]},
                 {"type": "table", "rows": "$source", "sortable": True},
+                {"type": "heatmap", "matrix": [[1, 2], [3, 4]],
+                 "row_labels": ["A", "B"], "col_labels": ["X", "Y"]},
+                {"type": "sparkline", "data": [["W1", 1], ["W2", 2]]},
+                {"type": "waterfall", "steps": [
+                    {"label": "Open", "value": 10, "kind": "start"},
+                    {"label": "Close", "value": 10, "kind": "total"},
+                ]},
             ],
         },
         "data-convert": {
@@ -76,6 +83,16 @@ def test_unknown_operation_and_field_are_rejected():
     assert issues and any("forecast" in item["message"] for item in issues)
     tidy_issues = schemas.validate_payload("data-tidy", {"columns": [{"source": "A", "target": "B", "type": "money"}]})
     assert tidy_issues and any("money" in item["message"] for item in tidy_issues)
+
+
+def test_visualise_analysis_shortcut_and_new_blocks_schema():
+    assert schemas.validate_payload("data-visualise", {"title": "From analyse", "blocks": "$analysis"}) == []
+    assert schemas.validate_payload("data-visualise", {
+        "title": "Mixed",
+        "blocks": [{"type": "from_analysis", "ops": ["breakdown", "period_series"]}],
+    }) == []
+    missing = schemas.validate_payload("data-visualise", {"title": "X", "blocks": [{"type": "heatmap"}]})
+    assert any(item["path"] == "/blocks/0" and "matrix" in item["message"] for item in missing)
 
 
 def test_plan_validation_runs_schema_before_source():
@@ -192,6 +209,7 @@ def main():
         ("valid payloads", test_valid_payloads_pass),
         ("targeted analysis pointer", test_analysis_error_has_targeted_pointer),
         ("unknown operation and field", test_unknown_operation_and_field_are_rejected),
+        ("visualise analysis shortcut schema", test_visualise_analysis_shortcut_and_new_blocks_schema),
         ("plan schema validation", test_plan_validation_runs_schema_before_source),
         ("conversion card", test_conversion_card_validation),
         ("conversion card JSON fence", test_conversion_card_json_fence_validation),

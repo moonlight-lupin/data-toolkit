@@ -1,1 +1,129 @@
-{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://data-toolkit.local/schemas/dashboard-spec.schema.json","title":"Data Visualise dashboard","type":"object","required":["title","blocks"],"properties":{"title":{"type":"string","minLength":1},"subtitle":{"type":"string"},"as_of":{"type":"string"},"footnote":{"type":"string"},"theme":{"type":["object","null"]},"blocks":{"type":"array","items":{"$ref":"#/$defs/block"}}},"additionalProperties":false,"$defs":{"block":{"type":"object","required":["type"],"properties":{"type":{"enum":["kpi_row","bar_chart","line_chart","donut_chart","table","section","grid"]},"title":{"type":"string"},"unit":{"type":"string"},"items":{"type":"array","items":{"type":"object","required":["label","value"],"properties":{"label":{"type":"string"},"value":{},"sub":{"type":"string"},"status":{"enum":["brand","green","amber","red","grey"]}},"additionalProperties":false}},"data":{},"centre":{},"toggle":{"type":"boolean"},"rows":{},"columns":{"type":"array","items":{"type":"string"}},"rag":{"type":"object"},"sortable":{"type":"boolean"},"filter_by":{"oneOf":[{"type":"string"},{"type":"array","items":{"type":"string"}}]},"blocks":{"type":"array","items":{"$ref":"#/$defs/block"}},"cols":{"type":"integer","minimum":1}},"allOf":[{"if":{"properties":{"type":{"const":"kpi_row"}},"required":["type"]},"then":{"required":["items"]}},{"if":{"properties":{"type":{"enum":["section","grid"]}},"required":["type"]},"then":{"required":["blocks"]}}],"additionalProperties":false}}}
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://data-toolkit.local/schemas/dashboard-spec.schema.json",
+  "title": "Data Visualise dashboard",
+  "type": "object",
+  "required": ["title", "blocks"],
+  "properties": {
+    "title": {"type": "string", "minLength": 1},
+    "subtitle": {"type": "string"},
+    "as_of": {"type": "string"},
+    "footnote": {"type": "string"},
+    "theme": {"type": ["object", "null"]},
+    "blocks": {
+      "type": ["array", "string"],
+      "if": {"type": "string"},
+      "then": {"const": "$analysis"},
+      "else": {"items": {"$ref": "#/$defs/block"}}
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "block": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "enum": [
+            "kpi_row",
+            "bar_chart",
+            "line_chart",
+            "donut_chart",
+            "heatmap",
+            "sparkline",
+            "waterfall",
+            "table",
+            "section",
+            "grid",
+            "from_analysis"
+          ]
+        },
+        "title": {"type": "string"},
+        "unit": {"type": "string"},
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["label", "value"],
+            "properties": {
+              "label": {"type": "string"},
+              "value": {},
+              "sub": {"type": "string"},
+              "status": {"enum": ["brand", "green", "amber", "red", "grey"]}
+            },
+            "additionalProperties": false
+          }
+        },
+        "data": {},
+        "centre": {},
+        "toggle": {"type": "boolean"},
+        "matrix": {
+          "type": "array",
+          "items": {"type": "array"}
+        },
+        "row_labels": {"type": "array", "items": {"type": "string"}},
+        "col_labels": {"type": "array", "items": {"type": "string"}},
+        "scale": {"enum": ["sequential", "diverging"]},
+        "mid": {"type": ["number", "string"]},
+        "show_last": {"type": "boolean"},
+        "steps": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": ["label", "value"],
+                "properties": {
+                  "label": {"type": "string"},
+                  "value": {},
+                  "kind": {"enum": ["start", "delta", "total"]}
+                },
+                "additionalProperties": false
+              },
+              {"type": "array", "minItems": 2}
+            ]
+          }
+        },
+        "rows": {},
+        "columns": {"type": "array", "items": {"type": "string"}},
+        "rag": {"type": "object"},
+        "sortable": {"type": "boolean"},
+        "filter_by": {
+          "oneOf": [
+            {"type": "string"},
+            {"type": "array", "items": {"type": "string"}}
+          ]
+        },
+        "blocks": {"type": "array", "items": {"$ref": "#/$defs/block"}},
+        "cols": {"type": "integer", "minimum": 1},
+        "ops": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        },
+        "max_groups": {"type": "integer", "minimum": 1}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"type": {"const": "kpi_row"}}, "required": ["type"]},
+          "then": {"required": ["items"]}
+        },
+        {
+          "if": {
+            "properties": {"type": {"enum": ["section", "grid"]}},
+            "required": ["type"]
+          },
+          "then": {"required": ["blocks"]}
+        },
+        {
+          "if": {"properties": {"type": {"const": "heatmap"}}, "required": ["type"]},
+          "then": {"required": ["matrix"]}
+        },
+        {
+          "if": {"properties": {"type": {"const": "waterfall"}}, "required": ["type"]},
+          "then": {"required": ["steps"]}
+        }
+      ],
+      "additionalProperties": false
+    }
+  }
+}

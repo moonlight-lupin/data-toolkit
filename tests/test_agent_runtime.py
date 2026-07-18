@@ -250,7 +250,14 @@ def test_visualise_declarative_runtime():
                 "blocks": [
                     {"type": "kpi_row", "items": [{"label": "Open", "value": 1, "status": "amber"}]},
                     {"type": "table", "title": "Rows", "rows": "$source",
-                     "rag": {"Status": {"Open": "amber"}}}
+                     "rag": {"Status": {"Open": "amber"}}},
+                    {"type": "sparkline", "title": "Tiny trend",
+                     "data": [["W1", 1], ["W2", 3], ["W3", 2]]},
+                    {"type": "waterfall", "title": "Bridge", "steps": [
+                        {"label": "Start", "value": 10, "kind": "start"},
+                        {"label": "Up", "value": 5, "kind": "delta"},
+                        {"label": "End", "value": 15, "kind": "total"},
+                    ]},
                 ]
             },
             "output": str(out),
@@ -260,6 +267,62 @@ def test_visualise_declarative_runtime():
         html = out.read_text(encoding="utf-8")
         assert "Agent runtime dashboard" in html and "Owner" in html and "Open" in html
         assert "border-left:3px solid" in html
+        assert "spark" in html and "Bridge" in html
+
+
+def test_visualise_from_analysis_json():
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        analysis = td / "analysis.json"
+        analysis.write_text(json.dumps({
+            "source": "sales.json",
+            "results": [
+                {"op": "numeric_summary", "name": "Amount", "result": {
+                    "n": 3, "total": "300", "mean": "100", "median": "100",
+                }},
+                {"op": "period_series", "name": "Monthly", "result": {
+                    "grain": "month",
+                    "periods": [
+                        {"period": "2026-01", "count": 1, "total": "100", "delta": None},
+                        {"period": "2026-02", "count": 1, "total": "200", "delta": "100"},
+                    ],
+                }},
+            ],
+        }), encoding="utf-8")
+        out = td / "insight.html"
+        plan = {
+            "version": 1,
+            "skill": "data-visualise",
+            "input": str(analysis),
+            "dashboard": {
+                "title": "Insight board",
+                "as_of": "18 Jul 2026",
+                "blocks": "$analysis",
+            },
+            "output": str(out),
+        }
+        result = ar.run_plan(plan, base_dir=td)
+        assert result["status"] == "success", result
+        assert result["metrics"]["from_analysis"] is True
+        html = out.read_text(encoding="utf-8")
+        assert "Insight board" in html and "Monthly" in html
+        assert "period bridge" in html and "spark" in html
+
+        filtered_out = td / "filtered.html"
+        filtered = {
+            "version": 1,
+            "skill": "data-visualise",
+            "input": str(analysis),
+            "dashboard": {
+                "title": "Amount only",
+                "blocks": [{"type": "from_analysis", "ops": ["numeric_summary"]}],
+            },
+            "output": str(filtered_out),
+        }
+        result2 = ar.run_plan(filtered, base_dir=td)
+        assert result2["status"] == "success", result2
+        html2 = filtered_out.read_text(encoding="utf-8")
+        assert "Amount" in html2 and "period bridge" not in html2
 
 
 def test_dry_run_writes_nothing():
@@ -430,6 +493,7 @@ def main():
         ("tidy JSON runtime", test_tidy_json_runtime),
         ("reconcile JSON runtime", test_reconcile_json_runtime),
         ("visualise declarative runtime", test_visualise_declarative_runtime),
+        ("visualise from analysis.json", test_visualise_from_analysis_json),
         ("dry-run", test_dry_run_writes_nothing),
         ("drift signed receipt", test_drift_requires_bound_receipt_and_blocks_writes),
         ("aggregation signed receipts", test_aggregation_receipts_bind_selection_and_dry_run_action),
