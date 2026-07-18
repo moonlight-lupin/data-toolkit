@@ -150,9 +150,16 @@ dashboard to also emit **one PNG per chart**, cropped to that chart:
 The run then returns the `.xlsx` plus a `chart_png` artefact per chart, and records the renderer
 version in `details.renderer`.
 
-**It is strictly optional.** With the binary absent the `.xlsx` is written exactly as before and
-the run returns `success_with_warnings` — never an error. Nothing else in the toolkit depends on
-it, and chart *generation* stays on openpyxl.
+**It is strictly optional**, and the guarantee is deliberately absolute:
+
+> **Once the `.xlsx` is written, nothing in the optional renderer can fail the run.**
+
+Binary absent, binary present but broken, non-zero exit, timeout, unparseable output, an
+unwritable destination, the adapter itself failing to import — every one of these degrades to
+`success_with_warnings` with the `.xlsx` artefact intact, never to an error. Nothing else in the
+toolkit depends on it, and chart *generation* stays on openpyxl. Two tests pin this
+(`test_officecli_render_degrades_gracefully_on_every_failure_mode`, unit;
+`test_render_png_never_costs_the_run_its_workbook`, end-to-end through the runtime).
 
 | | |
 |---|---|
@@ -163,7 +170,9 @@ it, and chart *generation* stays on openpyxl.
 | Formats | `.xlsx` renders to **PNG**. OfficeCLI's `svg` view mode is PowerPoint-only, so there is no inline-SVG path for Excel charts. |
 
 **Implementation notes** (`scripts/officecli_render.py`): this is the toolkit's only subprocess —
-invoked with an argument list, never `shell=True`, time-boxed, and a non-zero exit or timeout
-degrades to "no image" rather than raising. Reading a document starts an OfficeCLI *resident* that
+invoked with an argument list, never `shell=True`, time-boxed, and every public function is
+total — it returns `[]` / `None` / `False` instead of raising, whatever the binary does, and the
+runtime's call site (including the `import`) is itself wrapped so even an adapter-level failure
+becomes a warning. Reading a document starts an OfficeCLI *resident* that
 holds an OS file handle, so every render path closes it in a `finally`; without that the workbook
 stays locked and cannot be moved, deleted or opened in Excel afterwards.

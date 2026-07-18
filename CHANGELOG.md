@@ -36,6 +36,13 @@ and an `analysis.json` can drive either:
   holds an OS file handle, so the workbook could not be moved/deleted/reopened afterwards
   (Windows `PermissionError`); every render path now closes it in a `finally`. Regression test
   asserts the workbook is releasable after a render.
+- **Hardened the optional path to an absolute guarantee: once the `.xlsx` is written, nothing in
+  the renderer can fail the run.** Every public function in `officecli_render` is now total —
+  a non-zero exit, a timeout, unparseable JSON, an unwritable destination or an unexpected
+  exception from the subprocess layer returns `[]` / `None` / `False` rather than propagating —
+  and the runtime's call site wraps the whole block *including the `import`*, so even a missing
+  or broken adapter module degrades to a warning with the workbook intact. Two regression tests
+  cover it (unit, across every failure mode; and end-to-end through `run_plan`).
 - Dry-run is honoured on the xlsx path (no file, no parent directory, no artefacts reported).
 - Docs: `README` skill table and `COMPATIBILITY` row updated for the second output format;
   `references/workbook-charts.md` added; `.gitignore` covers the new `*-selftest.xlsx`.

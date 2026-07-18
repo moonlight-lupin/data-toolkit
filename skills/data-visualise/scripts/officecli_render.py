@@ -78,10 +78,13 @@ def _run(args: list[str], *, timeout: int = DEFAULT_TIMEOUT) -> tuple[int, str, 
 def version() -> str | None:
     """OfficeCLI version string, or None. Worth recording in a run report: the project
     releases very frequently, so 'which build produced this image' is a real question."""
-    code, out, _err = _run(["--version"], timeout=15)
-    if code != 0:
+    try:
+        code, out, _err = _run(["--version"], timeout=15)
+        if code != 0:
+            return None
+        return (out.strip().splitlines() or [""])[0].strip() or None
+    except Exception:       # noqa: BLE001
         return None
-    return (out.strip().splitlines() or [""])[0].strip() or None
 
 
 def chart_paths(xlsx_path: str | Path, *, timeout: int = DEFAULT_TIMEOUT) -> list[str]:
@@ -90,15 +93,15 @@ def chart_paths(xlsx_path: str | Path, *, timeout: int = DEFAULT_TIMEOUT) -> lis
     These are what `--range` crops to; a cell range does **not** work, because a chart is a
     floating object rather than cell content.
     """
-    code, out, _err = _run(["query", str(xlsx_path), "chart", "--json"], timeout=timeout)
-    if code != 0 or not out.strip():
-        return []
     try:
+        code, out, _err = _run(["query", str(xlsx_path), "chart", "--json"], timeout=timeout)
+        if code != 0 or not out.strip():
+            return []
         payload = json.loads(out)
-    except json.JSONDecodeError:
+        results = (payload.get("data") or {}).get("results") or []
+        return [r["path"] for r in results if isinstance(r, dict) and r.get("path")]
+    except Exception:       # noqa: BLE001 - malformed output must not fail the caller
         return []
-    results = (payload.get("data") or {}).get("results") or []
-    return [r["path"] for r in results if isinstance(r, dict) and r.get("path")]
 
 
 def _safe_stem(path: str) -> str:
@@ -116,8 +119,11 @@ def release(xlsx_path: str | Path, *, timeout: int = 30) -> bool:
     """
     if not available():
         return False
-    code, _out, _err = _run(["close", str(xlsx_path)], timeout=timeout)
-    return code == 0
+    try:
+        code, _out, _err = _run(["close", str(xlsx_path)], timeout=timeout)
+        return code == 0
+    except Exception:      # noqa: BLE001 - releasing must never raise; it runs in a finally
+        return False
 
 
 def render_chart_pngs(
@@ -151,6 +157,9 @@ def render_chart_pngs(
             )
             if code == 0 and target.is_file() and target.stat().st_size > 0:
                 written.append(target)
+    except Exception:           # noqa: BLE001 - see module docstring: rendering is a bonus.
+        pass                    # keep whatever rendered; an unwritable dir or a misbehaving
+                                # binary must never fail the caller's run.
     finally:
         release(xlsx_path)      # never leave the workbook locked by a resident
     return written
@@ -168,22 +177,31 @@ def render_sheet_png(
     if not available():
         return None
     out_png = Path(out_png)
-    out_png.parent.mkdir(parents=True, exist_ok=True)
+    code = 1
     try:
+        out_png.parent.mkdir(parents=True, exist_ok=True)
         code, _out, _err = _run(
             ["view", str(xlsx_path), "screenshot", "-o", str(out_png),
              "--screenshot-width", str(int(width)),
              "--screenshot-height", str(int(height))],
             timeout=timeout,
         )
+    except Exception:           # noqa: BLE001 - rendering is a bonus; never fail the caller
+        return None
     finally:
         release(xlsx_path)      # never leave the workbook locked by a resident
-    return out_png if code == 0 and out_png.is_file() and out_png.stat().st_size > 0 else None
+    try:
+        return out_png if code == 0 and out_png.is_file() and out_png.stat().st_size > 0 else None
+    except OSError:
+        return None
 
 
 def status() -> dict[str, Any]:
     """Probe summary for envcheck / run reports."""
-    path = binary_path()
+    try:
+        path = binary_path()
+    except Exception:       # noqa: BLE001
+        path = None
     return {"available": path is not None, "path": path, "version": version() if path else None}
 
 

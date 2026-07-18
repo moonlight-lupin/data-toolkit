@@ -992,21 +992,26 @@ def _run_visualise(plan: dict[str, Any], base: Path, dry_run: bool,
                 # Optional: render each chart to a PNG via the third-party OfficeCLI binary.
                 # Entirely opt-in — the workbook is already written, so an absent or failing
                 # renderer downgrades to a warning and never costs the run its artefact.
-                import officecli_render
-                if officecli_render.available():
-                    pngs = officecli_render.render_chart_pngs(
-                        output, output.parent, prefix=f"{output.stem}-")
-                    artifacts += [{"path": str(p), "kind": "chart_png"} for p in pngs]
-                    renderer = {"tool": "officecli", "version": officecli_render.version(),
-                                "images": len(pngs)}
-                    if not pngs:
+                try:
+                    import officecli_render
+                    if officecli_render.available():
+                        pngs = officecli_render.render_chart_pngs(
+                            output, output.parent, prefix=f"{output.stem}-")
+                        artifacts += [{"path": str(p), "kind": "chart_png"} for p in pngs]
+                        renderer = {"tool": "officecli", "version": officecli_render.version(),
+                                    "images": len(pngs)}
+                        if not pngs:
+                            xlsx_warnings.append(
+                                "render_png: OfficeCLI is installed but rendered no images; "
+                                "the .xlsx itself is unaffected")
+                    else:
                         xlsx_warnings.append(
-                            "render_png: OfficeCLI is installed but rendered no images; "
-                            "the .xlsx itself is unaffected")
-                else:
+                            "render_png requested but the optional 'officecli' binary is not on "
+                            "PATH — the .xlsx was written without images (see COMPATIBILITY.md)")
+                except Exception as exc:    # noqa: BLE001 - optional add-on, never fails a run
                     xlsx_warnings.append(
-                        "render_png requested but the optional 'officecli' binary is not on PATH — "
-                        "the .xlsx was written without images (see COMPATIBILITY.md)")
+                        f"render_png: the optional OfficeCLI renderer failed ({type(exc).__name__}: "
+                        f"{exc}); the .xlsx was written and is unaffected")
         return envelope(
             status="success_with_warnings" if xlsx_warnings else "success",
             skill="data-visualise", action="dry-run" if dry_run else "run",
