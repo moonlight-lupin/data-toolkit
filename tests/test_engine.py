@@ -228,6 +228,138 @@ def test_workbook_excel_charts_and_analysis_handoff():
     assert out.is_file()
 
 
+def test_officecli_render_is_optional_and_never_locks_the_workbook():
+    """The OfficeCLI renderer is opt-in. Absent → degrade silently; present → PNGs *and* the
+    workbook must be released (a resident holds an OS file lock until it is closed)."""
+    import os
+
+    import officecli_render as ocr
+
+    charts = [{"chart_type": "column", "title": "T",
+               "categories": ["A", "B"], "series": {"V": [1, 2]}}]
+
+    # --- always: with the binary unavailable nothing raises and nothing is produced ---
+    real_which = ocr.shutil.which
+    try:
+        ocr.shutil.which = lambda _name: None
+        td = Path(tempfile.mkdtemp())
+        src = workbook.write_charts_xlsx(td / "absent.xlsx", charts)
+        assert ocr.available() is False
+        assert ocr.chart_paths(src) == []
+        assert ocr.render_chart_pngs(src, td / "out") == []
+        assert ocr.render_sheet_png(src, td / "s.png") is None
+        assert ocr.status() == {"available": False, "path": None, "version": None}
+        assert src.is_file()                      # the workbook itself is untouched
+    finally:
+        ocr.shutil.which = real_which
+
+    # --- only when actually installed: render, then prove the file is not left locked ---
+    if not ocr.available():
+        return
+    td = Path(tempfile.mkdtemp())
+    src = workbook.write_charts_xlsx(td / "live.xlsx", charts)
+    pngs = ocr.render_chart_pngs(src, td / "out")
+    assert pngs and all(p.is_file() and p.stat().st_size > 0 for p in pngs)
+    probe = str(src) + ".probe"
+    os.replace(src, probe)                        # raises PermissionError if still locked
+    os.replace(probe, src)
+
+
+def test_officecli_render_degrades_gracefully_on_every_failure_mode():
+    """OfficeCLI is *optional*, so the contract is absolute: once the .xlsx is written,
+    nothing the renderer does can fail the run. Every hostile mode must return a value —
+    a non-zero exit, unparseable output, an unwritable destination, or an outright
+    exception from the subprocess layer."""
+    import officecli_render as ocr
+
+    td = Path(tempfile.mkdtemp())
+    src = td / "x.xlsx"
+    src.write_bytes(b"not really a workbook")   # never opened: _run is stubbed throughout
+    real_which, real_run = ocr.shutil.which, ocr._run
+    try:
+        ocr.shutil.which = lambda _name: "/fake/officecli"      # pretend it is installed
+        assert ocr.available() is True
+
+        ocr._run = lambda _a, timeout=60: (1, "", "boom")       # non-zero exit
+        assert ocr.render_chart_pngs(src, td / "o1") == []
+
+        ocr._run = lambda _a, timeout=60: (0, "<<<not json>>>", "")   # garbage stdout
+        assert ocr.chart_paths(src) == []
+        assert ocr.render_chart_pngs(src, td / "o2") == []
+
+        # a *file* sits where out_dir must be created -> mkdir raises, we must not
+        blocker = td / "o3"
+        blocker.write_text("in the way", encoding="utf-8")
+        ocr._run = lambda _a, timeout=60: (0, '{"data":{"results":[{"path":"/S/chart[1]"}]}}', "")
+        assert ocr.render_chart_pngs(src, blocker) == []
+
+        def explode(_a, timeout=60):                            # unexpected subprocess error
+            raise RuntimeError("subprocess exploded")
+        ocr._run = explode
+        assert ocr.render_chart_pngs(src, td / "o4") == []
+        assert ocr.render_sheet_png(src, td / "o5" / "s.png") is None
+        assert ocr.chart_paths(src) == []
+        assert ocr.version() is None
+        assert ocr.release(src) is False          # runs inside a finally: must never raise
+        assert ocr.status()["available"] is True  # probing still answers
+    finally:
+        ocr.shutil.which, ocr._run = real_which, real_run
+
+
+def test_render_png_never_costs_the_run_its_workbook():
+    """End-to-end: a plan asking for render_png must still yield the .xlsx when the optional
+    renderer is missing, un-importable, or blows up — degraded to a warning, never an error."""
+    import builtins
+
+    import agent_runtime
+
+    td = Path(tempfile.mkdtemp())
+    src = td / "d.csv"
+    src.write_text("region,amount\nNorth,10\nSouth,20\n", encoding="utf-8")
+    plan = {
+        "version": 1, "skill": "data-visualise", "input": str(src),
+        "output": str(td / "c.xlsx"), "format": "xlsx",
+        "dashboard": {"title": "By region", "render_png": True, "blocks": [
+            {"type": "chart", "chart_type": "bar", "title": "By region",
+             "categories": ["North", "South"],
+             "series": [{"name": "Amount", "values": [10, 20]}]}]},
+    }
+
+    def assert_survives(label):
+        env = agent_runtime.run_plan(json.loads(json.dumps(plan)), base_dir=td)
+        assert env["status"] == "success_with_warnings", f"{label}: {env.get('errors')}"
+        assert [a["kind"] for a in env["artifacts"]] == ["xlsx_charts"], label
+        assert any("render_png" in w for w in env["warnings"]), label
+
+    real_import = builtins.__import__
+
+    def blocked(name, *a, **k):
+        if name == "officecli_render":
+            raise ImportError("simulated: module missing")
+        return real_import(name, *a, **k)
+
+    builtins.__import__ = blocked
+    try:
+        assert_survives("import fails")
+    finally:
+        builtins.__import__ = real_import
+
+    import officecli_render as ocr
+    real_avail, real_render = ocr.available, ocr.render_chart_pngs
+    try:
+        ocr.available = lambda: True
+
+        def boom(*_a, **_k):
+            raise RuntimeError("renderer exploded")
+        ocr.render_chart_pngs = boom
+        assert_survives("renderer raises")
+
+        ocr.available = lambda: False
+        assert_survives("binary absent")
+    finally:
+        ocr.available, ocr.render_chart_pngs = real_avail, real_render
+
+
 def test_workbook_charts_follow_the_visualise_theme():
     """A white-label theme must colour the Excel workbook as it colours the HTML dashboard —
     one palette drives both artefacts (regression: the xlsx path used to ignore `theme`)."""

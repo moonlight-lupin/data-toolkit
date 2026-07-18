@@ -23,6 +23,26 @@ and an `analysis.json` can drive either:
   the visualise theme, so a white-label brand colours the Excel workbook exactly as it colours the
   HTML dashboard — one palette to maintain, not two. Per-chart `colors` still override.
   Regression test added.
+- **Optional chart rendering via OfficeCLI** (`skills/data-visualise/scripts/officecli_render.py`)
+  — set `dashboard.render_png: true` to also emit one PNG per chart, cropped to the chart.
+  Strictly opt-in and **degrades to a warning** when the binary is absent (the `.xlsx` is still
+  written). [OfficeCLI](https://github.com/iOfficeAI/OfficeCLI) is a third-party Apache-2.0
+  binary installed separately; its docs state it runs fully locally, which we relay rather than
+  certify. This is the toolkit's **only** subprocess: argument list, never `shell=True`,
+  time-boxed, non-zero exit degrades rather than raises. The renderer **never authors or mutates
+  a workbook** — openpyxl writes it, OfficeCLI only reads it to make a picture — and the tool
+  version is recorded in the run report. Probed by `envcheck.py`.
+- **Release the OfficeCLI resident after rendering.** Reading a document starts a resident that
+  holds an OS file handle, so the workbook could not be moved/deleted/reopened afterwards
+  (Windows `PermissionError`); every render path now closes it in a `finally`. Regression test
+  asserts the workbook is releasable after a render.
+- **Hardened the optional path to an absolute guarantee: once the `.xlsx` is written, nothing in
+  the renderer can fail the run.** Every public function in `officecli_render` is now total —
+  a non-zero exit, a timeout, unparseable JSON, an unwritable destination or an unexpected
+  exception from the subprocess layer returns `[]` / `None` / `False` rather than propagating —
+  and the runtime's call site wraps the whole block *including the `import`*, so even a missing
+  or broken adapter module degrades to a warning with the workbook intact. Two regression tests
+  cover it (unit, across every failure mode; and end-to-end through `run_plan`).
 - Dry-run is honoured on the xlsx path (no file, no parent directory, no artefacts reported).
 - Docs: `README` skill table and `COMPATIBILITY` row updated for the second output format;
   `references/workbook-charts.md` added; `.gitignore` covers the new `*-selftest.xlsx`.
