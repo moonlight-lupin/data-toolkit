@@ -195,9 +195,17 @@ def call_vision(
     Returns ``{"description": str, "usage": dict, "model": str}``.
     Retries once on transient failure; raises on permanent failure.
     """
-    import requests as _requests
-
-    req = _request or _requests.post
+    if _request is None:
+        try:
+            import requests as _requests
+        except ImportError as e:
+            raise ImportError(
+                "requests is required for vision API calls. "
+                "Install with: pip install requests"
+            ) from e
+        req = _requests.post
+    else:
+        req = _request
     key, url, mdl = vision_config(api_key, base_url, model)
     if not key:
         raise RuntimeError(
