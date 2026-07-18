@@ -5,7 +5,7 @@ out of documents). Lives at the toolkit-root `scripts/`; skills import it by add
 `../../scripts` to sys.path (run from the skill directory).
 
     from ingest import read_any, read_large, read_paste, read_text, list_sheets, list_pdf_tables, ocr_available
-    rows, note = read_any("export.xlsx")       # or .csv/.tsv, a .pdf, a .docx, a .msg
+    rows, note = read_any("export.xlsx")       # or .csv/.tsv, a .pdf, a .docx, a .msg, a .pptx
     rows, note = read_any("book.xlsx", sheet="Q2")  # pick a tab in a multi-sheet workbook
     df, note   = read_large("ledger.xlsx")     # 10k+ rows: strategy gate + Parquet cache/stream
     sheets     = list_sheets("book.xlsx")       # discover tabs (name/size/hidden/empty)
@@ -17,9 +17,9 @@ Multi-sheet workbooks: read_any/read_xlsx auto-select the single non-empty sheet
 hold data they raise `SheetSelectionRequired` (never silently read the 'active' tab) — the
 caller lists `list_sheets()` and re-calls with `sheet=`.
 
-Heavy deps (PyMuPDF, pdfplumber, python-docx, extract_msg, Tesseract) are imported LAZILY and
-degrade with a clear message rather than crashing — most jobs (xlsx / csv / paste / digital
-PDF) need none of them.
+Heavy deps (PyMuPDF, pdfplumber, python-docx, python-pptx, extract_msg, Tesseract) are imported
+LAZILY and degrade with a clear message rather than crashing — most jobs (xlsx / csv / paste /
+digital PDF) need none of them.
 
 PDF tables: two engines, best result per page. pdfplumber (optional, preferred for messy /
 borderless tables) and PyMuPDF (fast, ruled tables, + the OCR backbone) are both tried when
@@ -56,6 +56,12 @@ def read_any(path: str, sheet=None):
         return read_pdf(path)
     if ext in (".docx",):
         return read_docx(path)
+    if ext == ".pptx":
+        return read_pptx(path)
+    if ext == ".ppt":
+        raise ValueError(
+            "Legacy .ppt not supported; convert to .pptx first."
+        )
     if ext == ".msg":
         return read_msg(path)
     raise ValueError(f"Unsupported source type: {ext or '(no extension)'}")
@@ -424,6 +430,80 @@ def read_docx(path: str):
         for row in tbl.rows:
             rows.append([c.text for c in row.cells])
     return rows, f"docx, {len(rows)} table rows from {len(doc.tables)} table(s)"
+
+
+def read_pptx(path: str):
+    """Extract tables from every slide of a ``.pptx`` → ``(rows, note)``.
+
+    Returns **table rows only** (same contract as ``read_docx``) so downstream
+    tidy/analyse/visualise see a consistent column shape. Text-frame content
+    (titles, bullets) is summarised in ``note``, not mixed into ``rows``.
+
+    Multi-table slides contribute every table (not just the first). Image-only
+    slides (no text, no tables) are flagged in ``note`` for manual review or
+    vision-model extraction — this function does **not** auto-invoke a vision model.
+
+    Requires optional ``python-pptx``. Legacy ``.ppt`` is rejected by ``read_any``.
+    """
+    try:
+        from pptx import Presentation
+        from pptx.enum.shapes import MSO_SHAPE_TYPE
+    except ImportError:
+        raise ImportError(
+            "python-pptx not installed — cannot read .pptx. "
+            "Install with: pip install python-pptx"
+        )
+
+    prs = Presentation(path)
+    rows = []
+    slides_with_tables = []
+    slides_with_text = []
+    image_only = []
+    text_snippets = []  # titles/bullets — context for the note, not row data
+    n_tables = 0
+
+    for sidx, slide in enumerate(prs.slides, start=1):
+        slide_had_table = False
+        slide_had_text = False
+        for shape in slide.shapes:
+            if getattr(shape, "has_table", False):
+                slide_had_table = True
+                n_tables += 1
+                tbl = shape.table
+                for r in tbl.rows:
+                    rows.append([(c.text or "").strip() for c in r.cells])
+            elif getattr(shape, "has_text_frame", False):
+                for para in shape.text_frame.paragraphs:
+                    text = (para.text or "").strip()
+                    if text:
+                        slide_had_text = True
+                        if len(text_snippets) < 8:  # keep the note readable
+                            text_snippets.append(f"s{sidx}: {text[:80]}")
+            # Pictures / charts / media alone do not count as text/table content.
+            elif shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+                pass
+
+        if slide_had_table:
+            slides_with_tables.append(sidx)
+        if slide_had_text:
+            slides_with_text.append(sidx)
+        if not slide_had_table and not slide_had_text:
+            image_only.append(sidx)
+
+    n_slides = len(prs.slides)
+    note = f"pptx, {n_slides} slide(s), {n_tables} table(s), {len(rows)} table rows"
+    if slides_with_tables:
+        note += f"; tables on slide(s) {', '.join(map(str, slides_with_tables))}"
+    if text_snippets:
+        note += f"; text: {' | '.join(text_snippets)}"
+    if image_only:
+        note += (
+            f"; image-only slide(s) {', '.join(map(str, image_only))} "
+            "(flagged for manual review or vision-model extraction)"
+        )
+    if not slides_with_tables and not slides_with_text and not image_only:
+        note += "; no extractable content"
+    return rows, note
 
 
 def read_msg(path: str):

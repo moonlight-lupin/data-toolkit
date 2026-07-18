@@ -781,6 +781,140 @@ def test_image_extract_batch_and_compress():
     out_img = Image.open(io.BytesIO(compressed_bytes))
     assert max(out_img.size) <= 1024
     assert max(Image.open(big).size) > 1024
+# 17. PowerPoint ingest (read_pptx) + CJK / i18n fonts (viz)
+# --------------------------------------------------------------------------- #
+def _write_sample_pptx(path, *, with_image_only=True):
+    """Build a multi-slide deck: tables on slides 1–2, optional image-only slide 3."""
+    from pptx import Presentation
+    from pptx.util import Inches
+    import io
+    prs = Presentation()
+    blank = prs.slide_layouts[6]
+
+    s1 = prs.slides.add_slide(blank)
+    box = s1.shapes.add_textbox(Inches(0.5), Inches(0.2), Inches(5), Inches(0.4))
+    box.text_frame.text = "Q2 commitments"
+    t1 = s1.shapes.add_table(3, 2, Inches(0.5), Inches(0.8), Inches(4), Inches(1.4)).table
+    t1.cell(0, 0).text, t1.cell(0, 1).text = "Investor", "Commit"
+    t1.cell(1, 0).text, t1.cell(1, 1).text = "Acme", "1000000"
+    t1.cell(2, 0).text, t1.cell(2, 1).text = "Beta", "2500000"
+    # Second table on the same slide (multi-table)
+    t1b = s1.shapes.add_table(2, 2, Inches(0.5), Inches(2.5), Inches(3), Inches(0.9)).table
+    t1b.cell(0, 0).text, t1b.cell(0, 1).text = "Region", "Share"
+    t1b.cell(1, 0).text, t1b.cell(1, 1).text = "APAC", "60%"
+
+    s2 = prs.slides.add_slide(blank)
+    t2 = s2.shapes.add_table(2, 2, Inches(0.5), Inches(0.5), Inches(3), Inches(0.9)).table
+    t2.cell(0, 0).text, t2.cell(0, 1).text = "Metric", "Value"
+    t2.cell(1, 0).text, t2.cell(1, 1).text = "AUM", "3.5bn"
+
+    if with_image_only:
+        s3 = prs.slides.add_slide(blank)
+        try:
+            from PIL import Image
+            buf = io.BytesIO()
+            Image.new("RGB", (24, 24), color=(200, 40, 40)).save(buf, format="PNG")
+            buf.seek(0)
+            s3.shapes.add_picture(buf, Inches(1), Inches(1), width=Inches(1))
+        except ImportError:
+            # Still image-only if we add nothing — empty slide counts as image-only too.
+            pass
+
+    prs.save(path)
+
+
+def test_pptx_multi_slide_tables_and_read_any():
+    try:
+        import pptx  # noqa: F401
+    except ImportError:
+        print("  SKIP  test_pptx_multi_slide_tables_and_read_any (no python-pptx)")
+        return
+    d = tempfile.mkdtemp()
+    path = Path(d) / "deck.pptx"
+    _write_sample_pptx(path, with_image_only=True)
+    rows, note = ingest.read_pptx(str(path))
+    # Table rows only — title text frames must NOT pollute the row list (review M1)
+    assert any(r == ["Investor", "Commit"] for r in rows)
+    assert any(r == ["Acme", "1000000"] for r in rows)
+    assert any(r == ["Region", "Share"] for r in rows)
+    assert any(r == ["Metric", "Value"] for r in rows)
+    assert not any(r == ["Q2 commitments"] for r in rows)
+    assert all(len(r) >= 2 for r in rows), "text frames must not create 1-col rows"
+    assert "tables on slide(s) 1, 2" in note
+    assert "image-only slide(s) 3" in note
+    assert "Q2 commitments" in note          # titles live in the note
+    # read_any dispatches
+    rows2, note2 = ingest.read_any(str(path))
+    assert rows2 == rows and "pptx" in note2
+
+
+def test_pptx_legacy_ppt_rejected_and_image_only_note():
+    try:
+        import pptx  # noqa: F401
+    except ImportError:
+        print("  SKIP  test_pptx_legacy_ppt_rejected_and_image_only_note (no python-pptx)")
+        return
+    try:
+        ingest.read_any("legacy.ppt")
+        assert False, "expected ValueError for .ppt"
+    except ValueError as e:
+        assert "Legacy .ppt not supported" in str(e)
+        assert "convert to .pptx" in str(e)
+
+    d = tempfile.mkdtemp()
+    path = Path(d) / "pics.pptx"
+    _write_sample_pptx(path, with_image_only=True)
+    _, note = ingest.read_pptx(str(path))
+    assert "image-only" in note
+    assert "vision-model" in note
+
+
+def test_has_cjk_detection():
+    assert viz._has_cjk("Hello") is False
+    assert viz._has_cjk("销售额") is True
+    assert viz._has_cjk("Q2 売上") is True          # CJK ideograph + kana
+    assert viz._has_cjk("안녕하세요") is True       # Hangul
+    assert viz._has_cjk("") is False
+    assert "arabic" in viz._detect_scripts("الإيرادات")
+    assert "thai" in viz._detect_scripts("ยอดขาย")
+    assert viz._needs_i18n_fonts("Hello world 2026") is False
+
+
+def test_cjk_font_stack_conditional():
+    # English-only: theme fonts unchanged (no CJK names injected)
+    en = viz.dashboard("Operations dashboard",
+                       [viz.bar_chart([("Mon", 4), ("Tue", 7)], title="Tasks by day")],
+                       subtitle="Weekly")
+    assert "Microsoft YaHei" not in en
+    assert "Noto Sans CJK" not in en
+    assert 'lang="en"' in en
+    assert 'dir="ltr"' in en
+    # Default body font still present
+    assert "Inter" in en or "Segoe UI" in en
+
+    # Chinese labels: CJK fallback stack applied; SVG chart text inherits via CSS
+    zh = viz.dashboard("销售仪表板",
+                       [viz.bar_chart([("一月", 4), ("二月", 7)], title="销售额")],
+                       subtitle="季度回顾")
+    assert "Microsoft YaHei" in zh or "Noto Sans CJK" in zh or "PingFang SC" in zh
+    assert "销售额" in zh
+    # Chart CSS uses the (augmented) font stack — SVG <text> inherits
+    assert ".chart .v{font:11px" in zh.replace(" ", "") or "font:11px" in zh
+
+    # Fully Arabic page → RTL + Arabic font names
+    ar = viz.dashboard("لوحة القيادة", [viz.kpi_row([{"label": "الإيرادات", "value": 12}])])
+    assert 'dir="rtl"' in ar
+    assert "Noto Naskh Arabic" in ar or "Noto Sans Arabic" in ar
+
+    # Mostly English with one Arabic label must NOT flip the whole page (review m2)
+    mixed = viz.dashboard(
+        "Operations dashboard",
+        [viz.kpi_row([{"label": "Open tasks", "value": 12},
+                      {"label": "الإيرادات", "value": 3}])],
+        subtitle="Weekly",
+    )
+    assert 'dir="ltr"' in mixed
+    assert "Noto Naskh Arabic" in mixed or "Noto Sans Arabic" in mixed
 
 
 # --------------------------------------------------------------------------- #

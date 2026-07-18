@@ -6,6 +6,7 @@ jsonschema>=4.18.0
 #   PyMuPDF          PDF (incl. OCR path with Tesseract)
 #   pdfplumber       messy / borderless PDF tables
 #   python-docx      Word .docx
+#   python-pptx      PowerPoint .pptx (legacy .ppt not supported)
 #   extract-msg      Outlook .msg
 #   pandas           large-file path (ingest.read_large / streaming.optimize_dtypes)
 #   pyarrow          large-file Parquet cache/stream (python_version >= "3.9")

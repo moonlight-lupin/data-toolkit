@@ -45,8 +45,9 @@ def main():
     print(f"Tesseract (OCR)   : {tesseract or 'not found (scanned-PDF OCR unavailable)'}")
     # Shared-engine input adapters. openpyxl is the only hard dependency; the rest are
     # optional input formats imported lazily and degraded with a clear message.
-    libs = ["openpyxl", "fitz", "pdfplumber", "docx", "extract_msg", "pyarrow", "pandas"]
+    libs = ["openpyxl", "fitz", "pdfplumber", "docx", "pptx", "extract_msg", "pyarrow", "pandas"]
     labels = {"fitz": "fitz (PyMuPDF)", "docx": "docx (python-docx)",
+              "pptx": "pptx (python-pptx)",
               "pdfplumber": "pdfplumber (PDF tables, optional)",
               "pyarrow": "pyarrow (large-file Parquet, optional)",
               "pandas": "pandas (large-file / read_large, optional)"}
@@ -68,7 +69,8 @@ def main():
     s, n = libs_ok("openpyxl")
     if s == OK:
         opt = [lib for lib, mod in [("PyMuPDF/PDF", "fitz"), ("pdfplumber/messy-PDF-tables", "pdfplumber"),
-                                    (".docx", "docx"), (".msg", "extract_msg"),
+                                    (".docx", "docx"), (".pptx", "pptx"),
+                                    (".msg", "extract_msg"),
                                     ("pyarrow/large-files", "pyarrow"),
                                     ("pandas/large-files", "pandas")] if not has(mod)]
         if not tesseract:
@@ -83,6 +85,8 @@ def main():
         extra = [] if has("pdfplumber") else ["pdfplumber/messy-tables"]
         if not has("docx"):
             extra.append(".docx")
+        if not has("pptx"):
+            extra.append(".pptx")
         if not has("extract_msg"):
             extra.append(".msg")
         if not tesseract:
@@ -97,7 +101,8 @@ def main():
     s, n = libs_ok("openpyxl")
     if s == OK:
         opt = [lib for lib, mod in [("PyMuPDF/PDF", "fitz"), ("pdfplumber/messy-PDF-tables", "pdfplumber"),
-                                    (".docx", "docx"), (".msg", "extract_msg")] if not has(mod)]
+                                    (".docx", "docx"), (".pptx", "pptx"),
+                                    (".msg", "extract_msg")] if not has(mod)]
         n = "xlsx/csv ready; optional inputs missing: " + ", ".join(opt) if opt \
             else "all input adapters available"
     add("data-reconcile", "any (portable); no network", s, n)
@@ -106,7 +111,8 @@ def main():
     s, n = libs_ok("openpyxl")
     if s == OK:
         opt = [lib for lib, mod in [("PyMuPDF/PDF", "fitz"), ("pdfplumber/messy-PDF-tables", "pdfplumber"),
-                                    (".docx", "docx"), (".msg", "extract_msg"),
+                                    (".docx", "docx"), (".pptx", "pptx"),
+                                    (".msg", "extract_msg"),
                                     ("pyarrow/large-files", "pyarrow"),
                                     ("pandas/large-files", "pandas")] if not has(mod)]
         n = "xlsx/csv ready; optional inputs missing: " + ", ".join(opt) if opt \
@@ -114,8 +120,9 @@ def main():
     add("data-analyse", "any (portable); no network", s, n)
 
     # data-visualise — pure stdlib HTML/SVG; openpyxl only to read an .xlsx source
-    n = "ready (stdlib HTML/SVG)" + ("" if has("openpyxl")
-        else "; add openpyxl to read .xlsx sources") + "; preview needs a browser only"
+    n = ("ready (stdlib HTML/SVG); CJK/i18n labels use browser font fallback"
+         + ("" if has("openpyxl") else "; add openpyxl to read .xlsx sources")
+         + "; preview needs a browser only")
     add("data-visualise", "any (portable)", OK, n)
 
     w = max(len(r[0]) for r in rows)
