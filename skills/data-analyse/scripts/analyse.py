@@ -646,6 +646,323 @@ def trend(series):
 
 
 # --------------------------------------------------------------------------- #
+# Percentile — arbitrary quantiles with linear interpolation
+# --------------------------------------------------------------------------- #
+def percentile(values, q):
+    """Arbitrary percentile(s) on the parseable cells, with linear interpolation
+    between closest ranks (the standard "inclusive" method — matches numpy's
+    default and Excel's ``PERCENTILE.INC``).
+
+    ``q`` is a float in [0, 1], or a list of such floats. Returns a single
+    ``Decimal`` when ``q`` is a float, or a dict ``{q: value}`` when ``q`` is a
+    list. Typical uses: p90, p95, p99 for VaR / latency SLOs / top-decile.
+
+    Needs ≥1 parseable value; below that returns None (or a dict of Nones).
+    """
+    single = isinstance(q, (int, float))
+    qs = [Decimal(str(q))] if single else [Decimal(str(x)) for x in q]
+    dec, skipped = numbers(values)
+    if not dec:
+        result = None if single else {float(qi): None for qi in qs}
+        return {"value": result, "n": 0, "skipped": skipped} if single else result
+    sv = sorted(dec)
+    n = len(sv)
+    out = {}
+    for qi in qs:
+        if qi <= 0:
+            out[qi] = sv[0]
+        elif qi >= 1:
+            out[qi] = sv[-1]
+        else:
+            # Linear interpolation: position = q * (n - 1)
+            pos = qi * Decimal(n - 1)
+            lo = int(pos)
+            hi = min(lo + 1, n - 1)
+            frac = pos - Decimal(lo)
+            out[qi] = sv[lo] + frac * (sv[hi] - sv[lo])
+    if single:
+        return {"value": out[qs[0]], "n": n, "skipped": skipped}
+    return {float(qi): v for qi, v in out.items()}
+
+
+# --------------------------------------------------------------------------- #
+# Cohort / retention — group by first-period, track over subsequent periods
+# --------------------------------------------------------------------------- #
+def cohort(header, rows, id_col, date_col, value=None, grain="month", dayfirst=True):
+    """Cohort retention matrix: group entities by their first-active period,
+    then track activity (count or value sum) over subsequent periods.
+
+    Each row is a cohort (first-period). Each column is "periods since first"
+    (0 = first period, 1 = next, etc.). Cells hold the count of distinct
+    entities active in that cohort×period, or the sum of ``value`` where given.
+    Retention rate = cell / period-0 count.
+
+    Returns: cohorts (sorted), period-since columns, matrix, retention matrix
+    (as fractions of period-0), cohort sizes, and skipped counts.
+
+    An entity is "active" in a period if it has ≥1 row with a parseable date
+    in that period. Needs a parseable date on the first row of each entity.
+    """
+    assert grain in ("month", "quarter", "year")
+    idi = col_index(header, id_col)
+    di = col_index(header, date_col)
+    vi = col_index(header, value) if value else None
+    # Collect per-entity: first period, set of active periods, per-period value sums
+    entities = {}  # {id_key: {"first": period_str, "periods": {period: total}}}
+    bad_dates, skipped_vals = 0, 0
+    for r in rows:
+        eid = _s(r[idi] if idi < len(r) else "")
+        if not eid:
+            continue
+        raw_d = r[di] if di < len(r) else ""
+        d, _ = parse_date(raw_d, dayfirst=dayfirst)
+        if d is None:
+            bad_dates += 1
+            continue
+        p = _period_key(d, grain)
+        ent = entities.setdefault(eid, {"first": None, "periods": {}})
+        if ent["first"] is None or p < ent["first"]:
+            ent["first"] = p
+        if vi is not None:
+            raw_v = r[vi] if vi < len(r) else ""
+            n, _ = parse_number(raw_v)
+            if n is None and _s(raw_v) != "":
+                skipped_vals += 1
+            elif n is not None:
+                ent["periods"][p] = ent["periods"].get(p, Decimal(0)) + n
+        else:
+            ent["periods"][p] = ent["periods"].get(p, Decimal(0)) + Decimal(1)
+    if not entities:
+        return {"cohorts": [], "max_offset": -1, "matrix": [], "retention": [],
+                "cohort_sizes": [], "bad_dates": bad_dates, "skipped": skipped_vals}
+    # Group entities by first period
+    cohort_groups = {}  # {first_period: [entity dicts]}
+    for ent in entities.values():
+        cohort_groups.setdefault(ent["first"], []).append(ent)
+    cohort_keys = sorted(cohort_groups.keys())
+    max_offset = 0
+    # For each cohort, compute period-since activity
+    matrix = []
+    retention = []
+    cohort_sizes = []
+    for ck in cohort_keys:
+        ents = cohort_groups[ck]
+        size = len(ents)
+        cohort_sizes.append(size)
+        # For each offset, count entities active at that offset
+        offset_activity = {}  # {offset: total}
+        for ent in ents:
+            for p, total in ent["periods"].items():
+                offset = _periods_between(ck, p, grain)
+                if offset < 0:
+                    continue  # shouldn't happen (first is earliest)
+                offset_activity[offset] = offset_activity.get(offset, Decimal(0)) + total
+        max_off = max(offset_activity.keys()) if offset_activity else 0
+        max_offset = max(max_offset, max_off)
+        row = []
+        ret_row = []
+        for off in range(max_off + 1):
+            val = offset_activity.get(off, Decimal(0))
+            row.append(val)
+            ret_row.append(Decimal(val) / Decimal(size) if size else None)
+        matrix.append(row)
+        retention.append(ret_row)
+    return {"grain": grain, "measure": value or "entities",
+            "cohorts": cohort_keys, "max_offset": max_offset,
+            "matrix": matrix, "retention": retention,
+            "cohort_sizes": cohort_sizes,
+            "bad_dates": bad_dates, "skipped": skipped_vals}
+
+
+def _periods_between(start_key, end_key, grain):
+    """Number of periods from start to end (inclusive). Returns 0 for same period."""
+    if grain == "year":
+        return int(end_key) - int(start_key)
+    if grain == "quarter":
+        sy, sq = int(end_key.split("-Q")[0]), int(end_key.split("-Q")[1])
+        ey, eq = int(start_key.split("-Q")[0]), int(start_key.split("-Q")[1])
+        return (sy - ey) * 4 + (sq - eq)
+    sy, sm = int(end_key.split("-")[0]), int(end_key.split("-")[1])
+    ey, em = int(start_key.split("-")[0]), int(start_key.split("-")[1])
+    return (sy - ey) * 12 + (sm - em)
+
+
+# --------------------------------------------------------------------------- #
+# Correlation matrix — pairwise Pearson across N numeric columns
+# --------------------------------------------------------------------------- #
+def correlation_matrix(header, rows, columns):
+    """Pairwise Pearson correlation across ``columns`` (a list of column names).
+
+    Returns a symmetric matrix of coefficients (float, -1 to 1), the column
+    labels, and a flag for any constant column (correlation undefined).
+    Diagonal is always 1.0. Needs ≥3 rows per column; below that returns None
+    for that pair (matching ``_pearson``'s convention).
+
+    Correlation is association, NOT cause — the brief must name confounders.
+    """
+    cols = [column(header, rows, c) for c in columns]
+    n_cols = len(columns)
+    matrix = [[None] * n_cols for _ in range(n_cols)]
+    for i in range(n_cols):
+        xi = [float(v) for v in numbers(cols[i])[0]]
+        for j in range(i, n_cols):
+            if i == j:
+                matrix[i][j] = 1.0
+                continue
+            yj = [float(v) for v in numbers(cols[j])[0]]
+            # Align by position (row-wise); trim to min length
+            n = min(len(xi), len(yj))
+            if n < 3:
+                matrix[i][j] = None
+                matrix[j][i] = None
+                continue
+            r = _pearson(xi[:n], yj[:n])
+            matrix[i][j] = r
+            matrix[j][i] = r
+    return {"columns": list(columns), "matrix": matrix, "n_cols": n_cols}
+
+
+# --------------------------------------------------------------------------- #
+# Rolling / moving average — trailing window aggregates
+# --------------------------------------------------------------------------- #
+def rolling(series, window, func="mean"):
+    """Trailing-window aggregate on an ordered series of ``(key, value)`` tuples.
+
+    ``func``: ``"mean"`` (default) | ``"sum"`` | ``"median"``.
+
+    Returns a list of ``(key, value)`` with the same length as the input. The
+    first ``window - 1`` entries have ``None`` (not enough history yet). Pairs
+    naturally with ``period_series`` output:
+
+        ts = period_series(header, rows, "Date", value="Amount")
+        smoothed = rolling([(p["period"], p["total"]) for p in ts["periods"]], 3)
+
+    Window must be ≥1. Descriptive smoothing only — never a forecast.
+    """
+    assert func in ("mean", "sum", "median")
+    assert window >= 1
+    out = []
+    for i, (key, val) in enumerate(series):
+        if val is None or i < window - 1:
+            out.append((key, None))
+            continue
+        window_vals = [series[j][1] for j in range(i - window + 1, i + 1)
+                       if series[j][1] is not None]
+        if not window_vals:
+            out.append((key, None))
+            continue
+        if func == "sum":
+            agg = sum(Decimal(str(v)) for v in window_vals)
+        elif func == "median":
+            sv = sorted(Decimal(str(v)) for v in window_vals)
+            agg = _median(sv)
+        else:  # mean
+            agg = sum(Decimal(str(v)) for v in window_vals) / Decimal(len(window_vals))
+        out.append((key, agg))
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# Gini coefficient — inequality of distribution (0 = equal, 1 = concentrated)
+# --------------------------------------------------------------------------- #
+def gini(values):
+    """Gini coefficient on the parseable cells (0 = perfectly equal,
+    1 = perfectly concentrated). Complements ``concentration``'s HHI —
+    Gini captures inequality of distribution; HHI captures number + size
+    of groups. Both are valid for revenue/customer concentration.
+
+    Uses the standard sorted formula:
+        G = (2 * Σ(i * x_i)) / (n * Σ x_i) - (n + 1) / n
+    where x_i are sorted ascending and i is 1-indexed.
+
+    Returns float (a coefficient, not money). Negatives make Gini unreliable —
+    returns None with a classification, matching ``concentration``'s convention.
+    Needs ≥2 values.
+    """
+    dec, skipped = numbers(values)
+    n = len(dec)
+    if n < 2:
+        return {"n": n, "skipped": skipped, "gini": None,
+                "classification": "insufficient data (need ≥2 values)"}
+    if any(v < 0 for v in dec):
+        return {"n": n, "skipped": skipped, "gini": None,
+                "classification": "unreliable (negatives present)"}
+    total = sum(dec)
+    if total == 0:
+        return {"n": n, "skipped": skipped, "gini": None,
+                "classification": "unreliable (total is zero)"}
+    sv = sorted(dec)
+    # G = (2 * Σ i*x_i) / (n * Σ x_i) - (n+1)/n
+    weighted_sum = sum(Decimal(i + 1) * sv[i] for i in range(n))
+    g = (Decimal(2) * weighted_sum) / (Decimal(n) * total) - Decimal(n + 1) / Decimal(n)
+    g_float = float(g)
+    if g_float < 0.25:
+        cls = "relatively equal"
+    elif g_float < 0.45:
+        cls = "moderate inequality"
+    elif g_float < 0.6:
+        cls = "high inequality"
+    else:
+        cls = "extreme inequality"
+    return {"n": n, "skipped": skipped, "gini": round(g_float, 4),
+            "classification": cls}
+
+
+# --------------------------------------------------------------------------- #
+# Seasonality — average by month-of-year (or quarter)
+# --------------------------------------------------------------------------- #
+def seasonality(header, rows, date_col, value=None, grain="month", dayfirst=True):
+    """Seasonal pattern: average value (or count) by month-of-year (1–12) or
+    quarter (1–4), across all years in the data.
+
+    Returns the average per season, the share of each season, and the
+    seasonal index (season average / overall average — 1.0 = average,
+    >1.0 = above-average season, <1.0 = below). Surfaces "Q4 is always
+    strong" patterns that ``period_series``'s trend line hides.
+
+    Gap periods (months with no data) are included as zero, matching
+    ``period_series``'s convention. Needs ≥1 parseable date.
+    """
+    assert grain in ("month", "quarter")
+    dates = column(header, rows, date_col)
+    vals = column(header, rows, value) if value else None
+    seasons = {i: {"count": 0, "total": Decimal(0)} for i in
+               (range(1, 13) if grain == "month" else range(1, 5))}
+    bad_dates, skipped_vals = 0, 0
+    for i, raw in enumerate(dates):
+        if _s(raw) == "":
+            bad_dates += 1
+            continue
+        d, _ = parse_date(raw, dayfirst=dayfirst)
+        if d is None:
+            bad_dates += 1
+            continue
+        s = d.month if grain == "month" else (d.month - 1) // 3 + 1
+        seasons[s]["count"] += 1
+        if vals is not None:
+            n, _ = parse_number(vals[i])
+            if n is None and _s(vals[i]) != "":
+                skipped_vals += 1
+            elif n is not None:
+                seasons[s]["total"] += n
+    measure = "total" if value else "count"
+    grand = sum(s[measure] for s in seasons.values())
+    n_seasons = len(seasons)
+    overall_avg = grand / Decimal(n_seasons) if n_seasons else Decimal(0)
+    out = []
+    for s in sorted(seasons):
+        val = seasons[s][measure]
+        avg = val / Decimal(seasons[s]["count"]) if seasons[s]["count"] else Decimal(0)
+        share = val / grand if grand else None
+        index = (avg / overall_avg) if overall_avg else None
+        out.append({"season": s, "count": seasons[s]["count"], "total": val,
+                    "average": avg, "share": share, "index": index})
+    return {"grain": grain, "measure": value or "rows", "seasons": out,
+            "grand_total": grand, "overall_average": overall_avg,
+            "bad_dates": bad_dates, "skipped": skipped_vals}
+
+
+# --------------------------------------------------------------------------- #
 # Shape detection (advisory — suggests the playbook, never decides silently)
 # --------------------------------------------------------------------------- #
 def suggest_playbook(header, rows):
@@ -888,6 +1205,135 @@ def _self_test():
     noisy = [("W1", Decimal("1")), ("W2", Decimal("5")), ("W3", Decimal("2")), ("W4", Decimal("4"))]
     tr5 = trend(noisy)
     assert tr5["r_squared"] < 0.5, tr5  # should be weak or flat
+
+    # percentile — arbitrary quantiles with linear interpolation
+    vals = ["10", "20", "30", "40", "50", "60", "70", "80", "90", "100"]
+    p50 = percentile(vals, 0.5)
+    assert p50["value"] == Decimal("55"), p50  # interp between 50 and 60
+    p90 = percentile(vals, 0.9)
+    assert p90["value"] == Decimal("91"), p90  # interp between 90 and 100
+    p0 = percentile(vals, 0.0)
+    assert p0["value"] == Decimal("10"), p0
+    p100 = percentile(vals, 1.0)
+    assert p100["value"] == Decimal("100"), p100
+    # List mode
+    multi = percentile(vals, [0.25, 0.75])
+    assert multi[0.25] == Decimal("32.5") and multi[0.75] == Decimal("77.5"), multi
+    # Empty
+    pe = percentile([], 0.5)
+    assert pe["value"] is None and pe["n"] == 0
+
+    # cohort — retention matrix
+    cohort_header = ["Customer", "Date", "Amount"]
+    cohort_rows = [
+        ["A", "01/01/2026", "100"],
+        ["A", "01/02/2026", "50"],   # A active in month 2
+        ["A", "01/03/2026", "30"],   # A active in month 3
+        ["B", "01/01/2026", "200"],
+        ["B", "01/03/2026", "40"],   # B active in month 3 (skipped month 2)
+        ["C", "01/02/2026", "150"],  # C starts in month 2
+        ["C", "01/03/2026", "60"],
+    ]
+    ch = cohort(cohort_header, cohort_rows, "Customer", "Date", grain="month")
+    assert ch["cohorts"] == ["2026-01", "2026-02"], ch["cohorts"]
+    assert ch["cohort_sizes"] == [2, 1], ch["cohort_sizes"]  # Jan: A+B, Feb: C
+    # Jan cohort: offset 0 = 2 entities, offset 1 = 1 (A only), offset 2 = 2 (A+B)
+    assert ch["matrix"][0][0] == Decimal(2), ch["matrix"][0]  # Jan, month 0
+    assert ch["matrix"][0][1] == Decimal(1), ch["matrix"][0]  # Jan, month 1 (A)
+    assert ch["matrix"][0][2] == Decimal(2), ch["matrix"][0]  # Jan, month 2 (A+B)
+    # Retention: 2/2 = 1.0, 1/2 = 0.5, 2/2 = 1.0
+    assert ch["retention"][0][0] == Decimal(1), ch["retention"][0]
+    assert ch["retention"][0][1] == Decimal("0.5"), ch["retention"][0]
+    # Feb cohort: 1 entity, offset 0 = 1, offset 1 = 1
+    assert ch["matrix"][1][0] == Decimal(1), ch["matrix"][1]
+    assert ch["retention"][1][0] == Decimal(1), ch["retention"][1]
+    # With value
+    chv = cohort(cohort_header, cohort_rows, "Customer", "Date", value="Amount", grain="month")
+    assert chv["measure"] == "Amount"
+    # Jan cohort, offset 0: A(100) + B(200) = 300
+    assert chv["matrix"][0][0] == Decimal("300"), chv["matrix"][0]
+
+    # correlation_matrix — pairwise Pearson
+    corr_header = ["Revenue", "Headcount", "Spend"]
+    corr_rows = [
+        ["100", "10", "30"],
+        ["150", "12", "40"],
+        ["200", "15", "50"],
+        ["250", "18", "60"],
+        ["300", "20", "70"],
+    ]
+    cm = correlation_matrix(corr_header, corr_rows, ["Revenue", "Headcount", "Spend"])
+    assert cm["n_cols"] == 3
+    assert cm["matrix"][0][0] == 1.0  # diagonal
+    assert cm["matrix"][0][1] is not None and cm["matrix"][0][1] > 0.95  # strongly correlated
+    assert cm["matrix"][1][0] == cm["matrix"][0][1]  # symmetric
+    # Too few rows → None
+    cm2 = correlation_matrix(["A", "B"], [["1", "2"], ["3", "4"]], ["A", "B"])
+    assert cm2["matrix"][0][1] is None  # only 2 rows, need ≥3
+
+    # rolling — moving average / sum / median
+    series = [("W1", Decimal("10")), ("W2", Decimal("20")), ("W3", Decimal("30")),
+              ("W4", Decimal("40")), ("W5", Decimal("50"))]
+    r3 = rolling(series, 3, func="mean")
+    assert r3[0] == ("W1", None) and r3[1] == ("W2", None)  # not enough history
+    assert r3[2] == ("W3", Decimal("20")), r3[2]  # (10+20+30)/3
+    assert r3[3] == ("W4", Decimal("30")), r3[3]  # (20+30+40)/3
+    assert r3[4] == ("W5", Decimal("40")), r3[4]  # (30+40+50)/3
+    # Sum
+    rs = rolling(series, 2, func="sum")
+    assert rs[1] == ("W2", Decimal("30")), rs[1]  # 10+20
+    # Median
+    rm = rolling(series, 3, func="median")
+    assert rm[2] == ("W3", Decimal("20")), rm[2]  # median of [10,20,30]
+    # Window=1 (no smoothing)
+    r1 = rolling(series, 1)
+    assert r1[0] == ("W1", Decimal("10")), r1[0]
+
+    # gini — inequality coefficient
+    # Perfectly equal: [10,10,10,10] → Gini = 0
+    g_equal = gini(["10", "10", "10", "10"])
+    assert g_equal["gini"] == 0.0, g_equal
+    assert g_equal["classification"] == "relatively equal", g_equal
+    # Highly unequal: [0, 0, 0, 1000] → Gini near 0.75
+    g_unequal = gini(["0", "0", "0", "1000"])
+    assert g_unequal["gini"] > 0.7, g_unequal
+    assert g_unequal["classification"] == "extreme inequality", g_unequal
+    # Negatives → unreliable
+    g_neg = gini(["100", "-50", "60"])
+    assert g_neg["gini"] is None and "negatives" in g_neg["classification"]
+    # Insufficient
+    g_one = gini(["100"])
+    assert g_one["gini"] is None and "insufficient" in g_one["classification"]
+
+    # seasonality — month-of-year averages
+    seas_header = ["Date", "Revenue"]
+    seas_rows = [
+        ["15/01/2025", "100"],   # Jan 2025
+        ["15/01/2026", "120"],   # Jan 2026
+        ["15/07/2025", "200"],   # Jul 2025
+        ["15/07/2026", "220"],   # Jul 2026
+        ["15/10/2025", "300"],   # Oct 2025
+    ]
+    sm = seasonality(seas_header, seas_rows, "Date", value="Revenue", grain="month")
+    assert sm["grain"] == "month" and len(sm["seasons"]) == 12
+    jan = [s for s in sm["seasons"] if s["season"] == 1][0]
+    jul = [s for s in sm["seasons"] if s["season"] == 7][0]
+    oct_s = [s for s in sm["seasons"] if s["season"] == 10][0]
+    assert jan["count"] == 2 and jan["total"] == Decimal("220"), jan
+    assert jan["average"] == Decimal("110"), jan  # 220/2
+    assert jul["total"] == Decimal("420"), jul
+    assert oct_s["count"] == 1 and oct_s["total"] == Decimal("300"), oct_s
+    # Seasonal index: months with no data have index 0 (well below average)
+    assert sm["overall_average"] == Decimal("940") / Decimal(12), sm["overall_average"]
+    # Quarter grain
+    sq = seasonality(seas_header, seas_rows, "Date", value="Revenue", grain="quarter")
+    assert sq["grain"] == "quarter" and len(sq["seasons"]) == 4
+    q1 = [s for s in sq["seasons"] if s["season"] == 1][0]
+    assert q1["total"] == Decimal("220"), q1  # Jan only
+    # Count measure (no value)
+    sc = seasonality(seas_header, seas_rows, "Date", grain="month")
+    assert sc["measure"] == "rows"
+    assert [s for s in sc["seasons"] if s["season"] == 1][0]["count"] == 2
 
     print("analyse.py self-test OK")
 

@@ -101,6 +101,12 @@ shared parsers:
 | `pivot(header, rows, rows_col, cols_col, value=, aggfunc=)` | 2D cross-tab matrix (rows × columns) with sum/count/mean aggregation + row/column grand totals |
 | `distribution(values)` | skewness + excess kurtosis (Fisher-Pearson, Excel-compatible) + classification (symmetric/moderately skewed/highly skewed/heavy-tailed) |
 | `trend(series)` | linear regression slope + R² + direction (rising/falling/weakly/flat) on an ordered (key, value) series — descriptive, not a forecast |
+| `percentile(values, q)` | arbitrary quantile(s) with linear interpolation (Excel PERCENTILE.INC-compatible); single float or list — p90/p95/p99 for VaR/latency |
+| `cohort(header, rows, id_col, date_col, value=, grain=)` | retention matrix: group entities by first-active period, track activity over subsequent periods + retention rates |
+| `correlation_matrix(header, rows, columns)` | pairwise Pearson correlation across N numeric columns (symmetric matrix) — association, not cause |
+| `rolling(series, window, func=)` | trailing-window aggregate (mean/sum/median) on an ordered series — smoothing, pairs with `period_series` |
+| `gini(values)` | Gini coefficient (0=equal, 1=concentrated) + classification — inequality of distribution, complements HHI |
+| `seasonality(header, rows, date_col, value=, grain=)` | average by month-of-year (1–12) or quarter (1–4) + seasonal index — surfaces "Q4 is always strong" patterns |
 | `currency_mix(col)` / `numbers(col)` | currency codes present / parsed Decimals + skipped count |
 | `fmt` / `pct` / `render_md(...)` | house-style formatting + markdown tables for the brief |
 | `write_metrics_xlsx(sections, path)` | optional metrics workbook (one sheet per analysis) |

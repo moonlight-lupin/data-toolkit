@@ -1010,6 +1010,121 @@ def test_trend_slope_r2_direction():
     assert t5["r_squared"] < 0.5, t5
 
 
+def test_percentile_quantiles():
+    import analyse
+    vals = ["10", "20", "30", "40", "50", "60", "70", "80", "90", "100"]
+    p50 = analyse.percentile(vals, 0.5)
+    assert p50["value"] == Decimal("55"), p50
+    p90 = analyse.percentile(vals, 0.9)
+    assert p90["value"] == Decimal("91"), p90
+    p0 = analyse.percentile(vals, 0.0)
+    assert p0["value"] == Decimal("10"), p0
+    p100 = analyse.percentile(vals, 1.0)
+    assert p100["value"] == Decimal("100"), p100
+    multi = analyse.percentile(vals, [0.25, 0.75])
+    assert multi[0.25] == Decimal("32.5") and multi[0.75] == Decimal("77.5"), multi
+    pe = analyse.percentile([], 0.5)
+    assert pe["value"] is None and pe["n"] == 0
+
+
+def test_cohort_retention_matrix():
+    import analyse
+    header = ["Customer", "Date", "Amount"]
+    rows = [
+        ["A", "01/01/2026", "100"],
+        ["A", "01/02/2026", "50"],
+        ["A", "01/03/2026", "30"],
+        ["B", "01/01/2026", "200"],
+        ["B", "01/03/2026", "40"],
+        ["C", "01/02/2026", "150"],
+        ["C", "01/03/2026", "60"],
+    ]
+    ch = analyse.cohort(header, rows, "Customer", "Date", grain="month")
+    assert ch["cohorts"] == ["2026-01", "2026-02"], ch["cohorts"]
+    assert ch["cohort_sizes"] == [2, 1], ch["cohort_sizes"]
+    assert ch["matrix"][0][0] == Decimal(2), ch["matrix"][0]
+    assert ch["matrix"][0][1] == Decimal(1), ch["matrix"][0]
+    assert ch["matrix"][0][2] == Decimal(2), ch["matrix"][0]
+    assert ch["retention"][0][0] == Decimal(1), ch["retention"][0]
+    assert ch["retention"][0][1] == Decimal("0.5"), ch["retention"][0]
+    assert ch["matrix"][1][0] == Decimal(1), ch["matrix"][1]
+    chv = analyse.cohort(header, rows, "Customer", "Date", value="Amount", grain="month")
+    assert chv["measure"] == "Amount"
+    assert chv["matrix"][0][0] == Decimal("300"), chv["matrix"][0]
+
+
+def test_correlation_matrix_pairwise():
+    import analyse
+    header = ["Revenue", "Headcount", "Spend"]
+    rows = [["100", "10", "30"], ["150", "12", "40"], ["200", "15", "50"],
+            ["250", "18", "60"], ["300", "20", "70"]]
+    cm = analyse.correlation_matrix(header, rows, ["Revenue", "Headcount", "Spend"])
+    assert cm["n_cols"] == 3
+    assert cm["matrix"][0][0] == 1.0
+    assert cm["matrix"][0][1] is not None and cm["matrix"][0][1] > 0.95
+    assert cm["matrix"][1][0] == cm["matrix"][0][1]
+    cm2 = analyse.correlation_matrix(["A", "B"], [["1", "2"], ["3", "4"]], ["A", "B"])
+    assert cm2["matrix"][0][1] is None
+
+
+def test_rolling_moving_average():
+    import analyse
+    series = [("W1", Decimal("10")), ("W2", Decimal("20")), ("W3", Decimal("30")),
+              ("W4", Decimal("40")), ("W5", Decimal("50"))]
+    r3 = analyse.rolling(series, 3, func="mean")
+    assert r3[0] == ("W1", None) and r3[1] == ("W2", None)
+    assert r3[2] == ("W3", Decimal("20")), r3[2]
+    assert r3[3] == ("W4", Decimal("30")), r3[3]
+    assert r3[4] == ("W5", Decimal("40")), r3[4]
+    rs = analyse.rolling(series, 2, func="sum")
+    assert rs[1] == ("W2", Decimal("30")), rs[1]
+    rm = analyse.rolling(series, 3, func="median")
+    assert rm[2] == ("W3", Decimal("20")), rm[2]
+    r1 = analyse.rolling(series, 1)
+    assert r1[0] == ("W1", Decimal("10")), r1[0]
+
+
+def test_gini_inequality():
+    import analyse
+    g_equal = analyse.gini(["10", "10", "10", "10"])
+    assert g_equal["gini"] == 0.0, g_equal
+    assert g_equal["classification"] == "relatively equal", g_equal
+    g_unequal = analyse.gini(["0", "0", "0", "1000"])
+    assert g_unequal["gini"] > 0.7, g_unequal
+    assert g_unequal["classification"] == "extreme inequality", g_unequal
+    g_neg = analyse.gini(["100", "-50", "60"])
+    assert g_neg["gini"] is None and "negatives" in g_neg["classification"]
+    g_one = analyse.gini(["100"])
+    assert g_one["gini"] is None and "insufficient" in g_one["classification"]
+
+
+def test_seasonality_month_and_quarter():
+    import analyse
+    header = ["Date", "Revenue"]
+    rows = [
+        ["15/01/2025", "100"], ["15/01/2026", "120"],
+        ["15/07/2025", "200"], ["15/07/2026", "220"],
+        ["15/10/2025", "300"],
+    ]
+    sm = analyse.seasonality(header, rows, "Date", value="Revenue", grain="month")
+    assert sm["grain"] == "month" and len(sm["seasons"]) == 12
+    jan = [s for s in sm["seasons"] if s["season"] == 1][0]
+    jul = [s for s in sm["seasons"] if s["season"] == 7][0]
+    oct_s = [s for s in sm["seasons"] if s["season"] == 10][0]
+    assert jan["count"] == 2 and jan["total"] == Decimal("220"), jan
+    assert jan["average"] == Decimal("110"), jan
+    assert jul["total"] == Decimal("420"), jul
+    assert oct_s["count"] == 1 and oct_s["total"] == Decimal("300"), oct_s
+    assert sm["overall_average"] == Decimal("940") / Decimal(12)
+    sq = analyse.seasonality(header, rows, "Date", value="Revenue", grain="quarter")
+    assert sq["grain"] == "quarter" and len(sq["seasons"]) == 4
+    q1 = [s for s in sq["seasons"] if s["season"] == 1][0]
+    assert q1["total"] == Decimal("220"), q1
+    sc = analyse.seasonality(header, rows, "Date", grain="month")
+    assert sc["measure"] == "rows"
+    assert [s for s in sc["seasons"] if s["season"] == 1][0]["count"] == 2
+
+
 # --------------------------------------------------------------------------- #
 # Standalone runner (no pytest needed)
 # --------------------------------------------------------------------------- #
