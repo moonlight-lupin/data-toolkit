@@ -31,6 +31,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          # Optional extras exercised by the engine suite (large-file + image extract).
+          # Soft deps: tests skip cleanly when absent; CI installs them for coverage.
+          pip install "pandas>=2.0.0" "pyarrow>=14.0.0" "Pillow>=10.0.0" "requests>=2.28.0"
 
       - name: Authoring lint (manifest, SKILL.md, engine self-tests)
         run: python bin/data-lint

@@ -56,6 +56,9 @@ header_rows, note = ingest.read_any(path)     # xlsx/csv/pdf/docx/msg; read_past
 Multi-tab workbooks: `read_any` raises `SheetSelectionRequired` if several tabs hold data —
 list the sheets and ask, don't guess.
 
+For files with 10k+ rows, use `ingest.read_large` instead of `read_any` to avoid OOM. See
+`references/large-file-patterns.md` for vectorised operation guidance.
+
 ### 2 — Profile & quality gate
 `dataclean.profile_table(header, rows)` / `score_quality(...)` — column types, missing %,
 duplicates. **If the data is too messy to analyse honestly** (columns that won't parse,

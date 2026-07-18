@@ -478,6 +478,312 @@ def test_summary_per_currency_breakdown():
 
 
 # --------------------------------------------------------------------------- #
+# 16. Large-file streaming (scripts/streaming.py + ingest.read_large)
+# --------------------------------------------------------------------------- #
+def test_streaming_count_rows():
+    """Row counts via read_only iter_rows; strategy gate for a small sheet is direct."""
+    import streaming
+    d = tempfile.mkdtemp()
+    path = Path(d) / "rows.xlsx"
+    rows = [["id", "amount", "ccy"]] + [[i, i * 1.5, "USD"] for i in range(1, 501)]
+    _write_xlsx(path, [("Ledger", rows), ("Empty", None)])
+    counts = streaming.count_rows(str(path))
+    assert counts["sheets"]["Ledger"] == 501          # header + 500 data
+    assert counts["sheets"]["Empty"] == 0
+    assert counts["total"] == 501
+    one = streaming.count_rows(str(path), sheet="Ledger")
+    assert one["sheets"] == {"Ledger": 501}
+    assert streaming.choose_strategy(str(path), sheet="Ledger") == "direct"
+
+
+def test_streaming_excel_to_parquet_and_read_large():
+    import streaming
+    if not streaming.pyarrow_available():
+        print("  SKIP  test_streaming_excel_to_parquet_and_read_large (no pyarrow/pandas)")
+        return
+    import pandas as pd
+    d = tempfile.mkdtemp()
+    path = Path(d) / "stream_me.xlsx"
+    n = 2500
+    rows = [["txn_id", "amount", "region"]] + [
+        [f"T{i}", float(i), "APAC" if i % 2 == 0 else "EMEA"] for i in range(n)
+    ]
+    _write_xlsx(path, [("Data", rows)])
+    pq = Path(d) / "out.parquet"
+    written = streaming.stream_excel_to_parquet(str(path), str(pq), sheet="Data", chunk_size=800)
+    assert written == n
+    df = pd.read_parquet(pq)
+    assert len(df) == n
+    assert list(df.columns) == ["txn_id", "amount", "region"]
+
+    # Force stream strategy via threshold monkeypatch for ingest.read_large
+    old_d, old_p = streaming.DIRECT_THRESHOLD, streaming.PARQUET_CACHE_THRESHOLD
+    streaming.DIRECT_THRESHOLD = 10
+    streaming.PARQUET_CACHE_THRESHOLD = 100
+    try:
+        assert streaming.choose_strategy(str(path), sheet="Data") == "stream"
+        frame, note = ingest.read_large(str(path), sheet="Data", cache_dir=d)
+        assert "stream" in note
+        assert len(frame) == n
+    finally:
+        streaming.DIRECT_THRESHOLD = old_d
+        streaming.PARQUET_CACHE_THRESHOLD = old_p
+
+
+def test_parquet_cache_preserves_none_and_nan_literals():
+    """parquet_cache must not null real string values 'None' / 'nan' (review M1)."""
+    import streaming
+    if not streaming.pyarrow_available():
+        print("  SKIP  test_parquet_cache_preserves_none_and_nan_literals (no pyarrow/pandas)")
+        return
+    d = tempfile.mkdtemp()
+    path = Path(d) / "names.xlsx"
+    # 12 data rows → force parquet_cache with lowered thresholds
+    rows = [["customer", "note"]] + [
+        ["None Corp", "nan handling pending"],
+        ["Acme", "ok"],
+    ] * 6
+    _write_xlsx(path, [("Data", rows)])
+    old_d, old_p = streaming.DIRECT_THRESHOLD, streaming.PARQUET_CACHE_THRESHOLD
+    streaming.DIRECT_THRESHOLD = 2
+    streaming.PARQUET_CACHE_THRESHOLD = 10_000
+    try:
+        assert streaming.choose_strategy(str(path), sheet="Data") == "parquet_cache"
+        frame, note = ingest.read_large(str(path), sheet="Data", cache_dir=d)
+        assert "parquet_cache" in note
+        assert "None Corp" in set(frame["customer"].astype(str))
+        assert "nan handling pending" in set(frame["note"].astype(str))
+        # Second read hits cache — still preserved
+        frame2, note2 = ingest.read_large(str(path), sheet="Data", cache_dir=d)
+        assert "cache hit" in note2
+        assert "None Corp" in set(frame2["customer"].astype(str))
+    finally:
+        streaming.DIRECT_THRESHOLD = old_d
+        streaming.PARQUET_CACHE_THRESHOLD = old_p
+
+
+def test_optimize_dtypes_saves_memory():
+    import streaming
+    try:
+        import pandas as pd
+        import numpy as np
+    except ImportError:
+        print("  SKIP  test_optimize_dtypes_saves_memory (no pandas/numpy)")
+        return
+    n = 50_000
+    # Mixed finance-shaped frame: wide int64/float64 + long repeated object labels.
+    # Category conversion on long strings is where most of the saving comes from.
+    regions = np.array(
+        ["Asia-Pacific regional coverage office"] * (n // 4)
+        + ["Europe Middle East Africa desk"] * (n // 4)
+        + ["Americas institutional coverage"] * (n // 4)
+        + ["Global multi-strategy allocation"] * (n // 4),
+        dtype=object,
+    )
+    statuses = np.array(
+        ["open - pending settlement review"] * (n // 2)
+        + ["closed - archived prior period"] * (n // 2),
+        dtype=object,
+    )
+    df = pd.DataFrame({
+        "id": np.arange(n, dtype="int64"),
+        "flag": np.zeros(n, dtype="int64"),
+        "amt": np.linspace(0.0, 1.0, n).astype("float64"),
+        "region": regions,
+        "status": statuses,
+    })
+    before = df.memory_usage(deep=True).sum()
+    out = streaming.optimize_dtypes(df)
+    after = out.memory_usage(deep=True).sum()
+    saved = (1 - after / before) * 100
+    assert saved >= 40, f"expected ≥40% memory save, got {saved:.1f}%"
+    assert str(out["region"].dtype) == "category"
+    assert str(out["status"].dtype) == "category"
+
+
+# --------------------------------------------------------------------------- #
+# 17. Image / chart extraction (skills/data-extract/scripts/image_extract.py)
+# --------------------------------------------------------------------------- #
+def _load_image_extract():
+    import importlib.util
+    mod_path = _ROOT / "skills" / "data-extract" / "scripts" / "image_extract.py"
+    spec = importlib.util.spec_from_file_location("image_extract", mod_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_parse_markdown_table_numeric_cleanup():
+    ie = _load_image_extract()
+    text = """
+Here is the table:
+
+| Region | Revenue | Growth | Fee |
+|---|---|---|---|
+| APAC | $1,234.50 | 12.5% | £90 |
+| EMEA | US$2,000 | 8% | €1,100 |
+| AMER | (500) | -3.2% | S$250 |
+
+Done.
+"""
+    df = ie.parse_markdown_table(text)
+    assert df is not None
+    assert list(df.columns) == ["Region", "Revenue", "Growth", "Fee"]
+    assert len(df) == 3
+    # Works with pandas DataFrame or the no-pandas stand-in
+    row0 = df.iloc[0] if hasattr(df, "iloc") else dict(zip(df.columns, df._data[0]))
+    row1 = df.iloc[1] if hasattr(df, "iloc") else dict(zip(df.columns, df._data[1]))
+    row2 = df.iloc[2] if hasattr(df, "iloc") else dict(zip(df.columns, df._data[2]))
+    assert row0["Revenue"] == 1234.5
+    assert abs(row0["Growth"] - 0.125) < 1e-9
+    assert row1["Revenue"] == 2000
+    assert row2["Revenue"] == -500
+    assert row1["Fee"] == 1100
+
+
+def test_image_extract_chart_and_table_mocked():
+    ie = _load_image_extract()
+    try:
+        from PIL import Image
+    except ImportError:
+        print("  SKIP  test_image_extract_chart_and_table_mocked (no Pillow)")
+        return
+
+    d = Path(tempfile.mkdtemp())
+    chart = d / "sales_bar_chart.png"
+    table = d / "ledger_table.png"
+    Image.new("RGB", (320, 200), color=(40, 80, 160)).save(chart)
+    Image.new("RGB", (400, 240), color=(240, 240, 240)).save(table)
+
+    chart_md = """
+| Category | Value |
+|---|---|
+| Q1 | 120 |
+| Q2 | 150 |
+| Q3 | 90 |
+| Q4 | 200 |
+"""
+    table_md = """
+| Investor | Commit | Close |
+|---|---|---|
+| Acme Pension | 1000000 | 12 Jun 2026 |
+| Beta FO | 2500000 | 13 Jun 2026 |
+| Gamma LP | 750000 | 14 Jun 2026 |
+"""
+
+    class _Resp:
+        def __init__(self, text, status=200):
+            self.status_code = status
+            self.text = text
+            self._text = text
+
+        def json(self):
+            return {
+                "choices": [{"message": {"content": self._text}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 20},
+                "model": "mock-vision",
+            }
+
+    calls = {"n": 0}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        calls["n"] += 1
+        # Route by which prompt was used
+        prompt = json["messages"][0]["content"][0]["text"]
+        if "chart title" in prompt.lower() or "data point" in prompt.lower():
+            return _Resp(chart_md)
+        return _Resp(table_md)
+
+    cache = d / "cache"
+    r1 = ie.extract_image(
+        str(chart), api_key="test-key", model="mock-vision",
+        cache_dir=cache, _request=fake_post,
+    )
+    assert r1.get("error") is None, f"chart extract error: {r1.get('error')}"
+    assert r1["cached"] is False
+    assert r1["type"] == "chart"
+    assert r1["dataframe"] is not None and len(r1["dataframe"]) == 4
+    cats = list(r1["dataframe"]["Category"])
+    assert set(cats) == {"Q1", "Q2", "Q3", "Q4"}
+    vals = [float(v) for v in r1["dataframe"]["Value"]]
+    assert sum(vals) == 560
+
+    # Cache hit on second call
+    r1b = ie.extract_image(
+        str(chart), api_key="test-key", model="mock-vision",
+        cache_dir=cache, _request=fake_post,
+    )
+    assert r1b["cached"] is True
+    assert calls["n"] == 1
+
+    r2 = ie.extract_image(
+        str(table), api_key="test-key", model="mock-vision",
+        cache_dir=cache, _request=fake_post,
+    )
+    assert r2.get("error") is None, f"table extract error: {r2.get('error')}"
+    assert r2["type"] == "table"
+    assert r2["dataframe"] is not None
+    assert list(r2["dataframe"].columns) == ["Investor", "Commit", "Close"]
+    assert len(r2["dataframe"]) == 3
+    assert int(r2["dataframe"].iloc[0]["Commit"]) == 1_000_000
+
+
+def test_image_extract_batch_and_compress():
+    ie = _load_image_extract()
+    try:
+        from PIL import Image
+    except ImportError:
+        print("  SKIP  test_image_extract_batch_and_compress (no Pillow)")
+        return
+
+    d = Path(tempfile.mkdtemp())
+    imgs = d / "shots"
+    imgs.mkdir()
+    # Five small images + one oversized to exercise compression
+    for i in range(5):
+        Image.new("RGB", (64, 64), color=(i * 40, 100, 120)).save(imgs / f"table_{i}.png")
+    big = imgs / "huge_photo.png"
+    # Oversized on the long edge — compression path must resize (byte shrink is not
+    # guaranteed for already-tiny solid-colour PNGs).
+    Image.new("RGB", (2200, 1600), color=(200, 100, 50)).save(big, compress_level=1)
+
+    md = "| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n"
+
+    class _Resp:
+        status_code = 200
+        text = md
+
+        def json(self):
+            return {
+                "choices": [{"message": {"content": md}}],
+                "usage": {},
+                "model": "mock-vision",
+            }
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        return _Resp()
+
+    out = d / "batch.xlsx"
+    summary = ie.extract_batch(
+        str(imgs), str(out),
+        api_key="test-key", model="mock-vision",
+        cache_dir=d / "cache", _request=fake_post,
+    )
+    assert out.is_file(), "batch xlsx was not written"
+    assert summary["count"] == 6, f"expected 6 images, got {summary['count']}"
+    assert "combined" in summary["sheets"]
+
+    import io
+    compressed_bytes, mime, was_compressed = ie.compress_image(
+        big, max_bytes=50_000, max_px=1024,
+    )
+    assert was_compressed is True
+    out_img = Image.open(io.BytesIO(compressed_bytes))
+    assert max(out_img.size) <= 1024
+    assert max(Image.open(big).size) > 1024
+
+
+# --------------------------------------------------------------------------- #
 # Standalone runner (no pytest needed)
 # --------------------------------------------------------------------------- #
 def _run_all():

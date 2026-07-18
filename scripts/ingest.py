@@ -4,9 +4,10 @@ shared path. Used by `data-tidy` (clean tabular data) and `data-extract` (get da
 out of documents). Lives at the toolkit-root `scripts/`; skills import it by adding
 `../../scripts` to sys.path (run from the skill directory).
 
-    from ingest import read_any, read_paste, read_text, list_sheets, list_pdf_tables, ocr_available
+    from ingest import read_any, read_large, read_paste, read_text, list_sheets, list_pdf_tables, ocr_available
     rows, note = read_any("export.xlsx")       # or .csv/.tsv, a .pdf, a .docx, a .msg
     rows, note = read_any("book.xlsx", sheet="Q2")  # pick a tab in a multi-sheet workbook
+    df, note   = read_large("ledger.xlsx")     # 10k+ rows: strategy gate + Parquet cache/stream
     sheets     = list_sheets("book.xlsx")       # discover tabs (name/size/hidden/empty)
     rows, note = read_paste(pasted_text)        # markdown / tab / csv-ish pasted table
     text, note = read_text("form.pdf")          # document -> plain text (OCR fallback)
@@ -137,6 +138,66 @@ def read_xlsx(path: str, sheet=None):
     if auto:
         note += " (auto-selected the only data sheet)"
     return rows, note
+
+
+def read_large(path: str, sheet=None, cache_dir=None):
+    """Memory-aware Excel reader for large workbooks → ``(frame_or_rows, note)``.
+
+    Dispatches via ``streaming.choose_strategy``:
+
+    - ``direct`` (<10k rows) — standard pandas/openpyxl read
+    - ``parquet_cache`` (10k–100k) — read once, cache Parquet, reload from cache
+    - ``stream`` (100k+) — chunked openpyxl → Parquet → load
+
+    When ``pyarrow``/``pandas`` are missing, falls back to ``read_xlsx`` (list-of-rows)
+    with a warning that large files may OOM. Existing ``read_any`` is unchanged.
+    For files with 10k+ rows prefer this over ``read_any``.
+    """
+    ext = Path(path).suffix.lower()
+    if ext not in (".xlsx", ".xlsm"):
+        raise ValueError(f"read_large supports .xlsx/.xlsm only, got {ext or '(none)'}")
+
+    # Resolve multi-sheet selection the same way as read_xlsx (typed error).
+    sheets = list_sheets(path)
+    by_name = {s["name"]: s for s in sheets}
+    if sheet is not None:
+        if sheet not in by_name:
+            raise ValueError(f"Sheet {sheet!r} not found in {Path(path).name}. "
+                             f"Available: {', '.join(by_name) or '(none)'}")
+        target = sheet
+    else:
+        candidates = [s for s in sheets if not s["empty"] and not s["hidden"]]
+        if len(candidates) == 1:
+            target = candidates[0]["name"]
+        elif not candidates:
+            non_empty = [s for s in sheets if not s["empty"]]
+            target = (non_empty[0]["name"] if non_empty
+                      else next((s["name"] for s in sheets if s["active"]),
+                                sheets[0]["name"] if sheets else "Sheet1"))
+        else:
+            raise SheetSelectionRequired(path, candidates)
+
+    try:
+        import streaming
+    except ImportError:  # pragma: no cover — streaming ships beside ingest
+        streaming = None
+
+    if streaming is None or not streaming.pyarrow_available():
+        if streaming is not None:
+            streaming.warn_no_pyarrow()
+        else:
+            import warnings
+            warnings.warn(
+                "streaming module unavailable — read_large falling back to read_xlsx. "
+                "Large files may OOM.",
+                UserWarning,
+                stacklevel=2,
+            )
+        rows, note = read_xlsx(path, sheet=target)
+        return rows, note + " (read_large fallback: direct openpyxl)"
+
+    df, note = streaming.load_via_strategy(path, sheet=target, cache_dir=cache_dir)
+    return df, note
 
 
 def read_csv(path: str):

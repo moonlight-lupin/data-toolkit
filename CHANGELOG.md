@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.4 — 2026-07-18
+
+**Large-file streaming + image/chart extraction** (additive; existing skills unchanged):
+
+- **`scripts/streaming.py`** — constant-memory row counting (`count_rows`), strategy gate
+  (`choose_strategy`: direct / parquet_cache / stream), chunked Excel→Parquet
+  (`stream_excel_to_parquet`), and `optimize_dtypes` (typically 50–80% memory save).
+- **`ingest.read_large`** — dispatches on strategy; falls back to direct openpyxl with a
+  warning when `pyarrow`/`pandas` are missing. `read_any` unchanged.
+- **`references/large-file-patterns.md`** (data-tidy + data-analyse) — vectorised-ops cheat
+  sheet; SKILL.md notes point agents at `read_large` for 10k+ row files.
+- **`skills/data-extract/scripts/image_extract.py`** — vision-model extraction for chart /
+  table / UI / diagram images (OpenAI-compatible endpoint), Markdown-table parser, styled
+  `.xlsx` export, batch mode, file+prompt cache, >5MB/>2048px compression. Never falls
+  back to Tesseract for chart data. Prompt table: `references/image-prompts.md`.
+- **`envcheck.py` / `COMPATIBILITY.md` / `requirements.txt`** — `pyarrow` + `pandas`
+  optional for large files; vision API + Pillow optional for image extract.
+
 ## 0.5.3 — 2026-07-16
 
 **data-convert required-field enforcement** — `required: true` is no longer report-adjacent only:
