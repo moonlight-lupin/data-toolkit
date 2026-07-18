@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.6.0 — 2026-07-18
+
+**10 new analysis functions for the data-analyse engine** (additive — no existing
+functions modified; 24 → 35 functions in `analyse.py`):
+
+- `concentration(values, top_n=4)` — HHI (0–10000 antitrust scale), top-N share,
+  groups-to-80%, classification. Pass pre-aggregated group totals, not raw lines.
+- `pivot(header, rows, rows_col, cols_col, value=, aggfunc=)` — 2D cross-tab matrix
+  with sum/count/mean + row/column grand totals. Blank amount cells are skipped
+  (not appended as None), matching finance-export reality.
+- `distribution(values)` — Fisher-Pearson skewness + excess kurtosis
+  (Excel SKEW/KURT compatible) + classification.
+- `trend(series)` — OLS slope + R² + direction. Descriptive, not a forecast.
+- `percentile(values, q)` — arbitrary quantiles with linear interpolation
+  (Excel PERCENTILE.INC-compatible). Single float → `{value, n, skipped}` dict;
+  list → `{q: value}` dict.
+- `cohort(header, rows, id_col, date_col, value=, grain=)` — retention matrix:
+  group by first-active period, track over subsequent periods. Count mode:
+  retention = active/size (0–1). Value mode: matrix holds value sums, retention
+  is still entity-count-based (0–1), `value_matrix` returned separately. All
+  rows padded to `max_offset + 1` (rectangular).
+- `correlation_matrix(header, rows, columns)` — pairwise Pearson across N columns.
+  Row-wise alignment: only rows where BOTH cells parse are paired (a junk cell
+  in one column does not shift later row pairings).
+- `rolling(series, window, func=)` — trailing-window aggregate (mean/sum/median).
+  Pairs with `period_series`. `None` values in a window are skipped (window
+  effectively shortens).
+- `gini(values)` — Gini coefficient (0=equal, 1=concentrated) + classification.
+  Complements HHI — Gini captures distribution inequality.
+- `seasonality(header, rows, date_col, value=, grain=)` — average by
+  month-of-year (1–12) or quarter (1–4) + seasonal index. Overall average is
+  mean of seasons WITH data (not grand/12, which would dilute the index when
+  some months have no rows).
+
+10 new regression tests (57/57 pass, was 47). `data-lint` green.
+
 ## 0.5.5 — 2026-07-18
 
 **PowerPoint ingest + multilingual dashboard fonts** (additive):

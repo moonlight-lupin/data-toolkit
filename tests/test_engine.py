@@ -32,7 +32,8 @@ from pathlib import Path
 _ROOT = Path(__file__).resolve().parents[1]
 for _p in (_ROOT / "scripts",
            _ROOT / "skills" / "data-reconcile" / "scripts",
-           _ROOT / "skills" / "data-visualise" / "scripts"):
+           _ROOT / "skills" / "data-visualise" / "scripts",
+           _ROOT / "skills" / "data-analyse" / "scripts"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
@@ -915,6 +916,250 @@ def test_cjk_font_stack_conditional():
     )
     assert 'dir="ltr"' in mixed
     assert "Noto Naskh Arabic" in mixed or "Noto Sans Arabic" in mixed
+
+
+# --------------------------------------------------------------------------- #
+# 18. New analysis functions: concentration, pivot, distribution, trend
+# --------------------------------------------------------------------------- #
+def test_concentration_hhi_and_classification():
+    import analyse
+    # Highly concentrated: one group = 90% of total
+    c = analyse.concentration(["900", "50", "30", "20"])
+    assert c["n"] == 4 and c["n_groups"] == 4
+    assert c["hhi"] is not None and c["hhi"] > Decimal(5000), c
+    assert c["classification"] == "highly concentrated", c
+    assert c["top_n_share"] is not None and c["top_n_share"] > Decimal("0.9")
+    # Fragmented: 10 equal groups → HHI = 10 * (10%)² = 1000
+    c2 = analyse.concentration(["10"] * 10)
+    assert c2["hhi"] < Decimal(1500), c2
+    assert c2["classification"] == "fragmented", c2
+    # Negatives → unreliable
+    c3 = analyse.concentration(["100", "-50", "60"])
+    assert c3["hhi"] is None and "negatives" in c3["classification"]
+    # Empty
+    c4 = analyse.concentration([])
+    assert c4["hhi"] is None and c4["classification"] == "no data"
+
+
+def test_pivot_cross_tab_sum_and_count():
+    import analyse
+    header = ["Date", "Customer", "Region", "Amount"]
+    rows = [
+        ["05/01/2026", "Alpha", "North", "1,000"],
+        ["12/01/2026", "Beta", "South", "2,000"],
+        ["20/01/2026", "Alpha", "North", "1,500"],
+        ["15/03/2026", "Gamma", "South", "(500)"],
+        ["18/03/2026", "Alpha", "North", "9,000"],
+        ["25/03/2026", "Delta", "East", "junk"],
+        ["", "Echo", "", "250"],
+    ]
+    pv = analyse.pivot(header, rows, "Region", "Customer", value="Amount")
+    assert pv["n_rows"] == 4 and pv["n_cols"] == 5  # incl (blank)
+    assert "North" in pv["row_keys"] and "Alpha" in pv["col_keys"]
+    ni, ai = pv["row_keys"].index("North"), pv["col_keys"].index("Alpha")
+    assert pv["matrix"][ni][ai] == Decimal("11500"), pv["matrix"][ni][ai]
+    assert pv["grand_total"] == Decimal("13250"), pv["grand_total"]
+    assert pv["skipped"] == 1  # the "junk" amount
+    # count aggfunc (no value) — auto-selected
+    pvc = analyse.pivot(header, rows, "Region", "Customer")
+    assert pvc["aggfunc"] == "count" and pvc["measure"] == "rows"
+    assert pvc["matrix"][pvc["row_keys"].index("North")][pvc["col_keys"].index("Alpha")] == Decimal(3)
+    # M1 fix: blank amount cells don't crash — they're skipped, not appended as None
+    blank_header = ["Region", "Customer", "Amount"]
+    blank_rows = [
+        ["North", "Alpha", "100"],
+        ["North", "Alpha", ""],     # blank amount — must not crash
+        ["North", "Beta", "junk"],   # unparseable — skipped, counted
+        ["South", "Gamma", "200"],
+    ]
+    pvb = analyse.pivot(blank_header, blank_rows, "Region", "Customer", value="Amount")
+    ni2 = pvb["row_keys"].index("North")
+    ai2 = pvb["col_keys"].index("Alpha")
+    assert pvb["matrix"][ni2][ai2] == Decimal("100"), pvb["matrix"][ni2][ai2]  # only the 100
+    assert pvb["skipped"] == 1  # the "junk"
+
+
+def test_distribution_skewness_kurtosis():
+    import analyse
+    # Symmetric: 1,2,3,4,5 → skewness ~0
+    d = analyse.distribution(["1", "2", "3", "4", "5"])
+    assert d["n"] == 5 and d["skewness"] is not None
+    assert abs(d["skewness"]) < 0.1, d["skewness"]
+    assert d["classification"] == "symmetric", d
+    # Right-skewed with outlier → heavy skew
+    d2 = analyse.distribution(["1", "1", "1", "1", "100"])
+    assert d2["skewness"] > 1.0, d2
+    assert d2["classification"] in ("highly skewed", "heavy-tailed"), d2
+    # Insufficient data
+    d3 = analyse.distribution(["1", "2"])
+    assert d3["skewness"] is None and "insufficient" in d3["classification"]
+    # Constant
+    d4 = analyse.distribution(["5", "5", "5", "5"])
+    assert d4["classification"] == "constant (no spread)"
+
+
+def test_trend_slope_r2_direction():
+    import analyse
+    # Rising: y = 2x → slope=2, R²=1
+    rising = [("W1", Decimal("2")), ("W2", Decimal("4")), ("W3", Decimal("6")), ("W4", Decimal("8"))]
+    t = analyse.trend(rising)
+    assert t["n"] == 4 and t["slope"] == 2.0, t
+    assert t["r_squared"] == 1.0, t
+    assert t["classification"] == "rising", t
+    # Falling
+    falling = [("W1", Decimal("10")), ("W2", Decimal("8")), ("W3", Decimal("6")), ("W4", Decimal("4"))]
+    t2 = analyse.trend(falling)
+    assert t2["slope"] == -2.0 and t2["classification"] == "falling", t2
+    # Flat (constant)
+    flat = [("W1", Decimal("5")), ("W2", Decimal("5")), ("W3", Decimal("5"))]
+    t3 = analyse.trend(flat)
+    assert t3["classification"] == "flat", t3
+    # Insufficient
+    t4 = analyse.trend([("W1", Decimal("1")), ("W2", Decimal("2"))])
+    assert t4["slope"] is None and "insufficient" in t4["classification"]
+    # Noisy / weak (low R²)
+    noisy = [("W1", Decimal("1")), ("W2", Decimal("5")), ("W3", Decimal("2")), ("W4", Decimal("4"))]
+    t5 = analyse.trend(noisy)
+    assert t5["r_squared"] < 0.5, t5
+
+
+def test_percentile_quantiles():
+    import analyse
+    vals = ["10", "20", "30", "40", "50", "60", "70", "80", "90", "100"]
+    p50 = analyse.percentile(vals, 0.5)
+    assert p50["value"] == Decimal("55"), p50
+    p90 = analyse.percentile(vals, 0.9)
+    assert p90["value"] == Decimal("91"), p90
+    p0 = analyse.percentile(vals, 0.0)
+    assert p0["value"] == Decimal("10"), p0
+    p100 = analyse.percentile(vals, 1.0)
+    assert p100["value"] == Decimal("100"), p100
+    multi = analyse.percentile(vals, [0.25, 0.75])
+    assert multi[0.25] == Decimal("32.5") and multi[0.75] == Decimal("77.5"), multi
+    pe = analyse.percentile([], 0.5)
+    assert pe["value"] is None and pe["n"] == 0
+
+
+def test_cohort_retention_matrix():
+    import analyse
+    header = ["Customer", "Date", "Amount"]
+    rows = [
+        ["A", "01/01/2026", "100"],
+        ["A", "01/02/2026", "50"],
+        ["A", "01/03/2026", "30"],
+        ["B", "01/01/2026", "200"],
+        ["B", "01/03/2026", "40"],
+        ["C", "01/02/2026", "150"],
+        ["C", "01/03/2026", "60"],
+    ]
+    ch = analyse.cohort(header, rows, "Customer", "Date", grain="month")
+    assert ch["cohorts"] == ["2026-01", "2026-02"], ch["cohorts"]
+    assert ch["cohort_sizes"] == [2, 1], ch["cohort_sizes"]
+    # Rectangular: all rows padded to max_offset + 1
+    assert ch["max_offset"] == 2, ch["max_offset"]
+    assert all(len(r) == ch["max_offset"] + 1 for r in ch["matrix"]), ch["matrix"]
+    # Jan cohort: offset 0 = 2 entities, offset 1 = 1 (A only), offset 2 = 2 (A+B)
+    assert ch["matrix"][0][0] == Decimal(2), ch["matrix"][0]
+    assert ch["matrix"][0][1] == Decimal(1), ch["matrix"][0]
+    assert ch["matrix"][0][2] == Decimal(2), ch["matrix"][0]
+    # Retention (entity-count-based): 2/2=1.0, 1/2=0.5, 2/2=1.0
+    assert ch["retention"][0][0] == Decimal(1), ch["retention"][0]
+    assert ch["retention"][0][1] == Decimal("0.5"), ch["retention"][0]
+    # Feb cohort: 1 entity, padded to 3 columns
+    assert ch["matrix"][1][0] == Decimal(1), ch["matrix"][1]
+    assert ch["retention"][1][0] == Decimal(1), ch["retention"][1]
+    # Value mode: matrix holds value sums, retention still entity-count-based
+    chv = analyse.cohort(header, rows, "Customer", "Date", value="Amount", grain="month")
+    assert chv["measure"] == "Amount"
+    assert chv["matrix"][0][0] == Decimal("300"), chv["matrix"][0]  # A(100)+B(200)
+    assert chv["value_matrix"] is not None
+    assert chv["value_matrix"][0][0] == Decimal("300"), chv["value_matrix"][0]
+    # Retention in value mode is STILL entity-count-based (0–1 fractions)
+    assert chv["retention"][0][0] == Decimal(1), chv["retention"][0]  # 2/2, not 300/300
+    assert chv["retention"][0][1] == Decimal("0.5"), chv["retention"][0]  # 1/2
+
+
+def test_correlation_matrix_pairwise():
+    import analyse
+    header = ["Revenue", "Headcount", "Spend"]
+    rows = [["100", "10", "30"], ["150", "12", "40"], ["200", "15", "50"],
+            ["250", "18", "60"], ["300", "20", "70"]]
+    cm = analyse.correlation_matrix(header, rows, ["Revenue", "Headcount", "Spend"])
+    assert cm["n_cols"] == 3
+    assert cm["matrix"][0][0] == 1.0
+    assert cm["matrix"][0][1] is not None and cm["matrix"][0][1] > 0.95
+    assert cm["matrix"][1][0] == cm["matrix"][0][1]  # symmetric
+    cm2 = analyse.correlation_matrix(["A", "B"], [["1", "2"], ["3", "4"]], ["A", "B"])
+    assert cm2["matrix"][0][1] is None  # only 2 rows
+    # M2 fix: junk cell in one column does not shift row pairing
+    # Row 2 has junk in col B; without row-wise alignment, col A's [2,4,6,8]
+    # would pair with col B's [20,6,8] (shifted). With fix, pairs are (2,20?),
+    # (4,junk→skip), (6,6), (8,8) — only rows where BOTH parse.
+    cm3 = analyse.correlation_matrix(["A", "B"],
+        [["2", "10"], ["4", "junk"], ["6", "6"], ["8", "8"]], ["A", "B"])
+    # Only 3 common rows (1,3,4) → correlation computable, not shifted
+    assert cm3["matrix"][0][1] is not None
+
+
+def test_rolling_moving_average():
+    import analyse
+    series = [("W1", Decimal("10")), ("W2", Decimal("20")), ("W3", Decimal("30")),
+              ("W4", Decimal("40")), ("W5", Decimal("50"))]
+    r3 = analyse.rolling(series, 3, func="mean")
+    assert r3[0] == ("W1", None) and r3[1] == ("W2", None)
+    assert r3[2] == ("W3", Decimal("20")), r3[2]
+    assert r3[3] == ("W4", Decimal("30")), r3[3]
+    assert r3[4] == ("W5", Decimal("40")), r3[4]
+    rs = analyse.rolling(series, 2, func="sum")
+    assert rs[1] == ("W2", Decimal("30")), rs[1]
+    rm = analyse.rolling(series, 3, func="median")
+    assert rm[2] == ("W3", Decimal("20")), rm[2]
+    r1 = analyse.rolling(series, 1)
+    assert r1[0] == ("W1", Decimal("10")), r1[0]
+
+
+def test_gini_inequality():
+    import analyse
+    g_equal = analyse.gini(["10", "10", "10", "10"])
+    assert g_equal["gini"] == 0.0, g_equal
+    assert g_equal["classification"] == "relatively equal", g_equal
+    g_unequal = analyse.gini(["0", "0", "0", "1000"])
+    assert g_unequal["gini"] > 0.7, g_unequal
+    assert g_unequal["classification"] == "extreme inequality", g_unequal
+    g_neg = analyse.gini(["100", "-50", "60"])
+    assert g_neg["gini"] is None and "negatives" in g_neg["classification"]
+    g_one = analyse.gini(["100"])
+    assert g_one["gini"] is None and "insufficient" in g_one["classification"]
+
+
+def test_seasonality_month_and_quarter():
+    import analyse
+    header = ["Date", "Revenue"]
+    rows = [
+        ["15/01/2025", "100"], ["15/01/2026", "120"],
+        ["15/07/2025", "200"], ["15/07/2026", "220"],
+        ["15/10/2025", "300"],
+    ]
+    sm = analyse.seasonality(header, rows, "Date", value="Revenue", grain="month")
+    assert sm["grain"] == "month" and len(sm["seasons"]) == 12
+    jan = [s for s in sm["seasons"] if s["season"] == 1][0]
+    jul = [s for s in sm["seasons"] if s["season"] == 7][0]
+    oct_s = [s for s in sm["seasons"] if s["season"] == 10][0]
+    assert jan["count"] == 2 and jan["total"] == Decimal("220"), jan
+    assert jan["average"] == Decimal("110"), jan
+    assert jul["total"] == Decimal("420"), jul
+    assert oct_s["count"] == 1 and oct_s["total"] == Decimal("300"), oct_s
+    # Overall average: mean of seasons WITH data (Jan, Jul, Oct = 3 seasons)
+    assert sm["overall_average"] == Decimal("940") / Decimal(3), sm["overall_average"]
+    assert sm["n_seasons_with_data"] == 3
+    # Quarter grain
+    sq = analyse.seasonality(header, rows, "Date", value="Revenue", grain="quarter")
+    assert sq["grain"] == "quarter" and len(sq["seasons"]) == 4
+    q1 = [s for s in sq["seasons"] if s["season"] == 1][0]
+    assert q1["total"] == Decimal("220"), q1
+    sc = analyse.seasonality(header, rows, "Date", grain="month")
+    assert sc["measure"] == "rows"
+    assert [s for s in sc["seasons"] if s["season"] == 1][0]["count"] == 2
 
 
 # --------------------------------------------------------------------------- #

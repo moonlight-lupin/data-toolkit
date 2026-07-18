@@ -97,6 +97,16 @@ shared parsers:
 | `ageing(header, rows, date_col, as_of=, value=)` | 0–30/31–60/61–90/90+ buckets (configurable); future & unparsed bucketed visibly |
 | `join_on(l_header, l_rows, r_header, r_rows, on=)` | **two-dataset** join on a shared key (case/space-folded); returns the joined table + a matched/left-only/right-only coverage report |
 | `compare_series(a, b, a_label=, b_label=)` | relate two ordered series (gap / ratio / % diff per key, Pearson correlation, ±1 lead/lag) — for cross-domain & actual-vs-budget |
+| `concentration(values, top_n=4)` | HHI (0–10000 antitrust scale), top-N share, groups-to-80%, classification (fragmented/moderate/concentrated/highly concentrated) — for revenue/customer concentration |
+| `pivot(header, rows, rows_col, cols_col, value=, aggfunc=)` | 2D cross-tab matrix (rows × columns) with sum/count/mean aggregation + row/column grand totals |
+| `distribution(values)` | skewness + excess kurtosis (Fisher-Pearson, Excel-compatible) + classification (symmetric/moderately skewed/highly skewed/heavy-tailed) |
+| `trend(series)` | linear regression slope + R² + direction (rising/falling/weakly/flat) on an ordered (key, value) series — descriptive, not a forecast |
+| `percentile(values, q)` | arbitrary quantile(s) with linear interpolation (Excel PERCENTILE.INC-compatible); single float → `{value, n, skipped}`, list → `{q: value}` — p90/p95/p99 for VaR/latency |
+| `cohort(header, rows, id_col, date_col, value=, grain=)` | retention matrix: group by first-active period, track over subsequent periods. Count mode: retention = active/size (0–1). Value mode: matrix = value sums, retention still entity-count-based, `value_matrix` separate. All rows padded rectangular. |
+| `correlation_matrix(header, rows, columns)` | pairwise Pearson across N numeric columns (symmetric matrix). Row-wise alignment — only rows where BOTH cells parse are paired (junk in one column doesn't shift others). Association, not cause. |
+| `rolling(series, window, func=)` | trailing-window aggregate (mean/sum/median) on an ordered series — smoothing, pairs with `period_series`. `None` values in a window are skipped. |
+| `gini(values)` | Gini coefficient (0=equal, 1=concentrated) + classification — inequality of distribution, complements HHI |
+| `seasonality(header, rows, date_col, value=, grain=)` | average by month-of-year (1–12) or quarter (1–4) + seasonal index. Overall average = mean of seasons WITH data (not grand/12). |
 | `currency_mix(col)` / `numbers(col)` | currency codes present / parsed Decimals + skipped count |
 | `fmt` / `pct` / `render_md(...)` | house-style formatting + markdown tables for the brief |
 | `write_metrics_xlsx(sections, path)` | optional metrics workbook (one sheet per analysis) |
