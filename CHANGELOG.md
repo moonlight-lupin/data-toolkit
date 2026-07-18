@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.7.0 — 2026-07-18
+
+**`data-visualise` becomes an orchestrator** — the same metrics contract now drives two artefacts,
+and an `analysis.json` can drive either:
+
+- **New HTML blocks** — `heatmap`, `sparkline`, `waterfall`. Still pure inline SVG: no CDN, no
+  remote images, zero external references (verified in the self-test).
+- **analyse → dashboard handoff** — `suggest_blocks_from_analysis` / `blocks_from_analysis`, plus
+  plan shortcuts (`"blocks": "$analysis"`, `{"type": "from_analysis"}`). The mapper **never
+  recomputes a metric** — numbers stay exactly as the analyse engine produced them, and unknown
+  ops are skipped so older/newer `analysis.json` files degrade cleanly.
+- **Excel chart workbook** (`skills/data-visualise/scripts/workbook.py`) — a chart-only `.xlsx`
+  with native openpyxl charts for analysts who want to poke at the numbers. Values are written to
+  sheet cells and the chart *references* those cells, so the workbook stays auditable and editable
+  rather than a picture. Selected via `"format": "xlsx"` or an `.xlsx` output suffix.
+  `chart_type` names follow the AionUi / OfficeCLI vocabulary (`column`, `bar`, `line`, `pie`,
+  `doughnut`, `waterfall`) — **vocabulary only; no new runtime dependency** (`openpyxl` is already
+  a hard dependency).
+- **Both artefacts honour the same `theme`.** `write_charts_xlsx` / `charts_from_analysis` take a
+  `theme` and resolve the series palette (and the waterfall increase/decrease/total colours) from
+  the visualise theme, so a white-label brand colours the Excel workbook exactly as it colours the
+  HTML dashboard — one palette to maintain, not two. Per-chart `colors` still override.
+  Regression test added.
+- Dry-run is honoured on the xlsx path (no file, no parent directory, no artefacts reported).
+- Docs: `README` skill table and `COMPATIBILITY` row updated for the second output format;
+  `references/workbook-charts.md` added; `.gitignore` covers the new `*-selftest.xlsx`.
+
 ## 0.6.0 — 2026-07-18
 
 **10 new analysis functions for the data-analyse engine** (additive — no existing

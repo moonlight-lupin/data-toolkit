@@ -983,6 +983,7 @@ def _run_visualise(plan: dict[str, Any], base: Path, dry_run: bool,
             _prepare_write(output)
             workbook.write_charts_xlsx(
                 output, chart_specs, workbook_title=dash.get("title"),
+                theme=dash.get("theme"),   # brand the workbook like the HTML dashboard
             )
             artifacts = [{"path": str(output), "kind": "xlsx_charts"}]
         return envelope(

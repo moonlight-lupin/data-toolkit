@@ -226,6 +226,31 @@ def test_workbook_excel_charts_and_analysis_handoff():
     assert all(s["chart_type"] != "concentration" for s in specs)
     out = workbook.charts_from_analysis(analysis, Path(tempfile.mkdtemp()) / "from-analysis.xlsx")
     assert out.is_file()
+
+
+def test_workbook_charts_follow_the_visualise_theme():
+    """A white-label theme must colour the Excel workbook as it colours the HTML dashboard —
+    one palette drives both artefacts (regression: the xlsx path used to ignore `theme`)."""
+    import re
+    import zipfile
+
+    charts = [{"chart_type": "column", "title": "By region",
+               "categories": ["N", "S"], "series": {"Amount": [10, 20]}}]
+    out = Path(tempfile.mkdtemp())
+
+    def series_fills(path):
+        with zipfile.ZipFile(path) as z:
+            xml = "".join(z.read(n).decode("utf8", "ignore")
+                          for n in z.namelist() if "charts/chart" in n)
+        return set(re.findall(r'srgbClr val="([0-9A-Fa-f]{6})"', xml))
+
+    default_fills = series_fills(workbook.write_charts_xlsx(out / "default.xlsx", charts))
+    acme_fills = series_fills(workbook.write_charts_xlsx(
+        out / "acme.xlsx", charts, theme={"colours": {"burgundy": "#0B3D91"}}))
+
+    assert "163F3A" in default_fills, default_fills          # neutral default palette
+    assert "0B3D91" in acme_fills, acme_fills                # the theme reached the chart
+    assert "0B3D91" not in default_fills
     try:
         workbook.write_charts_xlsx(Path(tempfile.mkdtemp()) / "x.xlsx", [])
         raise AssertionError("empty charts should fail")

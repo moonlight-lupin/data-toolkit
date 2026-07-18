@@ -38,8 +38,39 @@ SUPPORTED_CHART_TYPES = frozenset({
     "column", "bar", "line", "pie", "doughnut", "waterfall",
 })
 
-# Default palette — toolkit teal family (hex without '#').
+# Fallback palette — used only if the visualise theme can't be resolved (hex without '#').
 DEFAULT_COLORS = ("163F3A", "4FB3A0", "20574F", "2E7D57", "B26B00", "9B2226")
+
+# Series order mirrors viz._series_palette() so an Excel workbook and an HTML dashboard
+# built from the same theme use the same colours in the same order.
+_SERIES_TOKENS = ("burgundy", "rose", "pink", "green", "amber", "grey", "pink_lt")
+
+
+def _hex(value: Any) -> str:
+    return str(value).lstrip("#").upper()
+
+
+def _theme_colors(theme: Any = None) -> tuple[list[str], str, str, str]:
+    """Resolve (series palette, increase, decrease, total) from the **visualise theme**.
+
+    The workbook is branded by the same `theme` dict that skins the HTML dashboard, so a
+    white-label firm gets its colours in both artefacts and there is one palette to maintain.
+    `viz` is imported lazily (viz imports this module lazily too) and any failure degrades to
+    DEFAULT_COLORS rather than breaking chart generation.
+    """
+    try:
+        import viz
+
+        colours = viz._resolve_theme(theme)["colours"]
+        series = [_hex(colours[t]) for t in _SERIES_TOKENS if colours.get(t)]
+        return (
+            series or list(DEFAULT_COLORS),
+            _hex(colours.get("green", "2E7D57")),
+            _hex(colours.get("red", "9B2226")),
+            _hex(colours.get("burgundy", "163F3A")),
+        )
+    except Exception:  # noqa: BLE001 - theming must never break the workbook
+        return list(DEFAULT_COLORS), "2E7D57", "9B2226", "163F3A"
 
 
 def _as_float(v: Any) -> float | None:
@@ -335,12 +366,19 @@ def write_charts_xlsx(
     charts: list[dict[str, Any]],
     *,
     workbook_title: str | None = None,
+    theme: Any = None,
 ) -> Path:
-    """Write one sheet (+ embedded chart) per chart spec. Returns the path."""
+    """Write one sheet (+ embedded chart) per chart spec. Returns the path.
+
+    `theme` is the same (partial) visualise theme dict that skins an HTML dashboard; it sets the
+    default series palette and the waterfall increase/decrease/total colours. A per-chart
+    `colors` / `increase_color` / … still overrides it.
+    """
     from openpyxl import Workbook
 
     if not charts:
         raise ValueError("write_charts_xlsx requires at least one chart spec")
+    series_colors, inc_default, dec_default, total_default = _theme_colors(theme)
     wb = Workbook()
     wb.remove(wb.active)
     used: set[str] = set()
@@ -360,13 +398,13 @@ def write_charts_xlsx(
             categories=categories,
             series=None if (ctype == "waterfall" and spec.get("steps")) else spec.get("series"),
             legend=spec.get("legend", True),
-            colors=spec.get("colors"),
+            colors=spec.get("colors") or series_colors,
             anchor=spec.get("anchor", "E2"),
             width=float(spec.get("width", 15)),
             height=float(spec.get("height", 10)),
-            increase_color=spec.get("increase_color", spec.get("increaseColor", "2E7D57")),
-            decrease_color=spec.get("decrease_color", spec.get("decreaseColor", "9B2226")),
-            total_color=spec.get("total_color", spec.get("totalColor", "163F3A")),
+            increase_color=spec.get("increase_color", spec.get("increaseColor", inc_default)),
+            decrease_color=spec.get("decrease_color", spec.get("decreaseColor", dec_default)),
+            total_color=spec.get("total_color", spec.get("totalColor", total_default)),
         )
     if workbook_title:
         try:
@@ -497,15 +535,16 @@ def suggest_charts_from_analysis(analysis, *, ops=None, max_groups: int = 12) ->
 
 
 def charts_from_analysis(analysis, out_path, *, ops=None, max_groups: int = 12,
-                         workbook_title: str | None = None) -> Path:
-    """Convenience: ``suggest_charts_from_analysis`` → ``write_charts_xlsx``."""
+                         workbook_title: str | None = None, theme: Any = None) -> Path:
+    """Convenience: ``suggest_charts_from_analysis`` → ``write_charts_xlsx`` (theme-aware)."""
     charts = suggest_charts_from_analysis(analysis, ops=ops, max_groups=max_groups)
     if not charts:
         raise ValueError("no chartable operations found in analysis payload")
     title = workbook_title
     if title is None and isinstance(analysis, dict):
         title = analysis.get("source") or "Analysis charts"
-    return write_charts_xlsx(out_path, charts, workbook_title=str(title) if title else None)
+    return write_charts_xlsx(out_path, charts, workbook_title=str(title) if title else None,
+                             theme=theme)
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ venv/
 
 # Self-test / generated artifacts (skills write deliverables into the USER's folders, not the repo)
 *-selftest.html
+*-selftest.xlsx
 *_selftest*.xlsx
 _selftest_clean.xlsx
 /--self-test
