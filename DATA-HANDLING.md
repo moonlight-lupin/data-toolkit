@@ -15,6 +15,12 @@ Be precise about this; the toolkit does **not** claim your data never leaves you
   toolkit's own Python on your machine. It makes **no network calls**: no cloud OCR (local
   Tesseract only), no CDN or remote images in the dashboards, no external APIs, no connectors,
   no third-party uploads. Nothing is sent to any service *we* chose.
+- **One opt-in exception: image/chart extract.** `data-extract`'s `image_extract.py` sends the
+  image to a **vision API you configure** (`VISION_API_KEY` / `VISION_BASE_URL`) — it is the
+  only feature in the toolkit that makes an outbound call, it is never invoked implicitly, and
+  it is not reachable from a runtime plan. De-identify first when the image holds PII or
+  confidential figures, and treat it as egress under the rule below. Everything else above
+  still holds.
 - **The AI agent is not local.** These skills are driven by an AI assistant, and **whatever
   the agent reads into its context — file contents, samples, profiles, extracted values — is
   sent to your AI provider** to be processed, exactly as in any AI-assisted work. That is

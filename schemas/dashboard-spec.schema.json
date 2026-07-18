@@ -70,7 +70,10 @@
             "section",
             "grid",
             "from_analysis",
-            "chart"
+            "chart",
+            "scatter_chart",
+            "histogram",
+            "stacked_bar"
           ]
         },
         "title": {
@@ -315,6 +318,62 @@
         "max_groups": {
           "type": "integer",
           "minimum": 1
+        },
+        "x": {
+          "type": "array",
+          "items": {},
+          "description": "scatter_chart: x values, parallel to y."
+        },
+        "y": {
+          "type": "array",
+          "items": {},
+          "description": "scatter_chart: y values, parallel to x."
+        },
+        "labels": {
+          "type": "array",
+          "items": {},
+          "description": "scatter_chart: per-point tooltip names."
+        },
+        "trend_line": {
+          "type": "boolean",
+          "description": "scatter_chart: overlay an OLS fit across the observed x-range. Descriptive only, never a forecast; not extrapolated."
+        },
+        "values": {
+          "type": "array",
+          "items": {},
+          "description": "histogram: the observations to bin."
+        },
+        "bins": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2
+            }
+          ],
+          "description": "histogram: a bin count (equal-width) or explicit edges, e.g. [0,30,60,90,365]. Edges are half-open [lo,hi) except the last, which includes its upper bound."
+        },
+        "unit_x": {
+          "type": "string",
+          "description": "scatter_chart: unit suffix for the x axis."
+        },
+        "unit_y": {
+          "type": "string",
+          "description": "scatter_chart: unit suffix for the y axis."
+        },
+        "x_label": {
+          "type": "string",
+          "description": "scatter_chart: x-axis title."
+        },
+        "y_label": {
+          "type": "string",
+          "description": "scatter_chart: y-axis title (rotated)."
         }
       },
       "allOf": [
@@ -416,6 +475,58 @@
                   "steps"
                 ]
               }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "scatter_chart"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "x",
+              "y"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "histogram"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "values"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "stacked_bar"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "data"
             ]
           }
         }

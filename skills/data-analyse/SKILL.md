@@ -107,6 +107,7 @@ shared parsers:
 | `rolling(series, window, func=)` | trailing-window aggregate (mean/sum/median) on an ordered series — smoothing, pairs with `period_series`. `None` values in a window are skipped. |
 | `gini(values)` | Gini coefficient (0=equal, 1=concentrated) + classification — inequality of distribution, complements HHI |
 | `seasonality(header, rows, date_col, value=, grain=)` | average by month-of-year (1–12) or quarter (1–4) + seasonal index. Overall average = mean of seasons WITH data (not grand/12). |
+| `filter_rows(header, rows, filters)` | declarative row filter (`{"col", "op", "value"/"values"/"lo"+"hi"}`) — `==` `!=` `>` `>=` `<` `<=` `in` `not_in` `between` `not_between` `contains` `is_empty` `not_empty`, ANDed. Numbers via `parse_number`, dates via `parse_date`, strings case-insensitive; `between` is **inclusive of both ends**. A text cell against a numeric threshold is *incomparable* — dropped and counted, never string-compared. Returns `(rows, report)` with `n_in`/`n_out`/`n_dropped` and per-filter removed counts |
 | `currency_mix(col)` / `numbers(col)` | currency codes present / parsed Decimals + skipped count |
 | `fmt` / `pct` / `render_md(...)` | house-style formatting + markdown tables for the brief |
 | `write_metrics_xlsx(sections, path)` | optional metrics workbook (one sheet per analysis) |

@@ -50,6 +50,9 @@ Rough block ↔ chart mapping (same story, different file):
 | Trend over time | `line_chart` / `sparkline` | `line` |
 | Share of total | `donut_chart` | `pie` / `doughnut` |
 | Bridge / walk | `waterfall` | `waterfall` |
+| Correlation / outliers | `scatter_chart` (`trend_line=True` for an OLS fit) | *(HTML only)* |
+| Distribution shape | `histogram` (count or explicit bin edges) | *(HTML only)* |
+| Composition over time | `stacked_bar` (takes `pivot()` output directly) | *(HTML only)* |
 | Detail rows | `table` (`$source`) | (sheet data under the chart; no separate table block) |
 | KPI strip | `kpi_row` | omit, or a one-row summary sheet later |
 
@@ -114,6 +117,9 @@ Each returns an HTML fragment; `dashboard()` assembles them.
 | `heatmap(matrix, row_labels, col_labels, …)` | matrix heat map (pivot / cohort / correlation); `scale="sequential"` or `"diverging"` |
 | `sparkline(data, …)` | compact trend path for KPI strips; shape over scale |
 | `waterfall(steps, …)` | bridge chart (`start` / `delta` / `total`) for period or variance walks |
+| `scatter_chart(x, y, …, x_label, y_label, unit_x, unit_y, trend_line=False)` | paired observations for correlation / outlier spotting; both axes float to the data. `trend_line=True` overlays an OLS fit across the observed x-range only — **descriptive, never a forecast**, and omitted entirely when x has no variance |
+| `histogram(values, bins=10, …)` | distribution shape; `bins` = a count (equal-width) or explicit edges like `[0,30,60,90,365]`. Edges are `[lo,hi)` except the last, which includes its upper bound. Y-axis forced to 0; bars touch |
+| `stacked_bar(data, …)` | composition per category; accepts a `pivot()` result, `{category: [v1, v2]}`, `[(category, [values])]`, `{categories, series}`, or `{segment: [(cat, value)]}`. **Negative segments stack below the zero line** so a credit never inflates the bar it reduces |
 | `table(rows, columns, title, rag, sortable, filter_by)` | themed table; `rag={col: value->status}` colours cells (RAG conditional formatting); `sortable=True` → click-to-sort headers; `filter_by=[col]` → a dropdown row-filter |
 | `status_pill(text, status)` | a small RAG pill |
 | `section(title, *blocks)` / `grid(*blocks, cols)` | titled section / N-column layout |
