@@ -699,11 +699,14 @@ def test_image_extract_chart_and_table_mocked():
         str(chart), api_key="test-key", model="mock-vision",
         cache_dir=cache, _request=fake_post,
     )
-    assert r1["cached"] is False and r1.get("error") is None
+    assert r1.get("error") is None, f"chart extract error: {r1.get('error')}"
+    assert r1["cached"] is False
     assert r1["type"] == "chart"
     assert r1["dataframe"] is not None and len(r1["dataframe"]) == 4
-    assert set(r1["dataframe"]["Category"]) == {"Q1", "Q2", "Q3", "Q4"}
-    assert int(r1["dataframe"]["Value"].sum()) == 560
+    cats = list(r1["dataframe"]["Category"])
+    assert set(cats) == {"Q1", "Q2", "Q3", "Q4"}
+    vals = [float(v) for v in r1["dataframe"]["Value"]]
+    assert sum(vals) == 560
 
     # Cache hit on second call
     r1b = ie.extract_image(
@@ -717,6 +720,7 @@ def test_image_extract_chart_and_table_mocked():
         str(table), api_key="test-key", model="mock-vision",
         cache_dir=cache, _request=fake_post,
     )
+    assert r2.get("error") is None, f"table extract error: {r2.get('error')}"
     assert r2["type"] == "table"
     assert r2["dataframe"] is not None
     assert list(r2["dataframe"].columns) == ["Investor", "Commit", "Close"]
@@ -739,7 +743,8 @@ def test_image_extract_batch_and_compress():
     for i in range(5):
         Image.new("RGB", (64, 64), color=(i * 40, 100, 120)).save(imgs / f"table_{i}.png")
     big = imgs / "huge_photo.png"
-    # Create a large-ish PNG then claim compression via compress_image thresholds
+    # Oversized on the long edge — compression path must resize (byte shrink is not
+    # guaranteed for already-tiny solid-colour PNGs).
     Image.new("RGB", (2200, 1600), color=(200, 100, 50)).save(big, compress_level=1)
 
     md = "| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |\n"
@@ -764,16 +769,17 @@ def test_image_extract_batch_and_compress():
         api_key="test-key", model="mock-vision",
         cache_dir=d / "cache", _request=fake_post,
     )
-    assert out.is_file()
-    assert summary["count"] == 6
+    assert out.is_file(), "batch xlsx was not written"
+    assert summary["count"] == 6, f"expected 6 images, got {summary['count']}"
     assert "combined" in summary["sheets"]
 
-    raw = big.read_bytes()
+    import io
     compressed_bytes, mime, was_compressed = ie.compress_image(
         big, max_bytes=50_000, max_px=1024,
     )
     assert was_compressed is True
-    assert len(compressed_bytes) < len(raw)
+    out_img = Image.open(io.BytesIO(compressed_bytes))
+    assert max(out_img.size) <= 1024
     assert max(Image.open(big).size) > 1024
 
 
