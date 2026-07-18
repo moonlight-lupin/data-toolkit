@@ -213,7 +213,7 @@ def _cmp_pass(cell, op, target) -> tuple[bool, bool]:
         return (hit if op == "in" else not hit), True
     if op in ("between", "not_between"):
         if not isinstance(target, (list, tuple)) or len(target) != 2:
-            raise ValueError(f"{op!r} needs a two-item [lo, hi] value, got {target!r}")
+            raise ValueError(f"{op!r} needs lo/hi (or a two-item value), got {target!r}")
         lo_c, hi_c = target
         a1, lo, k1 = _coerce_pair(cell, lo_c)
         a2, hi, k2 = _coerce_pair(cell, hi_c)
@@ -261,18 +261,20 @@ def filter_rows(header, rows, filters):
     - ``== != > >= < <=`` — numeric when both sides parse as numbers (via
       ``parse_number``, so ``'1,200'`` and ``'(500)'`` work), else dates when both
       parse as dates, else case-insensitive string comparison.
-    - ``in`` / ``not_in`` — membership in a list, same coercion per item.
-    - ``between`` / ``not_between`` — ``"value": [lo, hi]``, **inclusive of both
-      ends**, because finance ranges are quoted inclusively ("30–60 days" contains
-      both 30 and 60).
+    - ``in`` / ``not_in`` — membership, given as ``"values": [...]`` (or ``"value"``).
+    - ``between`` / ``not_between`` — ``"lo"``/``"hi"`` (or ``"value": [lo, hi]``),
+      **inclusive of both ends**, because finance ranges are quoted inclusively
+      ("30–60 days" contains both 30 and 60).
     - ``contains`` — case-insensitive substring.
-    - ``is_empty`` / ``not_empty`` — blank or whitespace-only; no ``value`` needed.
+    - ``is_empty`` / ``not_empty`` — blank or whitespace-only; no value needed.
 
-    Returns ``(filtered_rows, report)``. The report gives ``n_in``/``n_out`` and,
+    The column key may be ``"col"`` or ``"column"``.
+
+    Returns ``(filtered_rows, report)`` with ``n_in`` / ``n_out`` / ``n_dropped`` and,
     per filter, how many rows it removed and how many it could not compare — so a
     filter that silently ate the dataset is visible rather than mysterious.
-    Per-filter ``removed`` is attributed in order (each filter sees what survived
-    the previous one); the totals are exact either way.
+    Per-filter ``removed`` is attributed in order (each filter sees what survived the
+    previous one); the totals are exact either way. The input list is not mutated.
 
     Unknown columns and unknown operators raise, rather than matching nothing —
     a typo'd column name must not look like "no results".
@@ -282,14 +284,28 @@ def filter_rows(header, rows, filters):
     for f in (filters or []):
         if not isinstance(f, dict):
             raise ValueError(f"each filter must be a dict, got {f!r}")
-        col = f.get("column")
+        col = f.get("col", f.get("column"))
         op = _s(f.get("op") or "==")
         if op not in FILTER_OPS:
             raise ValueError(f"unsupported filter op {op!r}; supported: {list(FILTER_OPS)}")
-        if op in _NEEDS_VALUE and "value" not in f:
-            raise ValueError(f"filter on {col!r} with op {op!r} needs a 'value'")
+        # Each operator family names its payload differently; accept the spec's key
+        # and the generic "value" so a caller need not remember which is which.
+        if op in ("in", "not_in"):
+            target = f["values"] if "values" in f else f.get("value")
+            if target is None and "values" not in f and "value" not in f:
+                raise ValueError(f"filter on {col!r} with op {op!r} needs 'values'")
+        elif op in ("between", "not_between"):
+            if "lo" in f or "hi" in f:
+                target = [f.get("lo"), f.get("hi")]
+            else:
+                target = f.get("value")
+            if target is None:
+                raise ValueError(f"filter on {col!r} with op {op!r} needs 'lo' and 'hi'")
+        else:
+            target = f.get("value")
+            if op in _NEEDS_VALUE and "value" not in f:
+                raise ValueError(f"filter on {col!r} with op {op!r} needs a 'value'")
         j = col_index(header, col)                # raises with the real names on a typo
-        target = f.get("value")
         before = len(kept)
         survivors, incomparable = [], 0
         for r in kept:
@@ -303,7 +319,7 @@ def filter_rows(header, rows, filters):
         per_filter.append({"column": _s(col), "op": op, "value": target,
                            "removed": before - len(kept), "incomparable": incomparable})
     report = {"n_in": len(rows), "n_out": len(kept),
-              "removed": len(rows) - len(kept), "filters": per_filter,
+              "n_dropped": len(rows) - len(kept), "filters": per_filter,
               "incomparable": sum(p["incomparable"] for p in per_filter)}
     return kept, report
 

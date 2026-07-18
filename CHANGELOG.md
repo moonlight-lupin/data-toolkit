@@ -5,11 +5,13 @@
 **Three chart types and a filtering primitive** — closing the gaps that forced agents to
 hand-roll the same code every run.
 
-- **`scatter_chart(x, y, …, trend_line=False)`** — paired observations for correlation and
-  outlier spotting; both axes float to the data via `_nice_ticks` (as `line_chart` does).
-  `trend_line=True` overlays an OLS fit **across the observed x-range only** — descriptive,
-  never a forecast, with slope / Pearson r / n in its tooltip so the reader can judge it. A
-  cloud with no x-variance has no defensible slope, so no line is drawn at all.
+- **`scatter_chart(x, y, …, x_label, y_label, unit_x, unit_y, trend_line=False)`** — paired
+  observations for correlation and outlier spotting; accepts raw numeric columns or
+  `[(label, value)]` pairs, and both axes float to the data via `_nice_ticks` (as
+  `line_chart` does). `trend_line=True` overlays an OLS fit with slope / intercept / Pearson
+  r / n in its tooltip — **descriptive, never a forecast**. A cloud with no x-variance has no
+  defensible slope, so no line is drawn at all. On a length mismatch the longer side is
+  trimmed and the unpaired tail is counted and reported.
 - **`histogram(values, bins=10, …)`** — distribution shape. `bins` is a count (equal-width) or
   explicit edges like `[0, 30, 60, 90, 365]`; edges are half-open `[lo, hi)` except the last,
   which includes its upper bound so the maximum observation is never silently dropped. The
@@ -17,12 +19,16 @@ hand-roll the same code every run.
   bar) and bars touch to signal a continuous scale. Unparseable values and values outside the
   caller's own edges are counted and reported *separately*, since they mean different things.
 - **`stacked_bar(data, …)`** — composition per category. Accepts a `pivot()` result straight
-  from analyse, `{segment: [(cat, value)]}`, or `{categories, series}`. **Negative segments
-  stack below the zero line** rather than folding into the positive stack, so a credit note or
-  reversal reads as the reduction it is instead of inflating the bar it belongs to.
+  from analyse, `{category: [v1, v2, …]}`, `[(category, [values])]`, `{categories, series}`,
+  or `{segment: [(cat, value)]}` — positional shapes get numbered segment names. **Negative
+  segments stack below the zero line** rather than folding into the positive stack, so a
+  credit note or reversal reads as the reduction it is instead of inflating the bar it
+  belongs to.
 - **`filter_rows(header, rows, filters)`** (analyse) — the standard form of the ad-hoc filtering
-  that otherwise gets written differently every run. Twelve operators, ANDed, with a
-  `(rows, report)` return carrying in/out totals and per-filter removed counts.
+  that otherwise gets written differently every run. Thirteen operators, ANDed. Filter specs
+  take `{"col", "op", "value"}`, with `"values"` for membership and `"lo"`/`"hi"` for ranges
+  (`"column"` is accepted for the column key too). Returns `(rows, report)` carrying
+  `n_in` / `n_out` / `n_dropped` and per-filter removed counts.
 
   Two comparison rules exist because the alternatives produce a *plausible wrong answer* rather
   than an error, which is worse:
@@ -39,7 +45,8 @@ hand-roll the same code every run.
   working paper always show the same number. Non-numeric inputs are skipped and reported, never
   plotted at the origin where they would read as a real zero.
 - Wired through the runtime (`_viz_block`) and `schemas/dashboard-spec.schema.json`. HTML-only:
-  the xlsx path refuses them with the existing clear message.
+  the xlsx path refuses them with the existing clear message. Cookbook snippets for all three
+  added to `skills/data-visualise/references/blocks.md`.
 - **Docs accuracy fix.** The README's "no network calls / no cloud OCR / no credentials" claims
   and `DATA-HANDLING.md`'s "no external APIs" bullet predated the opt-in vision image extract
   shipped in #19, which calls a user-configured vision endpoint. All three now carve out that

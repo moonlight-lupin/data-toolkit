@@ -936,8 +936,11 @@ def _viz_block(viz: Any, spec: dict[str, Any], source_rows: list[dict[str, Any]]
                              unit=spec.get("unit", ""))
     if kind == "scatter_chart":
         return viz.scatter_chart(spec.get("x", []), spec.get("y", []),
-                                 title=spec.get("title"), unit=spec.get("unit", ""),
-                                 x_unit=spec.get("x_unit", ""), labels=spec.get("labels"),
+                                 title=spec.get("title"),
+                                 x_label=spec.get("x_label"), y_label=spec.get("y_label"),
+                                 unit_x=spec.get("unit_x", ""),
+                                 unit_y=spec.get("unit_y", spec.get("unit", "")),
+                                 labels=spec.get("labels"),
                                  trend_line=spec.get("trend_line", False))
     if kind == "histogram":
         return viz.histogram(spec.get("values", []), bins=spec.get("bins", 10),

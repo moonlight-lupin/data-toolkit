@@ -6,7 +6,8 @@ list of them and pass it to `dashboard(...)`. Import once:
 ```python
 import sys; sys.path.insert(0, "scripts")   # or the path to viz.py
 from viz import (kpi_card, kpi_row, bar_chart, line_chart, donut_chart,
-                 heatmap, sparkline, waterfall, table, status_pill, section, grid,
+                 heatmap, sparkline, waterfall, scatter_chart, histogram, stacked_bar,
+                 table, status_pill, section, grid,
                  suggest_blocks_from_analysis, blocks_from_analysis, dashboard,
                  apply_theme, rows_from_xlsx, open_in_browser)
 ```
@@ -89,6 +90,72 @@ waterfall([
 ```
 
 If `kind` is omitted: first step is `start`, last is `total`, middle steps are `delta`.
+
+## Scatter plot
+
+Two numeric columns against each other — correlation you can see, and outliers that
+jump out. Pairs naturally with `correlation_matrix`: the matrix gives you the r, the
+scatter shows you *why*.
+
+```python
+spend   = column(header, rows, "Marketing spend")
+revenue = column(header, rows, "Revenue")
+
+scatter_chart(spend, revenue,
+              title="Spend vs revenue",
+              x_label="Marketing spend", y_label="Revenue",
+              unit_x="k", unit_y="k",
+              trend_line=True)          # dashed OLS fit
+```
+
+Both axes float to the data (they are *not* forced to zero), so a tight cluster still
+fills the plot. Pairs where either side will not parse are skipped and counted under
+the chart — never plotted at the origin, where they would read as a real zero.
+
+The trend line is **descriptive, not a forecast**: its tooltip carries slope,
+intercept, r and n so a reader can judge it. When x has no variance there is no
+defensible slope, so no line is drawn at all.
+
+## Histogram
+
+Distribution shape — bimodal, right-skewed, heavy-tailed. The companion to
+`distribution()`, which gives you skewness and kurtosis but cannot show the shape.
+
+```python
+histogram(column(header, rows, "Invoice value"), bins=12,
+          title="Invoice value distribution", unit="")
+
+# or explicit edges — e.g. ageing-style buckets
+histogram(days_outstanding, bins=[0, 30, 60, 90, 365],
+          title="Days outstanding")
+```
+
+Bins are half-open `[lo, hi)` **except the last**, which includes its upper bound so
+the maximum observation is never silently dropped. The y-axis is forced to zero
+(histogram convention) and the bars touch, signalling a continuous scale. Values that
+will not parse, and values outside explicit edges, are reported separately beneath the
+chart — they mean different things.
+
+## Stacked bar
+
+Composition over time: revenue by segment by quarter, headcount by department by
+month. Takes a `pivot()` result straight from data-analyse.
+
+```python
+pv = pivot(header, rows, rows_col="Quarter", cols_col="Segment", value="Amount")
+stacked_bar(pv, title="Revenue by segment", unit="k")
+
+# or hand-built — one bar per key, positional segments
+stacked_bar({"Q1": [100, 50, 25], "Q2": [120, 60, 30]}, title="By quarter")
+
+# or named segments
+stacked_bar({"categories": ["Q1", "Q2"],
+             "series": {"Retail": [100, 120], "Wholesale": [50, 60]}})
+```
+
+Negative segments stack **below** the zero line rather than folding into the positive
+stack, so a credit note or reversal reads as the reduction it is instead of inflating
+the bar it belongs to. A zero line is drawn whenever the range crosses zero.
 
 ## From data-analyse (`analysis.json`)
 

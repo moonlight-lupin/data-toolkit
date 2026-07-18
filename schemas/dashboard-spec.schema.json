@@ -329,10 +329,6 @@
           "items": {},
           "description": "scatter_chart: y values, parallel to x."
         },
-        "x_unit": {
-          "type": "string",
-          "description": "scatter_chart: unit suffix for the x axis."
-        },
         "labels": {
           "type": "array",
           "items": {},
@@ -362,6 +358,22 @@
             }
           ],
           "description": "histogram: a bin count (equal-width) or explicit edges, e.g. [0,30,60,90,365]. Edges are half-open [lo,hi) except the last, which includes its upper bound."
+        },
+        "unit_x": {
+          "type": "string",
+          "description": "scatter_chart: unit suffix for the x axis."
+        },
+        "unit_y": {
+          "type": "string",
+          "description": "scatter_chart: unit suffix for the y axis."
+        },
+        "x_label": {
+          "type": "string",
+          "description": "scatter_chart: x-axis title."
+        },
+        "y_label": {
+          "type": "string",
+          "description": "scatter_chart: y-axis title (rotated)."
         }
       },
       "allOf": [

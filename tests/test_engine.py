@@ -393,7 +393,7 @@ def test_workbook_charts_follow_the_visualise_theme():
 def _tooltip_counts(html):
     """Frequencies read back out of a histogram's per-bar tooltips."""
     import re
-    return [int(m) for m in re.findall(r": (\d+)</title>", html)]
+    return [int(m) for m in re.findall(r"<title>(\d+) value", html)]
 
 
 def test_viz_histogram_bins_and_forced_zero_axis():
@@ -403,7 +403,8 @@ def test_viz_histogram_bins_and_forced_zero_axis():
     import re
     assert _tooltip_counts(viz.histogram([5, 35, 65, 120],
                                          bins=[0, 30, 60, 90, 365])) == [1, 1, 1, 1]
-    assert _tooltip_counts(viz.histogram([5], bins=[0, 5, 10])) == [0, 1]   # half-open
+    # 5 belongs to [5,10), not [0,5) — half-open on every bin but the last
+    assert _tooltip_counts(viz.histogram([5, 5], bins=[0, 5, 10])) == [0, 2]
     assert _tooltip_counts(viz.histogram([0, 10], bins=[0, 5, 10])) == [1, 1]  # last incl.
     assert sum(_tooltip_counts(viz.histogram([1, 1, 1, 2, 2, 3], bins=3))) == 6
 
@@ -417,7 +418,8 @@ def test_viz_histogram_bins_and_forced_zero_axis():
     out = viz.histogram([-5, 1, 999], bins=[0, 10])
     assert "outside the bin range" in out and "non-numeric" not in out
 
-    assert "No numeric values" in viz.histogram(["a", ""])
+    assert "No data" in viz.histogram(["a", ""])
+    assert "at least 2" in viz.histogram([7])       # one point has no shape
     assert "two bin edges" in viz.histogram([1, 2], bins=[5])
     assert viz.histogram([7, 7, 7]).startswith('<div class="block">')   # zero-width range
 
@@ -428,19 +430,20 @@ def test_viz_scatter_trend_line_is_descriptive_only():
     relationship the data does not contain."""
     import re
     fit = viz.scatter_chart([1, 2, 3, 4], [2, 4, 6, 8], trend_line=True)
-    m = re.search(r"slope (-?[\d,.e+-]*?), r (-?[\d.]+)", fit)
-    assert round(float(m.group(1).replace(",", "")), 6) == 2.0
-    assert round(float(m.group(2)), 6) == 1.0
+    m = re.search(r"trend: y = (-?[\d,.e+-]*?)x \+ (-?[\d,.e+-]*?) \(r (-?[\d.]+)", fit)
+    assert round(float(m.group(1).replace(",", "")), 6) == 2.0    # slope
+    assert round(float(m.group(2).replace(",", "")), 6) == 0.0    # intercept
+    assert round(float(m.group(3)), 6) == 1.0                     # r
     assert "not a forecast" in fit
     inverse = viz.scatter_chart([1, 2, 3], [3, 2, 1], trend_line=True)
-    assert round(float(re.search(r", r (-?[\d.]+)", inverse).group(1)), 6) == -1.0
+    assert round(float(re.search(r"\(r (-?[\d.]+)", inverse).group(1)), 6) == -1.0
 
-    assert "slope" not in viz.scatter_chart([5, 5, 5], [1, 2, 3], trend_line=True)
-    assert "slope" not in viz.scatter_chart([1, 2], [1, 2])        # off by default
+    assert "trend:" not in viz.scatter_chart([5, 5, 5], [1, 2, 3], trend_line=True)
+    assert "trend:" not in viz.scatter_chart([1, 2], [1, 2])       # off by default
     # unpaired / unparseable observations are skipped and counted, never plotted at 0
     assert "skipped" in viz.scatter_chart([1, "x", 3], [2, 4, "n/a"])
     assert "skipped" in viz.scatter_chart([1, 2, 3], [1, 2])
-    assert "No plottable pairs" in viz.scatter_chart([], [])
+    assert "No data" in viz.scatter_chart([], [])
 
 
 def test_viz_stacked_bar_negatives_and_pivot_passthrough():
@@ -554,7 +557,7 @@ def test_analyse_filter_rows_comparison_semantics():
         {"column": "Amount", "op": ">", "value": 100},
     ])
     assert ids(out) == ["Acme"]
-    assert (rep["n_in"], rep["n_out"], rep["removed"]) == (5, 1, 4)
+    assert (rep["n_in"], rep["n_out"], rep["n_dropped"]) == (5, 1, 4)
     assert [f["removed"] for f in rep["filters"]] == [2, 2]
 
     assert len(analyse.filter_rows(hdr, rows, [])[0]) == 5      # no filters = passthrough
@@ -570,6 +573,81 @@ def test_analyse_filter_rows_comparison_semantics():
             raise AssertionError(f"expected {exc.__name__} for {bad}")
         except exc:
             pass
+
+
+def test_viz_new_chart_acceptance_shapes():
+    """The documented call shapes for the three new charts, exactly as the SKILL.md
+    tables promise them — a signature or input-shape regression breaks a published
+    contract, not just an internal detail."""
+    import analyse
+
+    # scatter: raw columns, (label, value) pairs, axis labels, unit_x/unit_y
+    assert viz.scatter_chart([1, 2, 3, 4, 5], [2, 4, 6, 8, 10]).count("<circle") == 5
+    assert viz.scatter_chart([("a", 1), ("b", 2)],
+                             [("a", 5), ("b", 6)]).count("<circle") == 2
+    lab = viz.scatter_chart([1, 2], [3, 4], x_label="Spend", y_label="Revenue",
+                            unit_x="$", unit_y="%")
+    assert ">Spend</text>" in lab and "rotate(-90" in lab and ">Revenue</text>" in lab
+    assert viz.scatter_chart([1, None, 3], [2, 4, None]).count("<circle") == 1
+
+    # histogram: the brief's worked example
+    assert _tooltip_counts(viz.histogram([1, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 5],
+                                         bins=5)) == [2, 3, 4, 2, 1]
+    assert _tooltip_counts(viz.histogram([5, 15, 25, 35, 45],
+                                         bins=[0, 10, 20, 30, 40, 50])) == [1, 1, 1, 1, 1]
+
+    # stacked_bar: all four input shapes reach the same geometry
+    flat = viz.stacked_bar({"Q1": [100, 50, 25], "Q2": [120, 60, 30]})
+    assert flat.count("<rect") == 6 and flat.count('class="lg"') == 3
+    assert "Segment 1" in flat                      # positional segments are named
+    assert viz.stacked_bar([("Q1", [10, 20]), ("Q2", [30, 40])]).count("<rect") == 4
+    assert viz.stacked_bar({"categories": ["Q1"], "series": {"A": [1]}}).count("<rect") == 1
+    pv = analyse.pivot(["Q", "Seg", "Amt"],
+                       [["Q1", "A", "100"], ["Q2", "B", "50"]], "Q", "Seg", value="Amt")
+    assert viz.stacked_bar(pv).count("<rect") >= 2
+
+    for empty in (viz.scatter_chart([], []), viz.histogram([]), viz.stacked_bar({})):
+        assert "No data" in empty
+
+
+def test_analyse_filter_rows_accepts_the_documented_spec_keys():
+    """The brief's filter-spec vocabulary: `col`, `values` for membership, `lo`/`hi`
+    for ranges, and an `n_dropped` report key. Pinned because these are the keys a
+    plan author writes by hand."""
+    import analyse
+    hdr = ["Region", "Amount", "Customer", "Status", "Date"]
+    rows = [
+        ["North", "1,200", "Acme", "Open", "01/03/2026"],
+        ["South", "$900", "Beta", "", "15/02/2026"],
+        ["North", "300", "Gamma", "Closed", "20/04/2026"],
+        ["East", "50", "Acme", "  ", "10/01/2026"],
+    ]
+
+    def who(rs):
+        return [r[2] for r in rs]
+
+    assert who(analyse.filter_rows(hdr, rows, [
+        {"col": "Region", "op": "==", "value": "North"}])[0]) == ["Acme", "Gamma"]
+    # currency symbols and thousands separators parse
+    assert who(analyse.filter_rows(hdr, rows, [
+        {"col": "Amount", "op": ">", "value": 500}])[0]) == ["Acme", "Beta"]
+    assert len(analyse.filter_rows(hdr, rows, [
+        {"col": "Customer", "op": "in", "values": ["Acme", "Beta"]}])[0]) == 3
+    assert who(analyse.filter_rows(hdr, rows, [
+        {"col": "Amount", "op": "between", "lo": 100, "hi": 1000}])[0]) == ["Beta", "Gamma"]
+    assert who(analyse.filter_rows(hdr, rows, [
+        {"col": "Date", "op": ">=", "value": "01/03/2026"}])[0]) == ["Acme", "Gamma"]
+    assert len(analyse.filter_rows(hdr, rows, [
+        {"col": "Customer", "op": "contains", "value": "ACM"}])[0]) == 2
+    assert who(analyse.filter_rows(hdr, rows, [
+        {"col": "Status", "op": "not_empty"}])[0]) == ["Acme", "Gamma"]
+
+    _out, rep = analyse.filter_rows(hdr, rows, [{"col": "Region", "op": "==",
+                                                 "value": "North"}])
+    assert (rep["n_in"], rep["n_out"], rep["n_dropped"]) == (4, 2, 2)
+    # the older/generic "column" key keeps working
+    assert len(analyse.filter_rows(hdr, rows, [{"column": "Region", "op": "==",
+                                                "value": "North"}])[0]) == 2
 
 
 def test_viz_heatmap_sparkline_waterfall_and_analysis_handoff():
