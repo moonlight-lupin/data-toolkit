@@ -228,6 +228,43 @@ def test_workbook_excel_charts_and_analysis_handoff():
     assert out.is_file()
 
 
+def test_officecli_render_is_optional_and_never_locks_the_workbook():
+    """The OfficeCLI renderer is opt-in. Absent → degrade silently; present → PNGs *and* the
+    workbook must be released (a resident holds an OS file lock until it is closed)."""
+    import os
+
+    import officecli_render as ocr
+
+    charts = [{"chart_type": "column", "title": "T",
+               "categories": ["A", "B"], "series": {"V": [1, 2]}}]
+
+    # --- always: with the binary unavailable nothing raises and nothing is produced ---
+    real_which = ocr.shutil.which
+    try:
+        ocr.shutil.which = lambda _name: None
+        td = Path(tempfile.mkdtemp())
+        src = workbook.write_charts_xlsx(td / "absent.xlsx", charts)
+        assert ocr.available() is False
+        assert ocr.chart_paths(src) == []
+        assert ocr.render_chart_pngs(src, td / "out") == []
+        assert ocr.render_sheet_png(src, td / "s.png") is None
+        assert ocr.status() == {"available": False, "path": None, "version": None}
+        assert src.is_file()                      # the workbook itself is untouched
+    finally:
+        ocr.shutil.which = real_which
+
+    # --- only when actually installed: render, then prove the file is not left locked ---
+    if not ocr.available():
+        return
+    td = Path(tempfile.mkdtemp())
+    src = workbook.write_charts_xlsx(td / "live.xlsx", charts)
+    pngs = ocr.render_chart_pngs(src, td / "out")
+    assert pngs and all(p.is_file() and p.stat().st_size > 0 for p in pngs)
+    probe = str(src) + ".probe"
+    os.replace(src, probe)                        # raises PermissionError if still locked
+    os.replace(probe, src)
+
+
 def test_workbook_charts_follow_the_visualise_theme():
     """A white-label theme must colour the Excel workbook as it colours the HTML dashboard —
     one palette drives both artefacts (regression: the xlsx path used to ignore `theme`)."""

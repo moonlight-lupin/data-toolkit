@@ -134,3 +134,36 @@ Explicit chart blocks:
   }
 ]
 ```
+
+## Optional: render charts to PNG (OfficeCLI)
+
+`openpyxl` can *write* a chart but cannot *draw* one to an image. If the optional
+[OfficeCLI](https://github.com/iOfficeAI/OfficeCLI) binary is on PATH, set `render_png` on the
+dashboard to also emit **one PNG per chart**, cropped to that chart:
+
+```json
+{ "skill": "data-visualise", "format": "xlsx",
+  "dashboard": { "title": "Regions", "render_png": true, "blocks": [ … ] },
+  "output": "out/charts.xlsx" }
+```
+
+The run then returns the `.xlsx` plus a `chart_png` artefact per chart, and records the renderer
+version in `details.renderer`.
+
+**It is strictly optional.** With the binary absent the `.xlsx` is written exactly as before and
+the run returns `success_with_warnings` — never an error. Nothing else in the toolkit depends on
+it, and chart *generation* stays on openpyxl.
+
+| | |
+|---|---|
+| Install | `brew install officecli` · `scoop install officecli` · `npm i -g @officecli/officecli` · release binary — then ensure `officecli` is on PATH (`python scripts/envcheck.py` reports it) |
+| Licence | Apache-2.0, third-party |
+| Network | The project documents it as fully local, with no API keys or cloud backend. That is the vendor's statement, relayed here rather than certified by this toolkit. |
+| Scope | **Read-only rendering.** openpyxl writes the workbook; OfficeCLI only reads it to produce a picture — it never authors or mutates the numbers. |
+| Formats | `.xlsx` renders to **PNG**. OfficeCLI's `svg` view mode is PowerPoint-only, so there is no inline-SVG path for Excel charts. |
+
+**Implementation notes** (`scripts/officecli_render.py`): this is the toolkit's only subprocess —
+invoked with an argument list, never `shell=True`, time-boxed, and a non-zero exit or timeout
+degrades to "no image" rather than raising. Reading a document starts an OfficeCLI *resident* that
+holds an OS file handle, so every render path closes it in a `finally`; without that the workbook
+stays locked and cannot be moved, deleted or opened in Excel afterwards.

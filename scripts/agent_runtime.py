@@ -979,6 +979,8 @@ def _run_visualise(plan: dict[str, Any], base: Path, dry_run: bool,
             raise PlanError("xlsx visualise produced no charts — provide chart blocks or chartable analysis ops")
         output = _output_path(plan, base, "charts.xlsx")
         artifacts = []
+        xlsx_warnings: list[str] = []
+        renderer: dict[str, Any] | None = None
         if not dry_run:
             _prepare_write(output)
             workbook.write_charts_xlsx(
@@ -986,13 +988,35 @@ def _run_visualise(plan: dict[str, Any], base: Path, dry_run: bool,
                 theme=dash.get("theme"),   # brand the workbook like the HTML dashboard
             )
             artifacts = [{"path": str(output), "kind": "xlsx_charts"}]
+            if dash.get("render_png"):
+                # Optional: render each chart to a PNG via the third-party OfficeCLI binary.
+                # Entirely opt-in — the workbook is already written, so an absent or failing
+                # renderer downgrades to a warning and never costs the run its artefact.
+                import officecli_render
+                if officecli_render.available():
+                    pngs = officecli_render.render_chart_pngs(
+                        output, output.parent, prefix=f"{output.stem}-")
+                    artifacts += [{"path": str(p), "kind": "chart_png"} for p in pngs]
+                    renderer = {"tool": "officecli", "version": officecli_render.version(),
+                                "images": len(pngs)}
+                    if not pngs:
+                        xlsx_warnings.append(
+                            "render_png: OfficeCLI is installed but rendered no images; "
+                            "the .xlsx itself is unaffected")
+                else:
+                    xlsx_warnings.append(
+                        "render_png requested but the optional 'officecli' binary is not on PATH — "
+                        "the .xlsx was written without images (see COMPATIBILITY.md)")
         return envelope(
-            status="success", skill="data-visualise", action="dry-run" if dry_run else "run",
-            artifacts=artifacts,
+            status="success_with_warnings" if xlsx_warnings else "success",
+            skill="data-visualise", action="dry-run" if dry_run else "run",
+            artifacts=artifacts, warnings=xlsx_warnings,
             metrics={"format": "xlsx", "charts": len(chart_specs),
-                     "from_analysis": bool(analysis)},
+                     "from_analysis": bool(analysis),
+                     "images": (renderer or {}).get("images", 0)},
             details={"title": dash.get("title"),
-                     "chart_types": [c.get("chart_type") for c in chart_specs]},
+                     "chart_types": [c.get("chart_type") for c in chart_specs],
+                     "renderer": renderer},
         )
 
     theme = dash.get("theme")

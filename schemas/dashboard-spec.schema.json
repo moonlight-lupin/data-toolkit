@@ -3,25 +3,59 @@
   "$id": "https://data-toolkit.local/schemas/dashboard-spec.schema.json",
   "title": "Data Visualise dashboard",
   "type": "object",
-  "required": ["title", "blocks"],
+  "required": [
+    "title",
+    "blocks"
+  ],
   "properties": {
-    "title": {"type": "string", "minLength": 1},
-    "subtitle": {"type": "string"},
-    "as_of": {"type": "string"},
-    "footnote": {"type": "string"},
-    "theme": {"type": ["object", "null"]},
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "subtitle": {
+      "type": "string"
+    },
+    "as_of": {
+      "type": "string"
+    },
+    "footnote": {
+      "type": "string"
+    },
+    "theme": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
     "blocks": {
-      "type": ["array", "string"],
-      "if": {"type": "string"},
-      "then": {"const": "$analysis"},
-      "else": {"items": {"$ref": "#/$defs/block"}}
+      "type": [
+        "array",
+        "string"
+      ],
+      "if": {
+        "type": "string"
+      },
+      "then": {
+        "const": "$analysis"
+      },
+      "else": {
+        "items": {
+          "$ref": "#/$defs/block"
+        }
+      }
+    },
+    "render_png": {
+      "type": "boolean",
+      "description": "xlsx output only. Also render each chart to a PNG using the OPTIONAL third-party 'officecli' binary. Opt-in: when the binary is absent the .xlsx is still written and a warning is returned — never an error."
     }
   },
   "additionalProperties": false,
   "$defs": {
     "block": {
       "type": "object",
-      "required": ["type"],
+      "required": [
+        "type"
+      ],
       "properties": {
         "type": {
           "enum": [
@@ -39,10 +73,21 @@
             "chart"
           ]
         },
-        "title": {"type": "string"},
-        "unit": {"type": "string"},
+        "title": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        },
         "chart_type": {
-          "enum": ["column", "bar", "line", "pie", "doughnut", "waterfall"]
+          "enum": [
+            "column",
+            "bar",
+            "line",
+            "pie",
+            "doughnut",
+            "waterfall"
+          ]
         },
         "categories": {
           "type": "array",
@@ -54,122 +99,323 @@
               "type": "array",
               "items": {
                 "type": "object",
-                "required": ["name", "values"],
+                "required": [
+                  "name",
+                  "values"
+                ],
                 "properties": {
-                  "name": {"type": "string"},
-                  "values": {"type": "array"},
-                  "label": {"type": "string"},
-                  "data": {"type": "array"}
+                  "name": {
+                    "type": "string"
+                  },
+                  "values": {
+                    "type": "array"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "data": {
+                    "type": "array"
+                  }
                 },
                 "additionalProperties": false
               }
             },
-            {"type": "object"}
+            {
+              "type": "object"
+            }
           ]
         },
-        "legend": {"type": "boolean"},
+        "legend": {
+          "type": "boolean"
+        },
         "colors": {
           "type": "array",
-          "items": {"type": "string"}
+          "items": {
+            "type": "string"
+          }
         },
-        "anchor": {"type": "string", "minLength": 1},
-        "width": {"type": ["number", "integer"], "minimum": 1},
-        "height": {"type": ["number", "integer"], "minimum": 1},
-        "increase_color": {"type": "string"},
-        "decrease_color": {"type": "string"},
-        "total_color": {"type": "string"},
-        "increaseColor": {"type": "string"},
-        "decreaseColor": {"type": "string"},
-        "totalColor": {"type": "string"},
+        "anchor": {
+          "type": "string",
+          "minLength": 1
+        },
+        "width": {
+          "type": [
+            "number",
+            "integer"
+          ],
+          "minimum": 1
+        },
+        "height": {
+          "type": [
+            "number",
+            "integer"
+          ],
+          "minimum": 1
+        },
+        "increase_color": {
+          "type": "string"
+        },
+        "decrease_color": {
+          "type": "string"
+        },
+        "total_color": {
+          "type": "string"
+        },
+        "increaseColor": {
+          "type": "string"
+        },
+        "decreaseColor": {
+          "type": "string"
+        },
+        "totalColor": {
+          "type": "string"
+        },
         "items": {
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["label", "value"],
+            "required": [
+              "label",
+              "value"
+            ],
             "properties": {
-              "label": {"type": "string"},
+              "label": {
+                "type": "string"
+              },
               "value": {},
-              "sub": {"type": "string"},
-              "status": {"enum": ["brand", "green", "amber", "red", "grey"]}
+              "sub": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "brand",
+                  "green",
+                  "amber",
+                  "red",
+                  "grey"
+                ]
+              }
             },
             "additionalProperties": false
           }
         },
         "data": {},
         "centre": {},
-        "toggle": {"type": "boolean"},
+        "toggle": {
+          "type": "boolean"
+        },
         "matrix": {
           "type": "array",
-          "items": {"type": "array"}
+          "items": {
+            "type": "array"
+          }
         },
-        "row_labels": {"type": "array", "items": {"type": "string"}},
-        "col_labels": {"type": "array", "items": {"type": "string"}},
-        "scale": {"enum": ["sequential", "diverging"]},
-        "mid": {"type": ["number", "string"]},
-        "show_last": {"type": "boolean"},
+        "row_labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "col_labels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "scale": {
+          "enum": [
+            "sequential",
+            "diverging"
+          ]
+        },
+        "mid": {
+          "type": [
+            "number",
+            "string"
+          ]
+        },
+        "show_last": {
+          "type": "boolean"
+        },
         "steps": {
           "type": "array",
           "items": {
             "oneOf": [
               {
                 "type": "object",
-                "required": ["label", "value"],
+                "required": [
+                  "label",
+                  "value"
+                ],
                 "properties": {
-                  "label": {"type": "string"},
+                  "label": {
+                    "type": "string"
+                  },
                   "value": {},
-                  "kind": {"enum": ["start", "delta", "total"]}
+                  "kind": {
+                    "enum": [
+                      "start",
+                      "delta",
+                      "total"
+                    ]
+                  }
                 },
                 "additionalProperties": false
               },
-              {"type": "array", "minItems": 2}
+              {
+                "type": "array",
+                "minItems": 2
+              }
             ]
           }
         },
         "rows": {},
-        "columns": {"type": "array", "items": {"type": "string"}},
-        "rag": {"type": "object"},
-        "sortable": {"type": "boolean"},
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "rag": {
+          "type": "object"
+        },
+        "sortable": {
+          "type": "boolean"
+        },
         "filter_by": {
           "oneOf": [
-            {"type": "string"},
-            {"type": "array", "items": {"type": "string"}}
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
           ]
         },
-        "blocks": {"type": "array", "items": {"$ref": "#/$defs/block"}},
-        "cols": {"type": "integer", "minimum": 1},
+        "blocks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/block"
+          }
+        },
+        "cols": {
+          "type": "integer",
+          "minimum": 1
+        },
         "ops": {
           "type": "array",
-          "items": {"type": "string", "minLength": 1}
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
-        "max_groups": {"type": "integer", "minimum": 1}
+        "max_groups": {
+          "type": "integer",
+          "minimum": 1
+        }
       },
       "allOf": [
         {
-          "if": {"properties": {"type": {"const": "kpi_row"}}, "required": ["type"]},
-          "then": {"required": ["items"]}
+          "if": {
+            "properties": {
+              "type": {
+                "const": "kpi_row"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "items"
+            ]
+          }
         },
         {
           "if": {
-            "properties": {"type": {"enum": ["section", "grid"]}},
-            "required": ["type"]
+            "properties": {
+              "type": {
+                "enum": [
+                  "section",
+                  "grid"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
           },
-          "then": {"required": ["blocks"]}
-        },
-        {
-          "if": {"properties": {"type": {"const": "heatmap"}}, "required": ["type"]},
-          "then": {"required": ["matrix"]}
-        },
-        {
-          "if": {"properties": {"type": {"const": "waterfall"}}, "required": ["type"]},
-          "then": {"required": ["steps"]}
-        },
-        {
-          "if": {"properties": {"type": {"const": "chart"}}, "required": ["type"]},
           "then": {
-            "required": ["chart_type"],
+            "required": [
+              "blocks"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "heatmap"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "matrix"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "waterfall"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "steps"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "chart"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "required": [
+              "chart_type"
+            ],
             "anyOf": [
-              {"required": ["categories", "series"]},
-              {"required": ["steps"]}
+              {
+                "required": [
+                  "categories",
+                  "series"
+                ]
+              },
+              {
+                "required": [
+                  "steps"
+                ]
+              }
             ]
           }
         }

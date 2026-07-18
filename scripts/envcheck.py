@@ -38,11 +38,13 @@ def has(mod):
 
 def main():
     tesseract = shutil.which("tesseract")          # local OCR engine for scanned-PDF input
+    officecli = shutil.which("officecli")          # optional: render xlsx charts to PNG
 
     print("=== Data Toolkit environment pre-screen ===")
     print(f"OS                : {platform.system()} {platform.release()}")
     print(f"Python            : {platform.python_version()}")
     print(f"Tesseract (OCR)   : {tesseract or 'not found (scanned-PDF OCR unavailable)'}")
+    print(f"OfficeCLI (charts): {officecli or 'not found (optional — xlsx chart PNG rendering unavailable)'}")
     # Shared-engine input adapters. openpyxl is the only hard dependency; the rest are
     # optional input formats imported lazily and degraded with a clear message.
     libs = ["openpyxl", "fitz", "pdfplumber", "docx", "pptx", "extract_msg", "pyarrow", "pandas"]
