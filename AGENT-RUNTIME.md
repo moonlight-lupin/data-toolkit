@@ -240,8 +240,20 @@ Table mode uses one input and supplies `page`, `index`, and optionally a tidy `r
 ```
 
 Supported operations are `numeric_summary`, `outliers_iqr`, `breakdown`, `period_series`,
-`ageing`, and `currency_mix`. Zero and net-zero totals remain zero; concentration shares are
+`ageing`, `currency_mix`, and `filter_rows`. Zero and net-zero totals remain zero; concentration shares are
 `null` where the denominator is not meaningful.
+
+`filter_rows` is special: it narrows the table that **downstream operations in the same plan**
+see, so a plan can chain `filter_rows` → `breakdown` on the surviving subset. Each filter spec
+is `{"col": ..., "op": ..., "value"/"values"/"lo"+"hi"}` with the 12 operators documented in
+`data-analyse/SKILL.md`. The filter report (`n_in` / `n_out` / `n_dropped` + per-filter removed
+counts) is the analysis result for that op. Example:
+
+```json
+{"op": "filter_rows", "name": "Open items only",
+ "filters": [{"col": "Status", "op": "==", "value": "Open"},
+             {"col": "Amount", "op": ">", "value": 1000}]}
+```
 
 ### Visualise
 

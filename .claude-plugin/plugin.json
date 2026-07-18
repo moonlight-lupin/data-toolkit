@@ -1,6 +1,6 @@
 {
   "name": "data-toolkit",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Extract, tidy, reconcile, analyse, visualise and convert messy data into clean, validated, audit-ready tables and insight briefs \u2014 computed by a deterministic engine that runs on your machine, with no third-party services. From Phronesis Applied.",
   "author": {
     "name": "Phronesis Applied",

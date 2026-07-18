@@ -278,6 +278,14 @@ def filter_rows(header, rows, filters):
 
     Unknown columns and unknown operators raise, rather than matching nothing —
     a typo'd column name must not look like "no results".
+
+    **``in`` / ``not_in`` never mark a cell as incomparable.** A text cell against
+    a numeric membership list simply fails to match (returns False for ``in``,
+    True for ``not_in``) — it is not counted in ``incomparable``. This is a
+    deliberate asymmetry with the ordering operators (``>`` ``<`` etc.), where a
+    type mismatch IS incomparable and is reported. The reasoning: membership has
+    a well-defined answer for any cell ("is it in the list? no"), whereas
+    ordering a string against a number has no defensible answer at all.
     """
     kept = list(rows)
     per_filter = []

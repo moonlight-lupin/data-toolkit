@@ -511,7 +511,8 @@ def _run_analyse(plan: dict[str, Any], base: Path, dry_run: bool,
     rows = [[row.get(c, "") for c in header] for row in table.rows]
     results: list[dict[str, Any]] = []
     warnings: list[str] = []
-    allowed = {"numeric_summary", "outliers_iqr", "breakdown", "period_series", "ageing", "currency_mix"}
+    allowed = {"numeric_summary", "outliers_iqr", "breakdown", "period_series",
+               "ageing", "currency_mix", "filter_rows"}
     for i, op in enumerate(plan.get("operations", [])):
         if not isinstance(op, dict) or op.get("op") not in allowed:
             raise PlanError(f"operations[{i}].op must be one of {sorted(allowed)}")
@@ -531,6 +532,13 @@ def _run_analyse(plan: dict[str, Any], base: Path, dry_run: bool,
             result = analyse.ageing(header, rows, op["date_col"], as_of=op["as_of"],
                                     buckets=tuple(op.get("buckets", [30, 60, 90])), value=op.get("value"),
                                     dayfirst=op.get("dayfirst", True))
+        elif name == "filter_rows":
+            # Declarative filter — returns (filtered_rows, report). The report is the
+            # analysis result; the filtered rows become the table downstream ops see,
+            # so a plan can chain filter → breakdown on the surviving subset.
+            filtered, report = analyse.filter_rows(header, rows, op.get("filters", []))
+            rows = filtered
+            result = report
         else:
             values = analyse.column(header, rows, op["column"])
             result = {"currencies": sorted(x for x in analyse.currency_mix(values) if x is not None)}

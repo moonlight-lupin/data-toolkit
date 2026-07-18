@@ -951,6 +951,13 @@ def _norm_stacked(data) -> tuple[list, list, list]:
     Positional shapes have no segment names of their own, so segments are numbered
     (``Segment 1…n``) rather than left blank — an unlabelled legend swatch is worse
     than an honest placeholder.
+
+    **Missing / unparseable cells become 0.0**, so a sparse pivot (where some
+    category×segment combinations have no rows) renders as a zero-height segment
+    rather than a gap. This is correct for composition charts — an absent value
+    contributes nothing to the stack — but a caller who needs to distinguish
+    "zero" from "no data" should filter those cells beforehand or use the
+    ``heatmap`` block, which renders missing cells as a visibly empty outline.
     """
     if isinstance(data, dict) and "row_keys" in data and "matrix" in data:
         cats = [_strip(k) for k in data.get("row_keys", [])]
@@ -1716,6 +1723,12 @@ def _blocks_for_analysis_op(op: str, name: str, result: dict, *, max_groups: int
             {"label": "Kurtosis", "value": result.get("kurtosis"), "status": "brand"},
             {"label": "Shape", "value": result.get("classification"), "status": "grey"},
         ]})
+        # A histogram shows the shape the skew/kurt coefficients describe — but
+        # only when the engine carried the raw values. distribution() doesn't, so
+        # the block is a hint the agent must re-supply the column, not a ready render.
+        if result.get("values"):
+            out.append({"type": "histogram", "title": f"{title} — shape",
+                        "values": result["values"]})
     elif op == "percentile":
         if "value" in result:
             out.append({"type": "kpi_row", "items": [
@@ -1757,6 +1770,13 @@ def _blocks_for_analysis_op(op: str, name: str, result: dict, *, max_groups: int
                         "row_labels": result.get("row_keys") or result.get("rows"),
                         "col_labels": result.get("col_keys") or result.get("cols"),
                         "scale": "sequential"})
+            # A stacked bar shows composition per row — more readable than a heatmap
+            # when there are few columns (segments) and the question is "what makes
+            # up each row", not "which cell is hottest". Pass the pivot result straight
+            # through; stacked_bar accepts the {row_keys, col_keys, matrix} shape.
+            if len(result.get("col_keys") or []) <= 8:
+                out.append({"type": "stacked_bar", "title": f"{title} — composition",
+                            "data": result})
     elif op == "correlation_matrix":
         matrix = result.get("matrix") or []
         if matrix:

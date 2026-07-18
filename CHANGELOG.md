@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.8.1 — 2026-07-19
+
+**Follow-ups to the viz/filter PR (#25)** — closing the plan-surface and handoff
+gaps the review surfaced, plus the pre-existing test failure:
+
+- **`filter_rows` is now on the analysis plan surface.** Previously engine-only —
+  agents had to hand-call the script for filtering in planned runs. Now accepted
+  by `agent_runtime._run_analyse` and `analysis-plan.schema.json`. A `filter_rows`
+  op narrows the table that downstream ops in the same plan see, so
+  `filter_rows` → `breakdown` chains work on the surviving subset. Documented in
+  `AGENT-RUNTIME.md` with a worked example.
+- **`suggest_blocks_from_analysis` now proposes the new chart types.**
+  `pivot` → `stacked_bar` (when ≤8 segments — composition reads better than a
+  heat map at that width). `distribution` → `histogram` (only when the engine
+  result carries the raw values; otherwise the skew/kurt KPIs stand alone and
+  the agent re-supplies the column).
+- **Stacked-bar missing-cells→0 documented.** `_norm_stacked` treats
+  unparseable/missing cells as 0.0 — correct for composition (an absent value
+  contributes nothing to the stack) but now stated in the docstring so a blank
+  cell doesn't look like a real zero segment. Callers who need to distinguish
+  "zero" from "no data" are pointed to the `heatmap` block.
+- **`in` / `not_in` incomparable accounting documented.** These operators never
+  mark a cell as incomparable (a text cell against a numeric membership list
+  simply fails to match). The deliberate asymmetry with the ordering operators
+  is now explained in the `filter_rows` docstring.
+- **Pre-existing test failure resolved.** `test_officecli_render_is_optional_and_never_locks_the_workbook`
+  failed on environments where OfficeCLI is installed but no headless browser
+  (Chrome/Chromium/Firefox/Playwright) is available — OfficeCLI exits 0 but
+  produces no PNG. The test now probes for a working browser and skips the
+  live-render assertions when one isn't present (the absent-binary branch still
+  runs and covers the "nothing raises, nothing produced" contract). 73/73 pass.
+
 ## 0.8.0 — 2026-07-19
 
 **Three chart types and a filtering primitive** — closing the gaps that forced agents to

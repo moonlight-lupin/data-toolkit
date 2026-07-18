@@ -253,8 +253,13 @@ def test_officecli_render_is_optional_and_never_locks_the_workbook():
     finally:
         ocr.shutil.which = real_which
 
-    # --- only when actually installed: render, then prove the file is not left locked ---
-    if not ocr.available():
+    # --- only when actually installed AND a headless browser is available:
+    #     OfficeCLI delegates screenshot rendering to Chrome/Chromium/Firefox/
+    #     Playwright; without one it exits 0 but produces no PNG — an environment
+    #     gap, not a code bug. Skip the live-render assertions in that case (the
+    #     absent-binary branch above already covers the "nothing raises, nothing
+    #     produced" contract).
+    if not ocr.available() or not _officecli_browser_available():
         return
     td = Path(tempfile.mkdtemp())
     src = workbook.write_charts_xlsx(td / "live.xlsx", charts)
@@ -263,6 +268,33 @@ def test_officecli_render_is_optional_and_never_locks_the_workbook():
     probe = str(src) + ".probe"
     os.replace(src, probe)                        # raises PermissionError if still locked
     os.replace(probe, src)
+
+
+def _officecli_browser_available() -> bool:
+    """True when a headless browser OfficeCLI can drive is installed.
+
+    OfficeCLI's `view ... screenshot` delegates to Chrome/Chromium/Edge/Firefox
+    or Playwright; without one it exits 0 but writes no PNG. We detect by probing
+    a real render with a tiny 1-chart workbook — cheaper and more accurate than
+    hunting for browser binaries across platforms.
+    """
+    import shutil
+    import officecli_render as ocr
+    if not ocr.available():
+        return False
+    import tempfile
+    td = Path(tempfile.mkdtemp())
+    try:
+        import workbook as _wb
+        src = _wb.write_charts_xlsx(td / "probe.xlsx", [
+            {"chart_type": "column", "title": "p",
+             "categories": ["A"], "series": {"V": [1]}}])
+        pngs = ocr.render_chart_pngs(src, td / "out", timeout=30)
+        return bool(pngs) and all(p.is_file() and p.stat().st_size > 0 for p in pngs)
+    except Exception:
+        return False
+    finally:
+        shutil.rmtree(td, ignore_errors=True)
 
 
 def test_officecli_render_degrades_gracefully_on_every_failure_mode():
@@ -698,6 +730,71 @@ def test_viz_heatmap_sparkline_waterfall_and_analysis_handoff():
     html_blocks = viz.blocks_from_analysis(analysis)
     page = viz.dashboard("Insight board", html_blocks, as_of="18 Jul 2026")
     assert "By customer" in page and "period bridge" in page and "heatmap" in page
+
+
+def test_suggest_blocks_proposes_stacked_bar_for_pivot():
+    """pivot→heatmap is the default; a stacked_bar is also proposed when the
+    pivot has few enough columns (segments) that composition reads better as
+    bars than as a heat map. Follow-up #2: the handoff didn't suggest the new
+    chart types for the ops that map to them."""
+    analysis = {"results": [{"op": "pivot", "name": "Region × Segment", "result": {
+        "row_keys": ["North", "South"],
+        "col_keys": ["A", "B", "C"],
+        "matrix": [[100, 50, 25], [80, 40, 10]],
+    }}]}
+    specs = viz.suggest_blocks_from_analysis(analysis)
+    block_types = [b["type"] for b in specs[0]["blocks"]]
+    assert "heatmap" in block_types
+    assert "stacked_bar" in block_types, f"expected stacked_bar, got {block_types}"
+
+
+def test_suggest_blocks_proposes_histogram_for_distribution_when_values_carried():
+    """distribution→histogram only when the engine result carries the raw values;
+    otherwise the skew/kurt KPIs stand alone (the agent must re-supply the column)."""
+    analysis = {"results": [{"op": "distribution", "name": "Amount shape", "result": {
+        "skewness": 1.2, "kurtosis": 2.1, "classification": "right-skewed",
+        "values": [10, 20, 30, 40, 50, 60, 70, 80],
+    }}]}
+    specs = viz.suggest_blocks_from_analysis(analysis)
+    block_types = [b["type"] for b in specs[0]["blocks"]]
+    assert "histogram" in block_types, f"expected histogram, got {block_types}"
+    # without values, no histogram is proposed
+    analysis2 = {"results": [{"op": "distribution", "name": "x", "result": {
+        "skewness": 1.2, "kurtosis": 2.1, "classification": "right-skewed"}}]}
+    specs2 = viz.suggest_blocks_from_analysis(analysis2)
+    assert "histogram" not in [b["type"] for b in specs2[0]["blocks"]]
+
+
+def test_filter_rows_is_on_the_analysis_plan_surface():
+    """filter_rows must be accepted by _run_analyse (follow-up #1: it was
+    engine-only, not reachable from a plan). A filter op narrows the table that
+    downstream ops in the same plan see — so filter→breakdown chains work."""
+    import agent_runtime, tempfile, json
+    from pathlib import Path
+    src = Path(tempfile.mkdtemp()) / "src.csv"
+    src.write_text("Region,Amount\nNorth,100\nSouth,200\nNorth,300\n", encoding="utf-8")
+    plan = {
+        "skill": "data-analyse",
+        "inputs": [{"path": str(src)}],
+        "operations": [
+            {"op": "filter_rows", "name": "North only",
+             "filters": [{"col": "Region", "op": "==", "value": "North"}]},
+            {"op": "breakdown", "name": "By region (filtered)",
+             "by": "Region", "value": "Amount"},
+        ],
+        "output": str(src.parent / "analysis.json"),
+    }
+    result = agent_runtime._run_analyse(plan, src.parent, dry_run=True)
+    ops = [r["op"] for r in result["details"]["results"]]
+    assert ops == ["filter_rows", "breakdown"], ops
+    # the breakdown should only see North rows (2 rows, not 3)
+    breakdown = result["details"]["results"][1]["result"]
+    groups = breakdown.get("groups") or []
+    keys = [g.get("key") for g in groups]
+    assert keys == ["North"], f"filter should have removed South before breakdown, got {keys}"
+    # the filter report records what it dropped
+    filt = result["details"]["results"][0]["result"]
+    assert filt["n_in"] == 3 and filt["n_out"] == 2 and filt["n_dropped"] == 1, filt
 
 
 # --------------------------------------------------------------------------- #
