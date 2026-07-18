@@ -480,7 +480,8 @@ def test_summary_per_currency_breakdown():
 # --------------------------------------------------------------------------- #
 # 16. Large-file streaming (scripts/streaming.py + ingest.read_large)
 # --------------------------------------------------------------------------- #
-def test_streaming_count_rows_constant_memory():
+def test_streaming_count_rows():
+    """Row counts via read_only iter_rows; strategy gate for a small sheet is direct."""
     import streaming
     d = tempfile.mkdtemp()
     path = Path(d) / "rows.xlsx"
@@ -524,6 +525,38 @@ def test_streaming_excel_to_parquet_and_read_large():
         frame, note = ingest.read_large(str(path), sheet="Data", cache_dir=d)
         assert "stream" in note
         assert len(frame) == n
+    finally:
+        streaming.DIRECT_THRESHOLD = old_d
+        streaming.PARQUET_CACHE_THRESHOLD = old_p
+
+
+def test_parquet_cache_preserves_none_and_nan_literals():
+    """parquet_cache must not null real string values 'None' / 'nan' (review M1)."""
+    import streaming
+    if not streaming.pyarrow_available():
+        print("  SKIP  test_parquet_cache_preserves_none_and_nan_literals (no pyarrow/pandas)")
+        return
+    d = tempfile.mkdtemp()
+    path = Path(d) / "names.xlsx"
+    # 12 data rows → force parquet_cache with lowered thresholds
+    rows = [["customer", "note"]] + [
+        ["None Corp", "nan handling pending"],
+        ["Acme", "ok"],
+    ] * 6
+    _write_xlsx(path, [("Data", rows)])
+    old_d, old_p = streaming.DIRECT_THRESHOLD, streaming.PARQUET_CACHE_THRESHOLD
+    streaming.DIRECT_THRESHOLD = 2
+    streaming.PARQUET_CACHE_THRESHOLD = 10_000
+    try:
+        assert streaming.choose_strategy(str(path), sheet="Data") == "parquet_cache"
+        frame, note = ingest.read_large(str(path), sheet="Data", cache_dir=d)
+        assert "parquet_cache" in note
+        assert "None Corp" in set(frame["customer"].astype(str))
+        assert "nan handling pending" in set(frame["note"].astype(str))
+        # Second read hits cache — still preserved
+        frame2, note2 = ingest.read_large(str(path), sheet="Data", cache_dir=d)
+        assert "cache hit" in note2
+        assert "None Corp" in set(frame2["customer"].astype(str))
     finally:
         streaming.DIRECT_THRESHOLD = old_d
         streaming.PARQUET_CACHE_THRESHOLD = old_p

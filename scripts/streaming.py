@@ -266,9 +266,10 @@ def load_via_strategy(path: str, sheet=None, cache_dir=None, strategy=None):
                 f"parquet cache hit '{target}', {len(df)} rows "
                 f"(strategy=parquet_cache, cache={cache.name})"
             )
+        # dtype=str already yields None for blank cells — do not .astype(str).replace(
+        # {"None"/"nan": None}), which would also null real values like "None Corp".
         df = pd.read_excel(path, sheet_name=target, dtype=str, engine="openpyxl")
-        # Persist as string columns first for stable schema, then optimise in memory.
-        df.astype(str).replace({"None": None, "nan": None}).to_parquet(cache, index=False)
+        df.to_parquet(cache, index=False)
         df = optimize_dtypes(_coerce_numerics(df))
         return df, (
             f"parquet cache miss → wrote '{target}', {len(df)} rows "

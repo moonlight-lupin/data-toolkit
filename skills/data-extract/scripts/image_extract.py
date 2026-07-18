@@ -387,7 +387,8 @@ def parse_markdown_table(text: str):
             lambda x: x if isinstance(x, (int, float)) or x is None else _auto_number(x)
         )
         nums = sum(isinstance(v, (int, float)) for v in converted)
-        if nums >= max(1, int(0.6 * len(converted))):
+        # Same threshold as streaming._coerce_numerics — avoid promoting id-like columns.
+        if nums >= max(1, int(0.8 * len(converted))):
             df[col] = converted
     return df
 
