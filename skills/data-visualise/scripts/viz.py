@@ -78,7 +78,8 @@ DEFAULT_THEME = {
     "logo_path": None,
     # Font stacks — a clean sans body with a geometric-display heading. The dashboard
     # is self-contained (no CDN), so these load only if the reader has them installed
-    # and otherwise fall back gracefully down the stack.
+    # and otherwise fall back gracefully down the stack. When labels contain CJK or
+    # other non-Latin scripts, dashboard() augments the stack (see _augment_font_stack).
     "font": "'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif",
     "font_heading": "'Space Grotesk','Inter','Segoe UI',system-ui,sans-serif",
     # Palette — the toolkit's neutral default scheme (a teal accent on cool paper).
@@ -496,8 +497,175 @@ def _empty_block(title, msg) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# Page assembly
+# Internationalisation — conditional font fallback (no fonts shipped)
 # --------------------------------------------------------------------------- #
+# CJK Unified Ideographs + Hiragana/Katakana + Hangul (Project 3b acceptance).
+_CJK_RANGES = (
+    (0x4E00, 0x9FFF),   # CJK Unified Ideographs
+    (0x3040, 0x30FF),   # Hiragana, Katakana
+    (0xAC00, 0xD7AF),   # Hangul Syllables
+)
+
+# Broader script coverage for SG/Asia + other markets — still browser-fallback only.
+_SCRIPT_RANGES = {
+    "cjk": _CJK_RANGES,
+    "arabic": (
+        (0x0600, 0x06FF), (0x0750, 0x077F), (0x08A0, 0x08FF),
+        (0xFB50, 0xFDFF), (0xFE70, 0xFEFF),
+    ),
+    "hebrew": ((0x0590, 0x05FF),),
+    "cyrillic": ((0x0400, 0x04FF), (0x0500, 0x052F),),
+    "thai": ((0x0E00, 0x0E7F),),
+    "devanagari": ((0x0900, 0x097F),),
+    "tamil": ((0x0B80, 0x0BFF),),
+    "bengali": ((0x0980, 0x09FF),),
+    "gujarati": ((0x0A80, 0x0AFF),),
+    "gurmukhi": ((0x0A00, 0x0A7F),),
+    "kannada": ((0x0C80, 0x0CFF),),
+    "malayalam": ((0x0D00, 0x0D7F),),
+    "telugu": ((0x0C00, 0x0C7F),),
+    "georgian": ((0x10A0, 0x10FF),),
+    "armenian": ((0x0530, 0x058F),),
+    "ethiopic": ((0x1200, 0x137F),),
+}
+
+# Named fonts commonly present on macOS / Windows / desktop Linux. Never install or
+# search the filesystem — the browser picks the first available name.
+_CJK_FONT_NAMES = (
+    "Noto Sans CJK SC", "Noto Sans CJK JP", "Noto Sans CJK KR",
+    "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB",
+    "Yu Gothic", "Malgun Gothic", "Apple SD Gothic Neo",
+)
+_ARABIC_FONT_NAMES = (
+    "Noto Naskh Arabic", "Noto Sans Arabic", "Segoe UI", "Tahoma", "Arial",
+)
+_INDIC_FONT_NAMES = (
+    "Noto Sans Devanagari", "Noto Sans Tamil", "Noto Sans Bengali",
+    "Nirmala UI", "Mangal", "Latha",
+)
+_THAI_FONT_NAMES = ("Noto Sans Thai", "Thonburi", "Tahoma", "Segoe UI")
+_CYRILLIC_OK_NAMES = ("Segoe UI", "Arial", "Helvetica Neue", "Noto Sans")  # usually covered
+
+
+def _char_in_ranges(cp: int, ranges) -> bool:
+    return any(lo <= cp <= hi for lo, hi in ranges)
+
+
+def _has_cjk(text) -> bool:
+    """True if any character falls in the CJK / Hiragana-Katakana / Hangul ranges."""
+    if not text:
+        return False
+    for ch in str(text):
+        if _char_in_ranges(ord(ch), _CJK_RANGES):
+            return True
+    return False
+
+
+def _detect_scripts(text) -> set:
+    """Return the set of script keys from ``_SCRIPT_RANGES`` present in ``text``."""
+    found = set()
+    if not text:
+        return found
+    for ch in str(text):
+        cp = ord(ch)
+        for name, ranges in _SCRIPT_RANGES.items():
+            if name in found:
+                continue
+            if _char_in_ranges(cp, ranges):
+                found.add(name)
+        if len(found) == len(_SCRIPT_RANGES):
+            break
+    return found
+
+
+def _needs_i18n_fonts(text) -> bool:
+    """True when any non-Latin script that needs an extended font stack is present."""
+    return bool(_detect_scripts(text))
+
+
+def _split_font_stack(stack: str) -> list:
+    """Split a CSS font-family list on top-level commas (respecting quotes)."""
+    parts, buf, in_q = [], [], None
+    for ch in stack:
+        if in_q:
+            buf.append(ch)
+            if ch == in_q:
+                in_q = None
+            continue
+        if ch in ("'", '"'):
+            in_q = ch
+            buf.append(ch)
+            continue
+        if ch == ",":
+            parts.append("".join(buf).strip())
+            buf = []
+            continue
+        buf.append(ch)
+    if buf:
+        parts.append("".join(buf).strip())
+    return [p for p in parts if p]
+
+
+def _augment_font_stack(base_stack: str, text: str) -> str:
+    """Insert script-specific fallback fonts before the generic family when needed.
+
+    English-only (and other Latin-only) text returns ``base_stack`` unchanged.
+    CJK detection alone is enough to unlock the CJK stack; other scripts add their
+    own named fonts. No fonts are shipped or looked up on disk.
+    """
+    scripts = _detect_scripts(text)
+    if not scripts:
+        return base_stack
+
+    extras = []
+    if "cjk" in scripts:
+        extras.extend(_CJK_FONT_NAMES)
+    if "arabic" in scripts:
+        extras.extend(_ARABIC_FONT_NAMES)
+    if "hebrew" in scripts:
+        extras.extend(("Segoe UI", "Tahoma", "Arial Hebrew", "Noto Sans Hebrew"))
+    if scripts & {"devanagari", "tamil", "bengali", "gujarati", "gurmukhi",
+                  "kannada", "malayalam", "telugu"}:
+        extras.extend(_INDIC_FONT_NAMES)
+    if "thai" in scripts:
+        extras.extend(_THAI_FONT_NAMES)
+    if "cyrillic" in scripts:
+        extras.extend(_CYRILLIC_OK_NAMES)
+
+    parts = _split_font_stack(base_stack)
+    generics = {"serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui"}
+    named, generic_tail = [], []
+    for p in parts:
+        bare = p.strip().strip("'\"").lower()
+        if bare in generics:
+            generic_tail.append(p)
+        else:
+            named.append(p)
+
+    existing = {p.strip().strip("'\"").lower() for p in named}
+    inserted = []
+    for name in extras:
+        if name.lower() not in existing:
+            inserted.append(f"'{name}'")
+            existing.add(name.lower())
+
+    merged = named + inserted + (generic_tail or ["sans-serif"])
+    return ", ".join(merged)
+
+
+def _text_direction(text: str) -> str:
+    """``rtl`` when Arabic/Hebrew is present without a stronger LTR majority cue; else ``ltr``."""
+    scripts = _detect_scripts(text)
+    if scripts & {"arabic", "hebrew"}:
+        return "rtl"
+    return "ltr"
+
+
+def _scan_dashboard_text(title, subtitle, body, footnote, brand_name) -> str:
+    """Concatenate visible strings used to decide font / direction augmentation."""
+    parts = [title or "", subtitle or "", footnote or "", brand_name or "", body or ""]
+    return "\n".join(parts)
+
 def dashboard(title, blocks, subtitle=None, as_of=None, out_path=None,
               footnote=None, theme=None) -> str:
     """Assemble blocks into a full, self-contained HTML page.
@@ -512,6 +680,10 @@ def dashboard(title, blocks, subtitle=None, as_of=None, out_path=None,
                 font_heading, colours} overriding the neutral default for the page
                 shell (header rule, wordmark/logo, fonts, footer brand line). To also
                 re-skin the chart colours, call apply_theme(theme) before the blocks.
+
+    When any label/title/body text contains CJK (or other non-Latin scripts), the
+    font stacks are augmented with a browser fallback chain so glyphs render
+    instead of □□□. English-only dashboards keep the theme fonts unchanged.
     """
     rt = _resolve_theme(theme)
     brand, font, font_heading = rt["colours"], rt["font"], rt["font_heading"]
@@ -523,11 +695,20 @@ def dashboard(title, blocks, subtitle=None, as_of=None, out_path=None,
     # the interaction script is inert unless a block opted in (sortable/filter/toggle)
     script = _INTERACT_JS if any(k in body for k in
              ('data-sortable', 'data-filter', 'data-toggle')) else ""
+
+    scan = _scan_dashboard_text(title, subtitle, body, footnote, rt["brand_name"])
+    font = _augment_font_stack(font, scan)
+    font_heading = _augment_font_stack(font_heading, scan)
+    text_dir = _text_direction(scan)
+    # Prefer a more specific lang when CJK-only content is clear; otherwise keep en.
+    html_lang = "zh" if (_has_cjk(scan) and not (_detect_scripts(scan) - {"cjk"})) else "en"
+
     doc = _PAGE.format(
         title=_e(title), subtitle=sub_h, asof=_e(as_of), body=body,
         foot_extra=foot_extra, brand=brand, font=font, font_heading=font_heading,
         logo=logo_html, brand_name=_e(rt["brand_name"]), script=script,
-        year=as_of.split()[-1] if as_of and as_of[-1].isdigit() else "")
+        year=as_of.split()[-1] if as_of and as_of[-1].isdigit() else "",
+        html_lang=html_lang, text_dir=text_dir)
     if out_path:
         Path(out_path).write_text(doc, encoding="utf-8")
         return str(out_path)
@@ -546,7 +727,7 @@ def _today_str() -> str:
 
 # The page shell. Note: CSS braces are doubled for str.format; {brand[..]} /
 # {font} / {title} etc. are the only single-brace fields.
-_PAGE = """<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+_PAGE = """<!DOCTYPE html><html lang="{html_lang}" dir="{text_dir}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title}</title><style>
 :root{{--burg:{brand[burgundy]};--rose:{brand[rose]};--ink:{brand[ink]};

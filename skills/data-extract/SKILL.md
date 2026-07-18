@@ -2,7 +2,7 @@
 name: data-extract
 description: >-
   Get STRUCTURED data OUT of documents — PDFs (incl. multi-table/scanned via local OCR), Word,
-  and Outlook .msg — into a clean .xlsx plus an audit report. Use when the user wants to "extract
+  PowerPoint (.pptx), and Outlook .msg — into a clean .xlsx plus an audit report. Use when the user wants to "extract
   data from this PDF/document", "pull the table out of this report", "get the figures from these
   statements/certificates", "turn these confirmations into a table", "read the fields off this
   form", or "extract these line items". Two modes: key-value/FORM extraction (label → value, one
@@ -106,6 +106,13 @@ OpenAI-compatible endpoint (`VISION_API_KEY` / `OPENAI_API_KEY`, optional `VISIO
 OCR. Results are cached by file+prompt hash; large images (>5MB / >2048px) are compressed
 before the API call.
 
+**PowerPoint decks (`.pptx`)** — `ingest.read_any` / `ingest.read_pptx` extracts
+**tables** from all slides (same row contract as `.docx`). Slide titles/bullets are
+summarised in the ingest note, not mixed into the table rows. Image-only slides are
+flagged for manual review or vision-model extraction. Legacy `.ppt` is not supported —
+convert to `.pptx` first.
+
+
 ### 3 — Normalise, output, report
 For tables, pass the rows through the shared recipe just like tidy
 (`dataclean.apply_recipe`). For batched forms:
@@ -199,7 +206,8 @@ user to file (e.g. in your synced or shared file store) — manual, no fixed des
 ## Requirements & mode
 Pre-screen: see `../../COMPATIBILITY.md` and run `python ../../scripts/envcheck.py`. Needs
 Python + `PyMuPDF` (PDF), `openpyxl` (output); `pdfplumber` (optional — preferred for messy /
-borderless PDF tables), `python-docx` for `.docx`, `extract_msg` for `.msg`; **local Tesseract**
-only for scanned-document OCR (degrades cleanly without it). **Image/chart extraction** needs a
-vision-capable OpenAI-compatible API endpoint + key (`Pillow`, `requests`, `pandas` optional
-helpers) — without it `image_extract.py` exits clearly and does not fall back to Tesseract.
+borderless PDF tables), `python-docx` for `.docx`, `python-pptx` for `.pptx`, `extract_msg` for
+`.msg`; **local Tesseract** only for scanned-document OCR (degrades cleanly without it).
+**Image/chart extraction** needs a vision-capable OpenAI-compatible API endpoint + key
+(`Pillow`, `requests`, `pandas` optional helpers) — without it `image_extract.py` exits
+clearly and does not fall back to Tesseract.

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.5 — 2026-07-18
+
+**PowerPoint ingest + multilingual dashboard fonts** (additive):
+
+- **`ingest.read_pptx`** — extract tables from every `.pptx` slide (multi-table slides return
+  all tables; titles/bullets summarised in the note). Image-only slides are flagged for
+  manual / vision review (never auto-invoked). Wired into `read_any`; legacy `.ppt` raises a
+  clear convert-to-`.pptx` error. Optional dep: `python-pptx`.
+- **`data-visualise` CJK / i18n fonts** — `_has_cjk` + conditional browser font-fallback
+  stack when CJK (and Arabic / Hebrew / Thai / Indic / Cyrillic) labels are detected; SVG
+  chart text inherits via CSS. English-only dashboards unchanged. No fonts shipped.
+- `COMPATIBILITY.md`, `envcheck.py`, `requirements.txt`, data-extract SKILL.md updated.
+
 ## 0.5.4 — 2026-07-18
 
 **Large-file streaming + image/chart extraction** (additive; existing skills unchanged):
