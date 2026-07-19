@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.8.2 — 2026-07-19
+
+**Post-#21 merge hygiene** — two leftovers from landing the analyse plan-surface
+PR after the viz/filter work:
+
+- **`analysis-plan.schema.json`**: drop the duplicate `allOf` rule that required
+  `column` for `numeric_summary` / `outliers_iqr` / `currency_mix` a second time
+  (the #21 rule that also covers `distribution` remains).
+- **`blocks_from_analysis`**: render `histogram`, `stacked_bar`, and
+  `scatter_chart`. `suggest_blocks_from_analysis` already proposed the first two
+  for `distribution` / `pivot`; the convenience helper raised
+  `unsupported block type` instead of drawing them. Agent runtime was unaffected
+  (`suggest` → `_viz_block`).
+
 ## 0.8.1 — 2026-07-19
 
 **Follow-ups to the viz/filter PR (#25)** — closing the plan-surface and handoff

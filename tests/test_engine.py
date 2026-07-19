@@ -746,6 +746,10 @@ def test_suggest_blocks_proposes_stacked_bar_for_pivot():
     block_types = [b["type"] for b in specs[0]["blocks"]]
     assert "heatmap" in block_types
     assert "stacked_bar" in block_types, f"expected stacked_bar, got {block_types}"
+    # suggest proposes it; blocks_from_analysis must actually render it (merge
+    # follow-up: the convenience helper lagged _viz_block / suggest).
+    html = viz.blocks_from_analysis(analysis)
+    assert any("<rect" in h for h in html)
 
 
 def test_suggest_blocks_proposes_histogram_for_distribution_when_values_carried():
@@ -758,6 +762,8 @@ def test_suggest_blocks_proposes_histogram_for_distribution_when_values_carried(
     specs = viz.suggest_blocks_from_analysis(analysis)
     block_types = [b["type"] for b in specs[0]["blocks"]]
     assert "histogram" in block_types, f"expected histogram, got {block_types}"
+    html = viz.blocks_from_analysis(analysis)
+    assert any("value" in h and "<rect" in h for h in html)
     # without values, no histogram is proposed
     analysis2 = {"results": [{"op": "distribution", "name": "x", "result": {
         "skewness": 1.2, "kurtosis": 2.1, "classification": "right-skewed"}}]}
