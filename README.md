@@ -34,7 +34,8 @@ toolkit suite.
 (Acme Co white-label) ·
 [`sample-reconciliation.xlsx`](examples/sample-reconciliation.xlsx)
 
-New here? Start with [`ONBOARDING.md`](ONBOARDING.md) — install, quickstart, then
+New here? Start with the [Install](#install-claude-code-plugin) and
+[Try it in ~10 minutes](#try-it-in-10-minutes) sections below — install, quickstart, then
 **theme + logo** in one sitting.
 
 ---
@@ -74,8 +75,60 @@ python examples/run_branded_dashboard.py   # same data, Acme Co theme + logo
 ```
 
 That writes working papers and HTML dashboards under `examples/out/`. Full notes:
-[`examples/README.md`](examples/README.md). Step-by-step (incl. theme + logo):
-[`ONBOARDING.md`](ONBOARDING.md).
+[`examples/README.md`](examples/README.md).
+
+### Put your brand on a dashboard (theme + logo)
+
+The toolkit ships **unbranded** (a neutral "Data Toolkit" wordmark, no logo). Your brand
+is a `theme` dict — brand name, logo path, fonts, and any colour overrides. Token names
+(`burgundy`, `rose`, `pink`) are historical; set `burgundy` to your primary.
+
+Minimal pattern (both calls matter — charts + page shell):
+
+```python
+from viz import apply_theme, kpi_row, dashboard
+
+MY_THEME = {
+    "brand_name": "Acme Co",
+    "logo_path": "examples/assets/acme-mark.svg",  # transparent PNG/SVG, < 1 MB, local
+    "font": "'Segoe UI','Helvetica Neue',Arial,sans-serif",
+    "colours": {
+        "burgundy": "#0B3D91",  # primary — header rule, table heads
+        "rose":     "#1565C0",  # accent 1
+        "pink":     "#42A5F5",  # accent 2
+    },
+}
+
+apply_theme(MY_THEME)  # chart / KPI colours
+blocks = [kpi_row([{"label": "Matched", "value": 42, "status": "green"}])]
+dashboard(
+    "Weekly scorecard",
+    blocks,
+    theme=MY_THEME,  # header, CSS, footer, logo
+    as_of="14 Jul 2026",
+    out_path="acme-dashboard.html",
+)
+```
+
+**Logo checklist:** local file only (no URL — the engine base64-embeds it so the HTML stays
+offline); prefer transparent PNG (SVG/JPG/GIF also work); keep under 1 MB; with no
+`logo_path` you get a text wordmark of `brand_name`. Using the toolkit does **not** grant
+any right to the Phronesis Applied name or marks in your own branding — see
+[`NOTICE`](NOTICE). Full palette and status keywords:
+[`skills/data-visualise/references/brand.md`](skills/data-visualise/references/brand.md).
+
+### First real job
+
+| You have… | Say / run… |
+|---|---|
+| Two record sets to match | *"Reconcile these two files"* → `data-reconcile` |
+| A junk export | *"Tidy this export"* → `data-tidy` |
+| PDFs / Word / `.msg` | *"Extract the table from these"* → `data-extract` |
+| A clean sheet + a stakeholder | *"Dashboard this for the controller, Acme brand, logo at …"* → `data-visualise` |
+| A dataset to understand | *"What does this data say?"* → `data-analyse` |
+| Data for another system's format | *"Convert this to X's import format"* → `data-convert` |
+
+A common chain: extract → tidy → reconcile → analyse exceptions → visualise one-pager.
 
 ## Why teams choose it
 
@@ -105,7 +158,7 @@ That writes working papers and HTML dashboards under `examples/out/`. Full notes
 - **White-label ready.** Ships unbranded — a neutral default; pass a `theme` dict
   (brand name, colours, fonts, local logo) to re-skin HTML dashboards **and** Excel
   chart workbooks from the same palette. See
-  [Onboarding §3](ONBOARDING.md#3-put-your-brand-on-a-dashboard-theme--logo).
+  [Onboarding §3](#put-your-brand-on-a-dashboard-theme--logo).
 - **Agent-stable interface.** Plans validate against schemas, dry-run before write,
   confirm-first for irreversible work — `bin/data-toolkit` is the stable entry point
   (`AGENT.md`).
@@ -195,6 +248,70 @@ Both full reports (Sonnet + Haiku), per-task scores, cost tables and honest limi
 cell; on a weak model *at scale* the risk shifts to correctness — see the limits) live in
 **[`benchmark/`](benchmark/)**.
 
+## Mode & environment compatibility
+
+Some skills only run properly in the **right mode / environment** because of how they're
+built. Pre-screen before running a skill so the user isn't surprised by a broken or
+degraded result.
+
+### The two modes
+
+- **Claude Code (local)** — runs on the user's own machine. Can execute the bundled Python
+  helpers, read/write the local filesystem, and (on **Windows with Microsoft Office**
+  installed) use **Word/Excel via COM** where a skill wants the highest-fidelity PDF.
+  **This is the toolkit's primary/intended mode.**
+- **Cowork (cloud)** — runs in Anthropic's hosted sandbox. No MS Office / COM (PDF would
+  fall back to **LibreOffice**, which can render slightly differently); uses its own file
+  paths and **connectors (MCP)** for integrations. Fine for portable skills, but the
+  Office-fidelity and local-path assumptions don't all hold.
+
+### How to pre-screen
+
+1. **Know the current mode** — Claude Code (local) vs Cowork.
+2. **Run the prober:** `python scripts/envcheck.py` — reports OS, Python libs, MS
+   Office-COM vs LibreOffice availability, and the relevant env vars, then prints a
+   per-skill readiness line.
+3. **Compare to the skill's row below.** If the skill is **blocked or degraded** in the
+   current mode, **tell the user up front** and offer the workaround — don't just produce
+   a degraded output silently.
+
+### Capability matrix
+
+| Skill | Hard needs | Degrades / blocks without |
+|---|---|---|
+| data-tidy | Python + `openpyxl` | `PyMuPDF` for PDF input, `python-docx` for .docx, `python-pptx` for .pptx (legacy `.ppt` not supported), `extract_msg` for .msg (each optional, degrade per-source); scanned-PDF OCR needs local Tesseract; large files (10k+ rows): `pyarrow` + `pandas` optional — without them `ingest.read_large` falls back to direct openpyxl read with a warning |
+| data-extract | Python + `PyMuPDF`, `openpyxl` | `pdfplumber` (optional — preferred for messy PDF tables), `python-docx`, `python-pptx`, `extract_msg` (each optional); scanned-document OCR needs local Tesseract; **image/chart extraction** needs a **vision API endpoint + key** plus `Pillow` and `requests` (optional — degrades by exiting clearly, never silently falls back to Tesseract for chart data) |
+| data-reconcile | Python + `openpyxl` | reads CSV/PDF/.docx/.pptx/.msg via the shared engine (same optional deps as `data-tidy`); no network/Office/connector; produces a working paper (.xlsx) — never posts; aggregation matches are confirm-first |
+| data-analyse | Python + `openpyxl` | reads CSV/PDF/.docx/.pptx/.msg via the shared engine; metric engine is pure stdlib + `Decimal`; no network/Office/connector; **descriptive analysis, never advice**; large files: `pyarrow` + `pandas` optional |
+| data-visualise | Python (stdlib) for HTML; `openpyxl` for Excel chart-workbook output | optional `officecli` (third-party binary on PATH) to render each xlsx chart to PNG — absent → the `.xlsx` is still written and the run warns, never fails; a desktop browser to `open_in_browser` / print-to-PDF; **CJK / Arabic / Indic / Thai / Cyrillic / Hebrew labels** get a conditional browser font-fallback stack (no fonts shipped); in Cowork/Claude.ai the output doubles as a live HTML Artifact |
+| data-convert | Python + `openpyxl` | reads CSV/PDF/.docx/.pptx/.msg via the shared engine; maps onto a target import contract + reshapes; writes CSV/JSON/XLSX/fixed-width or fills a template; delegates cleaning to `data-tidy`; **live inputs (FX) are pinned/user-approved, never engine-fetched**; output is a draft for review, never an upload |
+
+**Rule of thumb:** the whole toolkit is **portable and runs on your machine** — pure Python
+plus a few optional libraries for non-spreadsheet inputs and local OCR. None of the *code*
+needs the network or credentials. (The AI agent driving it does, of course, send whatever
+it reads into its context to your AI provider — see
+[`PRINCIPLES.md`](PRINCIPLES.md).) The only mode-specific wrinkle is `data-visualise`'s
+preview: in a headless/Cowork session it still builds the `.html` (and it doubles as a live
+Artifact there) — open it in a desktop browser to print to PDF.
+
+### Shared stores & connectors
+
+- **No Microsoft 365 connector is assumed.** The toolkit does not reach a shared file store
+  through an M365 MCP.
+- **Shared stores are reached as synced local files.** A SharePoint / OneDrive / Drive
+  library that syncs into the file system is reached as an ordinary **local path**, not a
+  connector. This is why the toolkit is built around local file I/O — and it keeps PII on
+  the local/synced store rather than pushing it through a cloud connector.
+
+### Hooks (Claude Code only)
+
+The bundled `hooks/` fire in **Claude Code (local)**, where `${CLAUDE_PLUGIN_ROOT}`
+resolves: a PreToolUse **PII-egress reminder** on web / external-connector calls, and a
+PostToolUse **SKILL.md hygiene** check. They are **fail-open and self-resolving** — in
+**Cowork** they **no-op rather than block**, and they **never intercept local sandbox
+tools**. So in Cowork the egress reminder does not run — `PRINCIPLES.md` is the actual
+control, and it applies in **every** mode regardless of the hook.
+
 ## Under the hood
 
 Shared local engines in **`scripts/`**:
@@ -240,7 +357,7 @@ Requirements stay light:
 python scripts/envcheck.py
 ```
 
-Per-skill mode/environment matrix: [`COMPATIBILITY.md`](COMPATIBILITY.md).
+Per-skill mode/environment matrix: [Mode & environment compatibility](#mode--environment-compatibility).
 
 ## Trust & quality
 

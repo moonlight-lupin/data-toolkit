@@ -1151,7 +1151,7 @@ def _run_visualise(plan: dict[str, Any], base: Path, dry_run: bool,
                     else:
                         xlsx_warnings.append(
                             "render_png requested but the optional 'officecli' binary is not on "
-                            "PATH — the .xlsx was written without images (see COMPATIBILITY.md)")
+                            "PATH — the .xlsx was written without images (see README.md#mode--environment-compatibility)")
                 except Exception as exc:    # noqa: BLE001 - optional add-on, never fails a run
                     xlsx_warnings.append(
                         f"render_png: the optional OfficeCLI renderer failed ({type(exc).__name__}: "

@@ -13,7 +13,7 @@ does send whatever it reads to your AI provider — see DATA-HANDLING.md). Most 
 
 NOTE: this can't detect session-level capabilities — whether a browser is available
 to preview/print a visualisation depends on the environment, not this probe.
-See COMPATIBILITY.md.
+See README.md#mode--environment-compatibility.
 """
 
 import importlib.util
@@ -132,7 +132,7 @@ def main():
     for sk, mode, st, note in rows:
         print(f"{sk.ljust(w)}  {st.ljust(9)}  {note}")
     print("\nLegend: OK ready · DEGRADED works with lower fidelity · BLOCKED missing a "
-          "hard need · CHECK depends on session mode (see COMPATIBILITY.md).")
+          "hard need · CHECK depends on session mode (see README.md#mode--environment-compatibility).")
 
 
 if __name__ == "__main__":

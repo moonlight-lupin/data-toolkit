@@ -2,7 +2,8 @@
 
 Prove the toolkit on your machine with one reconciliation and one dashboard. No Claude
 required for this path — plain Python. Broader walkthrough (install → brand → first
-job): [`../ONBOARDING.md`](../ONBOARDING.md).
+job): see the README's [Install](../README.md#install-claude-code-plugin) and
+[Try it in ~10 minutes](../README.md#try-it-in-10-minutes) sections.
 
 ## Prerequisites
 

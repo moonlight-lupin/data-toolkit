@@ -171,7 +171,7 @@ Save it as a `.txt` file (`feedback_[skill]_[date].txt`) and hand it to the
 user to file (e.g. in your synced or shared file store) — manual, no fixed destination; fix in scope if asked.
 
 ## Requirements & mode
-Pre-screen: see `../../COMPATIBILITY.md` and run `python ../../scripts/envcheck.py`. Needs
+Pre-screen: see `../../README.md#mode--environment-compatibility` and run `python ../../scripts/envcheck.py`. Needs
 Python + `openpyxl`; `PyMuPDF` for PDF input (`pdfplumber` optional — preferred for messy /
 borderless PDF tables); `python-docx` for `.docx`; `extract_msg` for `.msg`; **local Tesseract**
 only for scanned-PDF OCR (degrades cleanly without it). Mostly portable; OCR is the one

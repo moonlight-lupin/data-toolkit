@@ -132,6 +132,6 @@ Have an improvement or found a bug? Capture it with the toolkit's shared feedbac
 (`../../CONTRIBUTING.md#skill-feedback-format`) and hand it to the user to file; fix in scope if asked.
 
 ## Requirements & mode
-Pre-screen: `../../COMPATIBILITY.md` + `python ../../scripts/envcheck.py`. Python + `openpyxl`
+Pre-screen: `../../README.md#mode--environment-compatibility` + `python ../../scripts/envcheck.py`. Python + `openpyxl`
 (for `.xlsx` in/out); reads CSV/PDF/.docx/.msg via the shared engine (same optional deps as
 `data-tidy`). Portable — the code needs no network, MS Office, credentials or connector.

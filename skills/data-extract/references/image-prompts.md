@@ -22,4 +22,4 @@ data — Tesseract cannot read data points from charts.
 - Parsed Markdown tables auto-convert comma thousands separators, `%` suffixes, and
   currency symbols via `parse_markdown_table`.
 - Optional deps: vision API key + endpoint, `Pillow`, `requests`, `pandas`, `openpyxl`.
-  See `COMPATIBILITY.md`.
+  See `README.md#mode--environment-compatibility`.

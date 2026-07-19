@@ -8,10 +8,13 @@ welcome.
 
 ## Before you start
 
-1. Skim [`ONBOARDING.md`](ONBOARDING.md) if you are new to the toolkit (incl. theme + logo).
+1. Skim the [Install](README.md#install-claude-code-plugin) and
+   [Try it in ~10 minutes](README.md#try-it-in-10-minutes) sections of the README if you
+   are new to the toolkit (incl. theme + logo).
 2. Read [`PRINCIPLES.md`](PRINCIPLES.md) — drafts not advice, never invent, stay in lane.
-3. Read [`DATA-HANDLING.md`](DATA-HANDLING.md) — PII / confidential data stays local.
-4. Skim [`COMPATIBILITY.md`](COMPATIBILITY.md) if you touch Claude Code vs Cowork behaviour.
+3. Read [`PRINCIPLES.md`](PRINCIPLES.md) — PII / confidential data stays local.
+4. Skim the [Mode & environment compatibility](README.md#mode--environment-compatibility)
+   section of the README if you touch Claude Code vs Cowork behaviour.
 
 By contributing, you agree your work is licensed under the same [Apache License 2.0](LICENSE)
 as the rest of the project (see also [`NOTICE`](NOTICE)).
@@ -78,8 +81,9 @@ in any sample output.
 - Prefer small PRs over large ones
 - Do not commit `.env`, real client data, or generated `examples/out/` artefacts
 - Do not use the Phronesis Applied name or marks in third-party branding — the toolkit ships
-  unbranded; white-label via `theme` (see [`ONBOARDING.md`](ONBOARDING.md), [`NOTICE`](NOTICE), and
-  `skills/data-visualise/references/brand.md`)
+  unbranded; white-label via `theme` (see the README's
+  [theme + logo](README.md#put-your-brand-on-a-dashboard-theme--logo) section, [`NOTICE`](NOTICE),
+  and `skills/data-visualise/references/brand.md`)
 
 ## Skill feedback format
 

@@ -36,7 +36,7 @@ Recovery:
 - missing/multi-sheet source → inspect/list and ask, never choose silently;
 - dirty input for analyse/convert/reconcile → route through `data-tidy`;
 - drift or aggregation approval → return the approval request unchanged;
-- engine/import failure → run `scripts/envcheck.py`, then consult `COMPATIBILITY.md`;
+- engine/import failure → run `scripts/envcheck.py`, then consult `README.md#mode--environment-compatibility`;
 - unsupported job → state the boundary and route to the appropriate non-data skill.
 
 ---

@@ -191,5 +191,5 @@ Improvement or bug? Use the toolkit's shared format — `../../CONTRIBUTING.md#s
 Portable: Python + `openpyxl` for `.xlsx` in/out; PDF/.docx/.msg inputs use the same
 optional libraries as data-tidy (degrade per-source). No network, no Office, no
 credentials. If an import fails or the environment is uncertain, pre-screen with
-`python ../../scripts/envcheck.py` and see `../../COMPATIBILITY.md` — otherwise just
+`python ../../scripts/envcheck.py` and see `../../README.md#mode--environment-compatibility` — otherwise just
 start analysing.

@@ -26,4 +26,4 @@ low-cardinality object columns) — typically **50–80%** memory reduction.
 ## Optional deps
 
 `pyarrow` + `pandas` are optional. Without them `ingest.read_large` falls back to a
-direct openpyxl read and warns that large files may OOM. See `COMPATIBILITY.md`.
+direct openpyxl read and warns that large files may OOM. See `README.md#mode--environment-compatibility`.

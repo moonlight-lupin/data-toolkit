@@ -299,7 +299,7 @@ manual, no fixed destination; fix in scope if asked.
 
 ## Requirements & mode
 
-Pre-screen before running: see `../../COMPATIBILITY.md` and run
+Pre-screen before running: see `../../README.md#mode--environment-compatibility` and run
 `python ../../scripts/envcheck.py`. **Highly portable** — pure Python stdlib for the HTML
 itself (no third-party library needed to render). `rows_from_xlsx` needs `openpyxl` only if
 you read an `.xlsx`. `open_in_browser` and print-to-PDF need a desktop browser (any OS);

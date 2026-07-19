@@ -187,7 +187,7 @@ shared format — `../../CONTRIBUTING.md#skill-feedback-format` — and save as 
 
 ## Requirements & mode
 
-Pre-screen: `../../COMPATIBILITY.md` + `python ../../scripts/envcheck.py`. Python + `openpyxl`
+Pre-screen: `../../README.md#mode--environment-compatibility` + `python ../../scripts/envcheck.py`. Python + `openpyxl`
 (for the `.xlsx` working paper and to read `.xlsx` sources); reads CSV/PDF/.docx/.msg via the
 shared engine (same optional deps as `data-tidy`). Portable — the code needs no network, no
 MS Office, no credentials, no connector.
