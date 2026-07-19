@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+**Root documentation consolidation** — reduce root-level `.md` files from 13 → 7
+across three batches, with two Cursor (grok-4.5-high) reviews catching real
+cross-reference breakage.
+
+- **Batch 1:** delete `SECURITY_REVIEW.md` (untracked one-off); fold `FEEDBACK.md`
+  into `CONTRIBUTING.md` as a "Skill feedback format" section; merge
+  `AGENT-FAST-PATH.md` + `AGENT-RUNTIME.md` into a single `AGENT.md`.
+- **Batch 2:** fold `ONBOARDING.md` (theme/logo, first-job table) and
+  `COMPATIBILITY.md` (mode matrix, capability matrix, hooks) into `README.md`.
+- **Batch 3:** collapse `DATA-HANDLING.md` into `PRINCIPLES.md` as a
+  `## Data handling & PII policy` section (`#data-handling--pii-policy`).
+  Behaviour charter (principles 1–10 + negative examples) and data-movement
+  charter remain distinguishable as separate sections. Heading renames avoid
+  GitHub slug collision. 14 files' references migrated: code strings use
+  `PRINCIPLES.md (§ Data handling)` (readable in terminal/hook dialogs);
+  markdown links use the `#data-handling--pii-policy` anchor.
+
 ## 0.8.2 — 2026-07-19
 
 **Post-#21 merge hygiene** — two leftovers from landing the analyse plan-surface

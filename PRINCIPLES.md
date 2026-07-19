@@ -6,7 +6,7 @@ plain-spoken, and inside its lane. The bottom half (`## Data handling & PII poli
 the **data-movement charter** — what data may leave the machine and when to tokenise on
 egress. They are deliberately separate sections so skills can point at each independently.
 
-> Each skill carries a short `## Principles` pointer to `#the-principles` and a
+> Each skill carries a short `## Principles` pointer to this file and a
 > `## Data handling` pointer to `#data-handling--pii-policy`, rather than restating either.
 
 The default is the cautious, auditable, verifiable approach. Written as concrete rules —
@@ -78,7 +78,7 @@ Specifying what *not* to do is clearer than abstract virtue. Avoid:
 
 ## How principles land per skill
 
-- Each skill carries a short `## Principles` pointer to `#the-principles` (like its
+- Each skill carries a short `## Principles` pointer to this file (like its
   `## Data handling` pointer points to `#data-handling--pii-policy`) rather than restating
   the rules.
 - New skills built on the toolkit should inherit this posture by default — apply these as

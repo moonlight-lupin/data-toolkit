@@ -130,8 +130,8 @@ any right to the Phronesis Applied name or marks in your own branding — see
 
 A common chain: extract → tidy → reconcile → analyse exceptions → visualise one-pager.
 
-Standing rules (drafts not advice; data stays local): [`PRINCIPLES.md`](PRINCIPLES.md),
-[`PRINCIPLES.md` — Data handling & PII](PRINCIPLES.md#data-handling--pii-policy).
+Standing rules (drafts not advice; data stays local): [`PRINCIPLES.md`](PRINCIPLES.md)
+([behaviour](PRINCIPLES.md#the-principles) · [data handling / PII](PRINCIPLES.md#data-handling--pii-policy)).
 
 ## Why teams choose it
 
@@ -387,7 +387,7 @@ GitHub Actions runs lint + suite + quickstart smoke on every push/PR to `main`.
 
 - Setup, checks, PRs: [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - Vulnerabilities: [`SECURITY.md`](SECURITY.md)
-- Behaviour / data rules: [`PRINCIPLES.md`](PRINCIPLES.md), [`PRINCIPLES.md` — Data handling & PII](PRINCIPLES.md#data-handling--pii-policy)
+- Behaviour / data rules: [`PRINCIPLES.md`](PRINCIPLES.md) ([behaviour](PRINCIPLES.md#the-principles) · [data handling / PII](PRINCIPLES.md#data-handling--pii-policy))
 
 ## License
 
