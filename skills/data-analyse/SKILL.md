@@ -183,7 +183,7 @@ confidential figures is gated on any egress. Full rule: `../../DATA-HANDLING.md`
 
 ## Feedback
 
-Improvement or bug? Use the toolkit's shared format — `../../FEEDBACK.md` — save as
+Improvement or bug? Use the toolkit's shared format — `../../CONTRIBUTING.md#skill-feedback-format` — save as
 `feedback_data-analyse_[date].txt` and hand it to the user to file; fix in scope if asked.
 
 ## Requirements & mode

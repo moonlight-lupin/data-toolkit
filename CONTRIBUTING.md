@@ -80,8 +80,61 @@ in any sample output.
 - Do not use the Phronesis Applied name or marks in third-party branding — the toolkit ships
   unbranded; white-label via `theme` (see [`ONBOARDING.md`](ONBOARDING.md), [`NOTICE`](NOTICE), and
   `skills/data-visualise/references/brand.md`)
-- Feedback from using a skill in the wild can also be captured with the template in
-  [`FEEDBACK.md`](FEEDBACK.md)
+
+## Skill feedback format
+
+When a user wants to suggest an improvement or report a problem with a skill, capture it in
+the format below so the skill author gets consistent, on-point, actionable input.
+
+> **Don't just fix it silently and move on** — also record the feedback so the underlying skill
+> improves for everyone.
+
+### How to capture it
+
+1. Identify **which skill** the feedback is about (e.g. `data-visualise`).
+2. Fill the template below from the conversation — ask only for what's missing.
+3. **Write it to a plain text file** named `feedback_[skill]_[YYYY-MM-DD].txt` in the user's
+   working/output folder (one file per feedback item).
+4. **Hand the `.txt` file to the user** — they file it wherever it needs to go. Collection is
+   manual; there's no automated routing.
+5. If the user also wants it fixed now and it's in scope, fix it *and* still produce the
+   feedback `.txt` so the improvement is recorded for the author.
+
+### Feedback template
+
+```
+### [YYYY-MM-DD] — [skill-name] — [one-line title]
+- Reporter:        [name / team]
+- Type:            Bug | Enhancement | Docs/clarity | New capability
+- Severity:        Blocker | Friction | Nice-to-have
+- What I was doing: [the task / goal]
+- Input / context:  [what was provided — file, values, options]
+- What happened:    [actual behaviour or output — quote it, don't paraphrase]
+- What I expected:  [the correct / desired behaviour]
+- Impact:           [what it cost — time, risk, a wrong output that went out]
+- Suggested fix:    [if you have one; optional]
+- Example / file:   [path or snippet that reproduces it]
+```
+
+### What makes feedback on-point
+
+- **One issue per entry.** Split unrelated points into separate entries.
+- **Be specific and reproducible** — name the exact column / cell / section / variable, and the
+  exact input that triggers it. "The totals were wrong" is weak; "row-27 GST went to column J
+  instead of the Total in K when GST=0" is actionable.
+- **Quote the actual output**, don't summarise it.
+- **Separate Bug from Enhancement.** A Bug = it did something wrong; an Enhancement = it works
+  but could do more. They're triaged differently.
+- **State the impact** so severity is clear (a wrong figure on a payment form is a Blocker; a
+  phrasing preference is Nice-to-have).
+
+### Severity guide
+
+| Severity | Meaning |
+|---|---|
+| **Blocker** | Wrong/unsafe output, or the skill can't complete the task — must fix before relying on it. |
+| **Friction** | Works but takes extra manual steps, re-prompting, or clean-up. |
+| **Nice-to-have** | Polish, wording, an optional extra capability. |
 
 ## Questions
 

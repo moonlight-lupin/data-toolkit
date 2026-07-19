@@ -129,7 +129,7 @@ share it with the entitled recipient.
 
 ## Feedback
 Have an improvement or found a bug? Capture it with the toolkit's shared feedback format
-(`../../FEEDBACK.md`) and hand it to the user to file; fix in scope if asked.
+(`../../CONTRIBUTING.md#skill-feedback-format`) and hand it to the user to file; fix in scope if asked.
 
 ## Requirements & mode
 Pre-screen: `../../COMPATIBILITY.md` + `python ../../scripts/envcheck.py`. Python + `openpyxl`

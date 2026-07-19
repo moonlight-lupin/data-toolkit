@@ -60,7 +60,7 @@ signed approval receipts — assume that model.
   network isolation are the host's responsibility.
 - For **unattended automation**, call the deterministic engines directly as scripts and add your
   own controls; don't point the interactive agent runtime at a pipeline expecting it to be a
-  hardened gateway. See [`AGENT-RUNTIME.md`](AGENT-RUNTIME.md) → *Intended use and trust model*.
+  hardened gateway. See [`AGENT.md`](AGENT.md) → *Intended use and trust model*.
 
 ## Data handling summary
 

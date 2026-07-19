@@ -292,7 +292,7 @@ non-sensitive, aggregated numbers is not gated. Full rule: `../../DATA-HANDLING.
 ## Feedback
 
 Have an improvement or found a bug in this skill? Capture it with the toolkit's
-**shared feedback format** — `../../FEEDBACK.md` — so it reaches the skill author
+**shared feedback format** — `../../CONTRIBUTING.md#skill-feedback-format` — so it reaches the skill author
 consistently (skill name, what you did, expected vs actual, severity, suggestion).
 Save it as a `.txt` file (`feedback_[skill]_[date].txt`) and hand it to the user to file —
 manual, no fixed destination; fix in scope if asked.

@@ -17,7 +17,7 @@ venv/
 *-selftest.xlsx
 *_selftest*.xlsx
 _selftest_clean.xlsx
-/--self-test
+**/--self-test
 
 # OS cruft
 .DS_Store

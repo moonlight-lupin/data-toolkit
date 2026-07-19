@@ -183,7 +183,7 @@ rule: `../../DATA-HANDLING.md`.
 ## Feedback
 
 Found a bug or an improvement (a new preset, a triage category)? Capture it with the toolkit's
-shared format — `../../FEEDBACK.md` — and save as `feedback_data-reconcile_[date].txt`.
+shared format — `../../CONTRIBUTING.md#skill-feedback-format` — and save as `feedback_data-reconcile_[date].txt`.
 
 ## Requirements & mode
 
