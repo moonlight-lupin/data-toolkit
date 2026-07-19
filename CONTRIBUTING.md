@@ -12,7 +12,7 @@ welcome.
    [Try it in ~10 minutes](README.md#try-it-in-10-minutes) sections of the README if you
    are new to the toolkit (incl. theme + logo).
 2. Read [`PRINCIPLES.md`](PRINCIPLES.md) — drafts not advice, never invent, stay in lane.
-3. Read [`DATA-HANDLING.md`](DATA-HANDLING.md) — PII / confidential data stays local.
+3. Read [`PRINCIPLES.md` — Data handling & PII](PRINCIPLES.md#data-handling--pii-policy) — PII / confidential data stays local.
 4. Skim the [Mode & environment compatibility](README.md#mode--environment-compatibility)
    section of the README if you touch Claude Code vs Cowork behaviour.
 
@@ -67,7 +67,7 @@ coercion of unparseable values.
 
 - One folder under `skills/<name>/` with a `SKILL.md` front matter (`name` == folder name)
 - Description: **single line**, non-empty, ≤ 1024 characters (enforced by `bin/data-lint`)
-- Point at `PRINCIPLES.md` and `DATA-HANDLING.md` rather than restating them
+- Point at `PRINCIPLES.md` (`#the-principles` and `#data-handling--pii-policy`) rather than restating them
 - State a clear **"does NOT do"** boundary
 - Add a tiny synthetic example under `examples/` when it helps reviewers
 

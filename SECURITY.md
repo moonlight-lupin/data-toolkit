@@ -3,7 +3,7 @@
 **Phronesis Applied — Data Toolkit**
 
 This toolkit is local-first: the compute engines run on the user's machine and do not
-upload files, call home, or send telemetry. Please read [`DATA-HANDLING.md`](DATA-HANDLING.md)
+upload files, call home, or send telemetry. Please read [`PRINCIPLES.md` — Data handling & PII](PRINCIPLES.md#data-handling--pii-policy)
 for the standing PII / confidential-data rule.
 
 ## Supported versions
@@ -70,7 +70,7 @@ signed approval receipts — assume that model.
 - **The AI agent driving the skills is not local**: whatever it reads into its context is sent
   to the AI provider (see above). The toolkit does not claim your data never leaves the machine
   — it claims the *processing* is local and that no third party beyond your AI provider sees it.
-  See [`DATA-HANDLING.md`](DATA-HANDLING.md)
+  See [`PRINCIPLES.md` — Data handling & PII](PRINCIPLES.md#data-handling--pii-policy)
 - Skills produce **drafts for a qualified person** — never post to ledgers or auto-send
 
 If you believe a shipped code path violates that summary, treat it as in-scope and email us.

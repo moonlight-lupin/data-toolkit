@@ -250,7 +250,7 @@ HTML Artifact in Cowork). If a genuine **React/JSX** dashboard is needed — ric
 cross-filtering, app-like behaviour — that's **out of scope here**. Hand off to the
 built-in **`anthropic-skills:web-artifacts-builder`** skill, but **carry this skill's
 guidance across**: the theme tokens from `references/brand.md` / `scripts/viz.py`
-(`BRAND`/`FONT`), the **data-handling / PII rule** (`../../DATA-HANDLING.md` — a React
+(`BRAND`/`FONT`), the **data-handling / PII rule** (`../../PRINCIPLES.md#data-handling--pii-policy` — a React
 artifact runs in the cloud runtime, so gated data must be de-identified first), and the
 house style (British English, DD MMM YYYY, *draft not advice*). Keep **this** skill for
 the common case: a clean, branded, printable dashboard that also opens as a live artifact.
@@ -287,7 +287,7 @@ shared file store**. If the dashboard contains **personal data or confidential b
 financial data** (e.g. named individuals with contact details or IDs, customer/supplier
 lists, pricing, unpublished financials), treat the file as gated — don't send it to any
 external tool, and only share with entitled recipients. A board built purely from
-non-sensitive, aggregated numbers is not gated. Full rule: `../../DATA-HANDLING.md`.
+non-sensitive, aggregated numbers is not gated. Full rule: `../../PRINCIPLES.md#data-handling--pii-policy`.
 
 ## Feedback
 

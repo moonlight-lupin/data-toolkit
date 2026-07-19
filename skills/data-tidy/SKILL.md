@@ -25,7 +25,7 @@ apply → report). Transforms are deterministic and logged; nothing is changed s
 > **Self-sufficient & local engine.** Runs on its own — no other toolkit needed. All processing
 > (including OCR) happens on your machine: no cloud OCR, no external APIs, no third-party uploads.
 > Note the AI agent driving the skill does send whatever it reads into its context to your AI
-> provider — "never leaves the machine" is not claimed. See `../../DATA-HANDLING.md`.
+> provider — "never leaves the machine" is not claimed. See `../../PRINCIPLES.md#data-handling--pii-policy`.
 
 ## Workflow
 
@@ -160,7 +160,7 @@ or confidential (commitments, schedules, statements). **Never send the data, or 
 external or third-party tool**; the clean `.xlsx` and the recipe stay in your synced or shared
 file store. Be aware the AI agent driving this skill sends whatever it reads into its context to
 your AI provider, as in any AI-assisted work. A bare list with nothing sensitive attached isn't confidential,
-but treat financial exports as sensitive by default. Full rule: `../../DATA-HANDLING.md`. (No
+but treat financial exports as sensitive by default. Full rule: `../../PRINCIPLES.md#data-handling--pii-policy`. (No
 external connector — files are local paths in your synced or shared file store.)
 
 ## Feedback

@@ -23,7 +23,7 @@ scans). Both share one engine, so extracted data is normalised and reported the 
 > **Self-sufficient & local engine.** No other toolkit needed. All processing — including OCR —
 > happens on your machine: no cloud OCR, no external APIs, no third-party uploads. Note the AI
 > agent driving the skill does send whatever it reads into its context to your AI provider;
-> "never leaves the machine" is not claimed. See `../../DATA-HANDLING.md`.
+> "never leaves the machine" is not claimed. See `../../PRINCIPLES.md#data-handling--pii-policy`.
 >
 > **Shared engine.** The cleanup primitives live at the plugin-root `scripts/`
 > (`dataclean.py`, `ingest.py`); this skill's `scripts/extract.py` adds them to the path.
@@ -186,13 +186,13 @@ calibration, plain speech, action boundary.
 The engine runs **on your machine** and makes no network calls for PDF/form/table extraction
 (local OCR only). **Image/chart extraction** (`image_extract.py`) is the exception: it sends
 the (possibly compressed) image to a user-configured vision API — treat that like any other
-external tool under `DATA-HANDLING.md` (de-identify first when the image holds PII or
+external tool under `PRINCIPLES.md#data-handling--pii-policy` (de-identify first when the image holds PII or
 confidential figures). The documents are often sensitive or confidential (subscription
 confirmations, statements, certificates name parties and amounts). **Never send a document,
 its text, or OCR of it to an external or third-party tool** unless the user has explicitly
 chosen vision extraction for an image; the extracted `.xlsx` stays in your synced or shared
 file store. Be aware the AI agent driving this skill sends whatever it reads into its context
-to your AI provider, as in any AI-assisted work. Full rule: `../../DATA-HANDLING.md`.
+to your AI provider, as in any AI-assisted work. Full rule: `../../PRINCIPLES.md#data-handling--pii-policy`.
 (No external connector — files are local paths in your synced or shared file store.)
 
 ## Feedback

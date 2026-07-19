@@ -19,7 +19,7 @@ normalisation + the change report all come from dataclean.
 
 DATA HANDLING: this engine runs on your machine and makes no network calls (local OCR only —
 never a cloud OCR). But the AI agent driving it sends whatever it reads into its context to your
-AI provider — "never leaves the machine" is NOT claimed. See ../DATA-HANDLING.md.
+AI provider — "never leaves the machine" is NOT claimed. See ../PRINCIPLES.md (§ Data handling).
 """
 
 from __future__ import annotations

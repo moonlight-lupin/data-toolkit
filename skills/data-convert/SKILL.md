@@ -123,7 +123,7 @@ calibration, plain speech, action boundary.
 ## Data handling
 The engine runs **on your machine** and makes no network calls; cleaning delegates to `data-tidy`
 locally. As with any AI-assisted work, the agent driving the skill sends whatever it reads into
-its context to your AI provider — see `../../DATA-HANDLING.md`. Keep sources and outputs on your
+its context to your AI provider — see `../../PRINCIPLES.md#data-handling--pii-policy`. Keep sources and outputs on your
 synced or shared file store; a target file carrying personal or confidential data is gated — only
 share it with the entitled recipient.
 

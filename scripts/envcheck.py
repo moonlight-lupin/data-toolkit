@@ -7,7 +7,7 @@ per-skill readiness line. Run before using a skill if the environment is uncerta
     python scripts/envcheck.py
 
 The toolkit's engine runs on your machine and makes no network calls (the AI agent driving it
-does send whatever it reads to your AI provider — see DATA-HANDLING.md). Most jobs
+does send whatever it reads to your AI provider — see PRINCIPLES.md § Data handling). Most jobs
 (xlsx / csv / paste / digital PDF) need only openpyxl; heavier inputs (PDF, .docx,
 .msg) and OCR add optional dependencies that degrade cleanly when absent.
 

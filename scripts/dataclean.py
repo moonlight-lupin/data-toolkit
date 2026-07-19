@@ -19,7 +19,7 @@ DATA HANDLING: this engine runs on your machine and makes no network calls (no c
 external APIs). But the AI agent driving it sends whatever it reads into its context to your AI
 provider — so "your data never leaves the machine" is NOT claimed. If the data is sensitive or
 confidential business/financial data, keep it on your synced or shared file store and never send
-it, or OCR of it, to a third-party tool. See ../DATA-HANDLING.md.
+it, or OCR of it, to a third-party tool. See ../PRINCIPLES.md (§ Data handling).
 """
 
 from __future__ import annotations
@@ -963,7 +963,7 @@ def _build_card(mode, doctype, title, date, pyname, spec):
           "", "## Data handling",
           "This runner is plain Python and makes no network calls — running it sends your data "
           "nowhere. (An AI agent that reads the data to build or check the recipe does send what it "
-          "reads to your AI provider.) See the toolkit's `DATA-HANDLING.md`.",
+          "reads to your AI provider.) See the toolkit's `PRINCIPLES.md` (§ Data handling).",
           "", "## Maintenance", "Regenerate if the source layout changes materially."]
     return "\n".join(L) + "\n"
 

@@ -71,13 +71,13 @@ if _hit(STRONG):
             "Data-handling: this external call looks like it may carry personal or "
             "confidential data (a name/ID/contact detail or a private business record). "
             "Send the public fact, not the private record — tokenise or omit the sensitive "
-            "data first (see DATA-HANDLING.md). Proceed?")}}))
+            "data first (see PRINCIPLES.md § Data handling). Proceed?")}}))
     sys.exit(0)
 
 if _hit(HOLDING):
     print(json.dumps({"systemMessage": (
         "Data-handling reminder: this external call may carry sensitive data (a holding %). Send "
-        "only public, non-sensitive content — de-identify personal/confidential data first (DATA-HANDLING.md).")}))
+        "only public, non-sensitive content — de-identify personal/confidential data first (PRINCIPLES.md § Data handling).")}))
     sys.exit(0)
 
 sys.exit(0)

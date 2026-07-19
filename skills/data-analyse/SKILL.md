@@ -27,7 +27,7 @@ it never generates figures).
 > **Self-sufficient & local engine.** All computation runs on your machine via
 > `scripts/analyse.py` (+ the shared toolkit engine) — no network calls. Note the AI agent
 > driving the skill does send whatever it reads into its context to your AI provider;
-> "never leaves" is not claimed. See `../../DATA-HANDLING.md`.
+> "never leaves" is not claimed. See `../../PRINCIPLES.md#data-handling--pii-policy`.
 
 ## Workflow
 
@@ -179,7 +179,7 @@ calibration, plain speech, action boundary.
 Metrics are computed **on your machine** — the data, the metrics and the brief stay on your synced
 or shared file store, and the engine uploads nothing. (The AI agent driving the skill does send
 whatever it reads into its context to your AI provider.) A brief that names individuals or quotes
-confidential figures is gated on any egress. Full rule: `../../DATA-HANDLING.md`.
+confidential figures is gated on any egress. Full rule: `../../PRINCIPLES.md#data-handling--pii-policy`.
 
 ## Feedback
 

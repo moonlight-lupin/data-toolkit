@@ -14,7 +14,7 @@ self-contained binary — not a Python package. Install it separately (`brew ins
 officecli`, `scoop install officecli`, `npm i -g @officecli/officecli`, or a release
 binary) and make sure `officecli` is on PATH. Its project documentation states it runs
 fully locally with no network access or API keys; that is the vendor's claim, which this
-toolkit relays rather than certifies — see `../../../DATA-HANDLING.md`.
+toolkit relays rather than certifies — see `../../../PRINCIPLES.md#data-handling--pii-policy`.
 
 Design notes:
 - **This is the toolkit's only subprocess.** Calls are made with an argument list (never

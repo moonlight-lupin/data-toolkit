@@ -26,7 +26,7 @@ review and sign off.
 > post a correction, or write to any system. Unmatched items stay flagged — **never
 > force-fitted** into a match. Matching and triage are computed **on your machine** (the engine
 > makes no external calls) — though the AI agent driving it does send whatever it reads into its
-> context to your AI provider; see `../../DATA-HANDLING.md`.
+> context to your AI provider; see `../../PRINCIPLES.md#data-handling--pii-policy`.
 
 ## Workflow
 
@@ -178,7 +178,7 @@ synced or shared file store and **nothing is sent to any external tool** by the 
 agent driving the skill does send whatever it reads into its context to your AI provider.) Reconciliations routinely touch bank details and
 sensitive account data (esp. the fund-administrator preset) — keep it local, and
 `redact()` parties/amounts before any reconciliation artefact leaves its entitled use. Full
-rule: `../../DATA-HANDLING.md`.
+rule: `../../PRINCIPLES.md#data-handling--pii-policy`.
 
 ## Feedback
 

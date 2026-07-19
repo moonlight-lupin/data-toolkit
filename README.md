@@ -131,7 +131,7 @@ any right to the Phronesis Applied name or marks in your own branding — see
 A common chain: extract → tidy → reconcile → analyse exceptions → visualise one-pager.
 
 Standing rules (drafts not advice; data stays local): [`PRINCIPLES.md`](PRINCIPLES.md),
-[`DATA-HANDLING.md`](DATA-HANDLING.md).
+[`PRINCIPLES.md` — Data handling & PII](PRINCIPLES.md#data-handling--pii-policy).
 
 ## Why teams choose it
 
@@ -145,7 +145,7 @@ Standing rules (drafts not advice; data stays local): [`PRINCIPLES.md`](PRINCIPL
   do claim: the processing is local, no *third party* beyond the provider you already
   chose sees your data, and because the engine does the heavy lifting the agent works
   with samples and summaries rather than streaming whole datasets through the model.
-  See [`DATA-HANDLING.md`](DATA-HANDLING.md).
+  See [`PRINCIPLES.md` — Data handling & PII](PRINCIPLES.md#data-handling--pii-policy).
 - **Numbers you can defend.** Every transform and every quoted figure is computed by
   a deterministic engine (exact `Decimal`, currency-aware, dates normalised) and
   logged — not free-typed by a model having a creative afternoon. Money doesn’t
@@ -292,7 +292,7 @@ degraded result.
 **Rule of thumb:** the whole toolkit is **portable and runs on your machine** — pure Python
 plus a few optional libraries for non-spreadsheet inputs and local OCR. None of the *code*
 needs the network or credentials. (The AI agent driving it does, of course, send whatever
-it reads into its context to your AI provider — see [`DATA-HANDLING.md`](DATA-HANDLING.md).) The only mode-specific wrinkle is `data-visualise`'s
+it reads into its context to your AI provider — see [`PRINCIPLES.md` — Data handling & PII](PRINCIPLES.md#data-handling--pii-policy).) The only mode-specific wrinkle is `data-visualise`'s
 preview: in a headless/Cowork session it still builds the `.html` (and it doubles as a live
 Artifact there) — open it in a desktop browser to print to PDF.
 
@@ -304,7 +304,7 @@ Artifact there) — open it in a desktop browser to print to PDF.
   library that syncs into the file system is reached as an ordinary **local path**, not a
   connector. This is why the toolkit is built around local file I/O — and it keeps PII on
   the local/synced store rather than pushing it through a cloud connector. See
-  [`DATA-HANDLING.md`](DATA-HANDLING.md).
+  [`PRINCIPLES.md` — Data handling & PII](PRINCIPLES.md#data-handling--pii-policy).
 
 ### Not auto-detectable
 
@@ -318,7 +318,7 @@ The bundled `hooks/` fire in **Claude Code (local)**, where `${CLAUDE_PLUGIN_ROO
 resolves: a PreToolUse **PII-egress reminder** on web / external-connector calls, and a
 PostToolUse **SKILL.md hygiene** check. They are **fail-open and self-resolving** — in
 **Cowork** they **no-op rather than block**, and they **never intercept local sandbox
-tools**. So in Cowork the egress reminder does not run — [`DATA-HANDLING.md`](DATA-HANDLING.md)
+tools**. So in Cowork the egress reminder does not run — [`PRINCIPLES.md` — Data handling & PII](PRINCIPLES.md#data-handling--pii-policy)
 is the actual control, and it applies in **every** mode regardless of the hook.
 
 ## Under the hood
@@ -387,7 +387,7 @@ GitHub Actions runs lint + suite + quickstart smoke on every push/PR to `main`.
 
 - Setup, checks, PRs: [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - Vulnerabilities: [`SECURITY.md`](SECURITY.md)
-- Behaviour / data rules: [`PRINCIPLES.md`](PRINCIPLES.md), [`DATA-HANDLING.md`](DATA-HANDLING.md)
+- Behaviour / data rules: [`PRINCIPLES.md`](PRINCIPLES.md), [`PRINCIPLES.md` — Data handling & PII](PRINCIPLES.md#data-handling--pii-policy)
 
 ## License
 
