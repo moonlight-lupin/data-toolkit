@@ -12,7 +12,7 @@ welcome.
    [Try it in ~10 minutes](README.md#try-it-in-10-minutes) sections of the README if you
    are new to the toolkit (incl. theme + logo).
 2. Read [`PRINCIPLES.md`](PRINCIPLES.md) — drafts not advice, never invent, stay in lane.
-3. Read [`PRINCIPLES.md`](PRINCIPLES.md) — PII / confidential data stays local.
+3. Read [`DATA-HANDLING.md`](DATA-HANDLING.md) — PII / confidential data stays local.
 4. Skim the [Mode & environment compatibility](README.md#mode--environment-compatibility)
    section of the README if you touch Claude Code vs Cowork behaviour.
 
@@ -131,6 +131,24 @@ the format below so the skill author gets consistent, on-point, actionable input
   but could do more. They're triaged differently.
 - **State the impact** so severity is clear (a wrong figure on a payment form is a Blocker; a
   phrasing preference is Nice-to-have).
+- **Suggest the fix** if you know it — but the symptom + repro matters most.
+- **Attach the artefact** (the generated file / the exact text) where possible.
+
+### Example entry
+
+```
+### 2026-06-12 — data-tidy — Dates in DD/MM/YYYY mis-parsed as US M/D
+- Reporter:        Ops team
+- Type:            Bug
+- Severity:        Blocker
+- What I was doing: Tidying a contacts export with UK-format dates.
+- Input / context:  tidy(..., date column "Joined", values like 03/04/2026)
+- What happened:    03/04/2026 was read as 4 Mar 2026 instead of 3 Apr 2026.
+- What I expected:  DD/MM/YYYY honoured (or a prompt when the format is ambiguous).
+- Impact:           ~40 rows had the day/month swapped silently — wrong output went out.
+- Suggested fix:    Detect locale or ask up front when day ≤ 12 makes it ambiguous.
+- Example / file:   messy_contacts.txt, "Joined" column.
+```
 
 ### Severity guide
 

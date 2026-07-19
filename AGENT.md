@@ -4,7 +4,6 @@ Two parts: a **fast path** an agent uses first, and the **full runtime** referen
 
 ## Fast path
 
-
 1. Identify the job:
    - document or form → `data-extract`
    - messy table → `data-tidy`
@@ -40,9 +39,9 @@ Recovery:
 - unsupported job → state the boundary and route to the appropriate non-data skill.
 
 ---
-
 ## Full runtime
 
+`bin/data-toolkit` is the stable machine interface for AI agents. It does not replace the six
 skills or their engines; it gives them one entry point, one plan format, one approval model and
 one result envelope so an agent does not have to improvise glue code.
 
@@ -103,7 +102,7 @@ Use `validate-spec` for a faster edit/repair loop; errors include JSON pointers 
 `/operations/0` or `/columns/2/type`. `schema` prints the catalogue, and `schema data-tidy` prints
 one full schema. Conversion-card Markdown is validated from its embedded `convert-spec` block.
 
-For routine execution, agents should start with `AGENT.md` rather than loading every
+For routine execution, agents should start with the **Fast path** section above rather than loading every
 long skill reference into context.
 
 ## Version 1 plan

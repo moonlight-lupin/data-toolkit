@@ -130,6 +130,9 @@ any right to the Phronesis Applied name or marks in your own branding — see
 
 A common chain: extract → tidy → reconcile → analyse exceptions → visualise one-pager.
 
+Standing rules (drafts not advice; data stays local): [`PRINCIPLES.md`](PRINCIPLES.md),
+[`DATA-HANDLING.md`](DATA-HANDLING.md).
+
 ## Why teams choose it
 
 - **Local engine, no third-party services.** No network calls in the core path, no
@@ -158,7 +161,7 @@ A common chain: extract → tidy → reconcile → analyse exceptions → visual
 - **White-label ready.** Ships unbranded — a neutral default; pass a `theme` dict
   (brand name, colours, fonts, local logo) to re-skin HTML dashboards **and** Excel
   chart workbooks from the same palette. See
-  [Onboarding §3](#put-your-brand-on-a-dashboard-theme--logo).
+  [theme + logo](#put-your-brand-on-a-dashboard-theme--logo).
 - **Agent-stable interface.** Plans validate against schemas, dry-run before write,
   confirm-first for irreversible work — `bin/data-toolkit` is the stable entry point
   (`AGENT.md`).
@@ -289,8 +292,7 @@ degraded result.
 **Rule of thumb:** the whole toolkit is **portable and runs on your machine** — pure Python
 plus a few optional libraries for non-spreadsheet inputs and local OCR. None of the *code*
 needs the network or credentials. (The AI agent driving it does, of course, send whatever
-it reads into its context to your AI provider — see
-[`PRINCIPLES.md`](PRINCIPLES.md).) The only mode-specific wrinkle is `data-visualise`'s
+it reads into its context to your AI provider — see [`DATA-HANDLING.md`](DATA-HANDLING.md).) The only mode-specific wrinkle is `data-visualise`'s
 preview: in a headless/Cowork session it still builds the `.html` (and it doubles as a live
 Artifact there) — open it in a desktop browser to print to PDF.
 
@@ -301,7 +303,14 @@ Artifact there) — open it in a desktop browser to print to PDF.
 - **Shared stores are reached as synced local files.** A SharePoint / OneDrive / Drive
   library that syncs into the file system is reached as an ordinary **local path**, not a
   connector. This is why the toolkit is built around local file I/O — and it keeps PII on
-  the local/synced store rather than pushing it through a cloud connector.
+  the local/synced store rather than pushing it through a cloud connector. See
+  [`DATA-HANDLING.md`](DATA-HANDLING.md).
+
+### Not auto-detectable
+
+`envcheck.py` can see installed Python libraries and OS/Office availability, but it **can't**
+see whether the current session is headless or has an artifact panel — that depends on the
+mode/runtime, not the machine. Confirm that from the runtime context.
 
 ### Hooks (Claude Code only)
 
@@ -309,8 +318,8 @@ The bundled `hooks/` fire in **Claude Code (local)**, where `${CLAUDE_PLUGIN_ROO
 resolves: a PreToolUse **PII-egress reminder** on web / external-connector calls, and a
 PostToolUse **SKILL.md hygiene** check. They are **fail-open and self-resolving** — in
 **Cowork** they **no-op rather than block**, and they **never intercept local sandbox
-tools**. So in Cowork the egress reminder does not run — `PRINCIPLES.md` is the actual
-control, and it applies in **every** mode regardless of the hook.
+tools**. So in Cowork the egress reminder does not run — [`DATA-HANDLING.md`](DATA-HANDLING.md)
+is the actual control, and it applies in **every** mode regardless of the hook.
 
 ## Under the hood
 
