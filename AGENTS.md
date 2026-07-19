@@ -1,5 +1,9 @@
 # AGENTS.md
 
+Instructions for a coding agent **working on this repository** — environment, how to run
+things, how to test. (For how to *drive the toolkit* — plans, schemas, approvals — see
+[`RUNTIME.md`](RUNTIME.md).)
+
 ## Cursor Cloud specific instructions
 
 This repo is a fully-local Claude Code plugin (data-prep): shared engine scripts in `scripts/`
@@ -10,14 +14,14 @@ the unified agent runtime, and "testing" means the regression suites.
 - Runtime: Python 3 (VM has 3.12). Hard dependency: `openpyxl` (see `requirements.txt`).
   Optional per-input-type extras are `PyMuPDF` (fitz), `pdfplumber`, `python-docx`,
   `extract_msg`, and system Tesseract (OCR) — install only if exercising those paths.
-- Read `AGENT.md` first. Open a full skill `SKILL.md` only for ambiguous intent, complex design, interpretation, or recovery.
+- Read `RUNTIME.md` first. Open a full skill `SKILL.md` only for ambiguous intent, complex design, interpretation, or recovery.
 - Prefer the stable agent interface for planned work:
   - `python3 bin/data-toolkit inspect SOURCE`
   - `python3 bin/data-toolkit validate-spec SKILL SPEC.json`
   - `python3 bin/data-toolkit validate PLAN.json`
   - `python3 bin/data-toolkit run PLAN.json --dry-run`
   - `python3 bin/data-toolkit run PLAN.json --json-report run-result.json`
-  See `AGENT.md`. Do not bypass a `needs_approval` result. Secondary drift and
+  See `RUNTIME.md`. Do not bypass a `needs_approval` result. Secondary drift and
   aggregation approvals require a signed receipt; never put the operator signing key in the
   agent environment or plan.
 - Run tests with `python3 tests/test_engine.py`, `python3 tests/test_agent_runtime.py`, and

@@ -164,7 +164,7 @@ Standing rules (drafts not advice; data stays local): [`PRINCIPLES.md`](PRINCIPL
   [theme + logo](#put-your-brand-on-a-dashboard-theme--logo).
 - **Agent-stable interface.** Plans validate against schemas, dry-run before write,
   confirm-first for irreversible work — `bin/data-toolkit` is the stable entry point
-  (`AGENT.md`).
+  (`RUNTIME.md`).
 - **Standalone.** Plain Python plus optional libraries for non-spreadsheet inputs. It
   also slots in as a data-prep front end for the rest of the Phronesis Applied suite,
   but depends on none of them.
@@ -341,7 +341,7 @@ Per-skill engines:
   Excel charts via `openpyxl`); optional `officecli_render.py` for chart→PNG
 - **data-extract** — `image_extract.py` for vision chart/table images when configured
 
-Agent-facing docs: [`AGENT.md`](AGENT.md) (fast path + full runtime).
+Agent-facing docs: [`RUNTIME.md`](RUNTIME.md) (fast path + full runtime).
 
 ## Getting started
 

@@ -5,7 +5,7 @@ Six worked **agent plans** — one per skill — that run end-to-end through the
 
 1. **A worked example.** Canonical, known-good plan shapes an agent (or a person) can copy.
    Pair each with its skill's schema (`python bin/data-toolkit schema <skill>`) and the
-   [`AGENT.md`](../../AGENT.md) workflow.
+   [`RUNTIME.md`](../../RUNTIME.md) workflow.
 2. **A smoke test.** One command exercises all six skills through validation + execution, so a
    change that breaks the runtime or a skill's engine is caught immediately.
 
