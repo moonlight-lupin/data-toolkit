@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.3 — 2026-07-19
 
 **Root documentation consolidation** — reduce root-level `.md` files from 13 → 7
 across three batches, with two Cursor (grok-4.5-high) reviews catching real
