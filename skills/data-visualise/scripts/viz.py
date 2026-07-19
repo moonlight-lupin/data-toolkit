@@ -1864,6 +1864,21 @@ def blocks_from_analysis(analysis, *, ops=None, max_groups: int = 10) -> list[st
                              show_last=spec.get("show_last", True), unit=spec.get("unit", ""))
         if kind == "waterfall":
             return waterfall(spec.get("steps", []), title=spec.get("title"), unit=spec.get("unit", ""))
+        if kind == "scatter_chart":
+            return scatter_chart(spec.get("x", []), spec.get("y", []),
+                                 title=spec.get("title"),
+                                 x_label=spec.get("x_label"), y_label=spec.get("y_label"),
+                                 unit_x=spec.get("unit_x", ""),
+                                 unit_y=spec.get("unit_y", spec.get("unit", "")),
+                                 labels=spec.get("labels"),
+                                 trend_line=spec.get("trend_line", False))
+        if kind == "histogram":
+            return histogram(spec.get("values", []), bins=spec.get("bins", 10),
+                             title=spec.get("title"), unit=spec.get("unit", ""))
+        if kind == "stacked_bar":
+            return stacked_bar(spec.get("data", {}), title=spec.get("title"),
+                               unit=spec.get("unit", ""),
+                               legend=spec.get("legend", True))
         if kind == "section":
             return section(spec.get("title", ""), *[_render(c) for c in spec.get("blocks", [])])
         if kind == "grid":
