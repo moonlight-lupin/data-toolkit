@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.4 — 2026-07-19
 
 - **Renamed `AGENT.md` → `RUNTIME.md`.** After the batch-1 consolidation the repo had both
   `AGENT.md` and `AGENTS.md` at root — one character apart, adjacent in any file listing, and
