@@ -1,6 +1,11 @@
-# Agent
+# Agent runtime
 
-Two parts: a **fast path** an agent uses first, and the **full runtime** reference for when you need the detail.
+How an agent **drives this toolkit**: plans, schemas, approvals, and the per-skill plan
+shapes. Two parts — a **fast path** to use first, and the **full runtime** reference for
+when you need the detail.
+
+> Looking for how to *work on this repo* (environment, tests, CI)? That is
+> [`AGENTS.md`](AGENTS.md) — a different file for a different job.
 
 ## Fast path
 

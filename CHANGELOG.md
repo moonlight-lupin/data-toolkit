@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Renamed `AGENT.md` → `RUNTIME.md`.** After the batch-1 consolidation the repo had both
+  `AGENT.md` and `AGENTS.md` at root — one character apart, adjacent in any file listing, and
+  meaning opposite things (`AGENTS.md` is the fixed-convention file for an agent *working on
+  the repo*; `AGENT.md` documented how an agent *drives the toolkit*). `AGENTS.md` cannot be
+  renamed, so the other one moved. `RUNTIME.md` also restores most of its historical name
+  (`AGENT-RUNTIME.md`). Both files now open with a one-line pointer to the other, so the
+  distinction survives the next reader. References updated in `AGENTS.md`, `README.md`,
+  `SECURITY.md` and `examples/golden-plans/README.md`.
+
 ## 0.8.3 — 2026-07-19
 
 **Root documentation consolidation** — reduce root-level `.md` files from 13 → 7
