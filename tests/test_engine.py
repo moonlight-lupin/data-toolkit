@@ -42,6 +42,7 @@ import extract          # noqa: E402
 import ingest           # noqa: E402
 import reconcile        # noqa: E402
 import viz              # noqa: E402
+import workbook         # noqa: E402
 
 
 # --------------------------------------------------------------------------- #
@@ -175,6 +176,625 @@ def test_viz_rows_from_xlsx_multisheet_safe():
     except Exception as e:                                   # SheetSelectionRequired or ValueError
         assert "sheet" in str(e).lower() or "Data" in str(e)
     assert viz.rows_from_xlsx(str(multi), sheet="Data") == [{"k": 1, "v": 2}]
+
+
+def test_workbook_excel_charts_and_analysis_handoff():
+    path = workbook.write_charts_xlsx(
+        Path(tempfile.mkdtemp()) / "charts.xlsx",
+        [
+            {"chart_type": "column", "title": "By day",
+             "categories": ["Mon", "Tue"], "series": [{"name": "Done", "values": [4, 7]}]},
+            {"chart_type": "line", "title": "Trend",
+             "categories": ["W1", "W2", "W3"],
+             "series": [{"name": "Open", "values": [10, 14, 9]},
+                        {"name": "Closed", "values": [8, 11, 13]}]},
+            {"chart_type": "waterfall", "title": "Bridge",
+             "steps": [
+                 {"label": "Open", "value": 12, "kind": "start"},
+                 {"label": "Done", "value": -5, "kind": "delta"},
+                 {"label": "Close", "value": 7, "kind": "total"},
+             ]},
+        ],
+        workbook_title="Self-test",
+    )
+    assert path.is_file() and path.stat().st_size > 1000
+    from openpyxl import load_workbook
+    wb = load_workbook(path)
+    assert "By day" in wb.sheetnames and len(wb["By day"]._charts) == 1
+    assert len(wb["Bridge"]._charts) == 1
+
+    analysis = {
+        "results": [
+            {"op": "breakdown", "name": "Cust", "result": {
+                "by": "Customer",
+                "groups": [{"key": "A", "total": "100", "count": 1},
+                           {"key": "B", "total": "40", "count": 1}],
+            }},
+            {"op": "period_series", "name": "Monthly", "result": {
+                "grain": "month",
+                "periods": [
+                    {"period": "2026-01", "total": "100", "delta": None},
+                    {"period": "2026-02", "total": "130", "delta": "30"},
+                ],
+            }},
+            {"op": "concentration", "name": "skip", "result": {"hhi": 2000}},
+        ]
+    }
+    specs = workbook.suggest_charts_from_analysis(analysis)
+    types = [s["chart_type"] for s in specs]
+    assert "column" in types and "pie" in types and "line" in types and "waterfall" in types
+    assert all(s["chart_type"] != "concentration" for s in specs)
+    out = workbook.charts_from_analysis(analysis, Path(tempfile.mkdtemp()) / "from-analysis.xlsx")
+    assert out.is_file()
+
+
+def test_officecli_render_is_optional_and_never_locks_the_workbook():
+    """The OfficeCLI renderer is opt-in. Absent → degrade silently; present → PNGs *and* the
+    workbook must be released (a resident holds an OS file lock until it is closed)."""
+    import os
+
+    import officecli_render as ocr
+
+    charts = [{"chart_type": "column", "title": "T",
+               "categories": ["A", "B"], "series": {"V": [1, 2]}}]
+
+    # --- always: with the binary unavailable nothing raises and nothing is produced ---
+    real_which = ocr.shutil.which
+    try:
+        ocr.shutil.which = lambda _name: None
+        td = Path(tempfile.mkdtemp())
+        src = workbook.write_charts_xlsx(td / "absent.xlsx", charts)
+        assert ocr.available() is False
+        assert ocr.chart_paths(src) == []
+        assert ocr.render_chart_pngs(src, td / "out") == []
+        assert ocr.render_sheet_png(src, td / "s.png") is None
+        assert ocr.status() == {"available": False, "path": None, "version": None}
+        assert src.is_file()                      # the workbook itself is untouched
+    finally:
+        ocr.shutil.which = real_which
+
+    # --- only when actually installed AND a headless browser is available:
+    #     OfficeCLI delegates screenshot rendering to Chrome/Chromium/Firefox/
+    #     Playwright; without one it exits 0 but produces no PNG — an environment
+    #     gap, not a code bug. Skip the live-render assertions in that case (the
+    #     absent-binary branch above already covers the "nothing raises, nothing
+    #     produced" contract).
+    if not ocr.available() or not _officecli_browser_available():
+        return
+    td = Path(tempfile.mkdtemp())
+    src = workbook.write_charts_xlsx(td / "live.xlsx", charts)
+    pngs = ocr.render_chart_pngs(src, td / "out")
+    assert pngs and all(p.is_file() and p.stat().st_size > 0 for p in pngs)
+    probe = str(src) + ".probe"
+    os.replace(src, probe)                        # raises PermissionError if still locked
+    os.replace(probe, src)
+
+
+def _officecli_browser_available() -> bool:
+    """True when a headless browser OfficeCLI can drive is installed.
+
+    OfficeCLI's `view ... screenshot` delegates to Chrome/Chromium/Edge/Firefox
+    or Playwright; without one it exits 0 but writes no PNG. We detect by probing
+    a real render with a tiny 1-chart workbook — cheaper and more accurate than
+    hunting for browser binaries across platforms.
+    """
+    import shutil
+    import officecli_render as ocr
+    if not ocr.available():
+        return False
+    import tempfile
+    td = Path(tempfile.mkdtemp())
+    try:
+        import workbook as _wb
+        src = _wb.write_charts_xlsx(td / "probe.xlsx", [
+            {"chart_type": "column", "title": "p",
+             "categories": ["A"], "series": {"V": [1]}}])
+        pngs = ocr.render_chart_pngs(src, td / "out", timeout=30)
+        return bool(pngs) and all(p.is_file() and p.stat().st_size > 0 for p in pngs)
+    except Exception:
+        return False
+    finally:
+        shutil.rmtree(td, ignore_errors=True)
+
+
+def test_officecli_render_degrades_gracefully_on_every_failure_mode():
+    """OfficeCLI is *optional*, so the contract is absolute: once the .xlsx is written,
+    nothing the renderer does can fail the run. Every hostile mode must return a value —
+    a non-zero exit, unparseable output, an unwritable destination, or an outright
+    exception from the subprocess layer."""
+    import officecli_render as ocr
+
+    td = Path(tempfile.mkdtemp())
+    src = td / "x.xlsx"
+    src.write_bytes(b"not really a workbook")   # never opened: _run is stubbed throughout
+    real_which, real_run = ocr.shutil.which, ocr._run
+    try:
+        ocr.shutil.which = lambda _name: "/fake/officecli"      # pretend it is installed
+        assert ocr.available() is True
+
+        ocr._run = lambda _a, timeout=60: (1, "", "boom")       # non-zero exit
+        assert ocr.render_chart_pngs(src, td / "o1") == []
+
+        ocr._run = lambda _a, timeout=60: (0, "<<<not json>>>", "")   # garbage stdout
+        assert ocr.chart_paths(src) == []
+        assert ocr.render_chart_pngs(src, td / "o2") == []
+
+        # a *file* sits where out_dir must be created -> mkdir raises, we must not
+        blocker = td / "o3"
+        blocker.write_text("in the way", encoding="utf-8")
+        ocr._run = lambda _a, timeout=60: (0, '{"data":{"results":[{"path":"/S/chart[1]"}]}}', "")
+        assert ocr.render_chart_pngs(src, blocker) == []
+
+        def explode(_a, timeout=60):                            # unexpected subprocess error
+            raise RuntimeError("subprocess exploded")
+        ocr._run = explode
+        assert ocr.render_chart_pngs(src, td / "o4") == []
+        assert ocr.render_sheet_png(src, td / "o5" / "s.png") is None
+        assert ocr.chart_paths(src) == []
+        assert ocr.version() is None
+        assert ocr.release(src) is False          # runs inside a finally: must never raise
+        assert ocr.status()["available"] is True  # probing still answers
+    finally:
+        ocr.shutil.which, ocr._run = real_which, real_run
+
+
+def test_render_png_never_costs_the_run_its_workbook():
+    """End-to-end: a plan asking for render_png must still yield the .xlsx when the optional
+    renderer is missing, un-importable, or blows up — degraded to a warning, never an error."""
+    import builtins
+
+    import agent_runtime
+
+    td = Path(tempfile.mkdtemp())
+    src = td / "d.csv"
+    src.write_text("region,amount\nNorth,10\nSouth,20\n", encoding="utf-8")
+    plan = {
+        "version": 1, "skill": "data-visualise", "input": str(src),
+        "output": str(td / "c.xlsx"), "format": "xlsx",
+        "dashboard": {"title": "By region", "render_png": True, "blocks": [
+            {"type": "chart", "chart_type": "bar", "title": "By region",
+             "categories": ["North", "South"],
+             "series": [{"name": "Amount", "values": [10, 20]}]}]},
+    }
+
+    def assert_survives(label):
+        env = agent_runtime.run_plan(json.loads(json.dumps(plan)), base_dir=td)
+        assert env["status"] == "success_with_warnings", f"{label}: {env.get('errors')}"
+        assert [a["kind"] for a in env["artifacts"]] == ["xlsx_charts"], label
+        assert any("render_png" in w for w in env["warnings"]), label
+
+    real_import = builtins.__import__
+
+    def blocked(name, *a, **k):
+        if name == "officecli_render":
+            raise ImportError("simulated: module missing")
+        return real_import(name, *a, **k)
+
+    builtins.__import__ = blocked
+    try:
+        assert_survives("import fails")
+    finally:
+        builtins.__import__ = real_import
+
+    import officecli_render as ocr
+    real_avail, real_render = ocr.available, ocr.render_chart_pngs
+    try:
+        ocr.available = lambda: True
+
+        def boom(*_a, **_k):
+            raise RuntimeError("renderer exploded")
+        ocr.render_chart_pngs = boom
+        assert_survives("renderer raises")
+
+        ocr.available = lambda: False
+        assert_survives("binary absent")
+    finally:
+        ocr.available, ocr.render_chart_pngs = real_avail, real_render
+
+
+def test_workbook_charts_follow_the_visualise_theme():
+    """A white-label theme must colour the Excel workbook as it colours the HTML dashboard —
+    one palette drives both artefacts (regression: the xlsx path used to ignore `theme`)."""
+    import re
+    import zipfile
+
+    charts = [{"chart_type": "column", "title": "By region",
+               "categories": ["N", "S"], "series": {"Amount": [10, 20]}}]
+    out = Path(tempfile.mkdtemp())
+
+    def series_fills(path):
+        with zipfile.ZipFile(path) as z:
+            xml = "".join(z.read(n).decode("utf8", "ignore")
+                          for n in z.namelist() if "charts/chart" in n)
+        return set(re.findall(r'srgbClr val="([0-9A-Fa-f]{6})"', xml))
+
+    default_fills = series_fills(workbook.write_charts_xlsx(out / "default.xlsx", charts))
+    acme_fills = series_fills(workbook.write_charts_xlsx(
+        out / "acme.xlsx", charts, theme={"colours": {"burgundy": "#0B3D91"}}))
+
+    assert "163F3A" in default_fills, default_fills          # neutral default palette
+    assert "0B3D91" in acme_fills, acme_fills                # the theme reached the chart
+    assert "0B3D91" not in default_fills
+    try:
+        workbook.write_charts_xlsx(Path(tempfile.mkdtemp()) / "x.xlsx", [])
+        raise AssertionError("empty charts should fail")
+    except ValueError:
+        pass
+
+
+def _tooltip_counts(html):
+    """Frequencies read back out of a histogram's per-bar tooltips."""
+    import re
+    return [int(m) for m in re.findall(r"<title>(\d+) value", html)]
+
+
+def test_viz_histogram_bins_and_forced_zero_axis():
+    """Binning is where a histogram silently lies. Edges are half-open [lo,hi) except
+    the last (which must include its upper bound, or the maximum vanishes), and the
+    y-axis is forced to 0 — a floated frequency axis misstates every bar."""
+    import re
+    assert _tooltip_counts(viz.histogram([5, 35, 65, 120],
+                                         bins=[0, 30, 60, 90, 365])) == [1, 1, 1, 1]
+    # 5 belongs to [5,10), not [0,5) — half-open on every bin but the last
+    assert _tooltip_counts(viz.histogram([5, 5], bins=[0, 5, 10])) == [0, 2]
+    assert _tooltip_counts(viz.histogram([0, 10], bins=[0, 5, 10])) == [1, 1]  # last incl.
+    assert sum(_tooltip_counts(viz.histogram([1, 1, 1, 2, 2, 3], bins=3))) == 6
+
+    # a far-from-zero cluster must still show a 0 baseline
+    hi = viz.histogram([100, 101, 102], bins=3)
+    assert "0" in re.findall(r'class="x">([\d,.-]+)</text>', hi)
+
+    # non-numeric vs out-of-range are DIFFERENT exclusions and are reported as such
+    junk = viz.histogram([1, "abc", 3])
+    assert "non-numeric" in junk
+    out = viz.histogram([-5, 1, 999], bins=[0, 10])
+    assert "outside the bin range" in out and "non-numeric" not in out
+
+    assert "No data" in viz.histogram(["a", ""])
+    assert "at least 2" in viz.histogram([7])       # one point has no shape
+    assert "two bin edges" in viz.histogram([1, 2], bins=[5])
+    assert viz.histogram([7, 7, 7]).startswith('<div class="block">')   # zero-width range
+
+
+def test_viz_scatter_trend_line_is_descriptive_only():
+    """The OLS overlay must be arithmetically right and must not appear when it would
+    be meaningless — a vertical cloud has no slope, and drawing one would invent a
+    relationship the data does not contain."""
+    import re
+    fit = viz.scatter_chart([1, 2, 3, 4], [2, 4, 6, 8], trend_line=True)
+    m = re.search(r"trend: y = (-?[\d,.e+-]*?)x \+ (-?[\d,.e+-]*?) \(r (-?[\d.]+)", fit)
+    assert round(float(m.group(1).replace(",", "")), 6) == 2.0    # slope
+    assert round(float(m.group(2).replace(",", "")), 6) == 0.0    # intercept
+    assert round(float(m.group(3)), 6) == 1.0                     # r
+    assert "not a forecast" in fit
+    inverse = viz.scatter_chart([1, 2, 3], [3, 2, 1], trend_line=True)
+    assert round(float(re.search(r"\(r (-?[\d.]+)", inverse).group(1)), 6) == -1.0
+
+    assert "trend:" not in viz.scatter_chart([5, 5, 5], [1, 2, 3], trend_line=True)
+    assert "trend:" not in viz.scatter_chart([1, 2], [1, 2])       # off by default
+    # unpaired / unparseable observations are skipped and counted, never plotted at 0
+    assert "skipped" in viz.scatter_chart([1, "x", 3], [2, 4, "n/a"])
+    assert "skipped" in viz.scatter_chart([1, 2, 3], [1, 2])
+    assert "No data" in viz.scatter_chart([], [])
+
+
+def test_viz_stacked_bar_negatives_and_pivot_passthrough():
+    """A negative segment must stack *below* the zero line: folding a credit note into
+    the positive stack would inflate the bar it reduces. Also pins the documented
+    ability to hand `pivot()` output straight to the chart."""
+    import re
+    import analyse
+    h = viz.stacked_bar({"Rev": [("Q1", 10)], "Credit": [("Q1", -4)]})
+    rects = re.findall(r'<rect x="[\d.]+" y="([\d.]+)" width="[\d.]+" height="([\d.]+)"', h)
+    assert len(rects) == 2
+    # Relative order alone is not enough — it holds even if both segments stack
+    # upward. Measure against the zero line: one segment must sit wholly above it
+    # and the other wholly below.
+    zero_y = float(re.search(r'<line x1="[\d.]+" y1="([\d.]+)"[^>]*stroke-width="1.5"',
+                             h).group(1))
+    tops = [float(y) for y, _ in rects]
+    bottoms = [float(y) + float(hh) for y, hh in rects]
+    assert min(tops) < zero_y - 1, "positive segment should rise above the zero line"
+    assert max(bottoms) > zero_y + 1, "negative segment should drop below the zero line"
+
+    pv = analyse.pivot(["Q", "Seg", "Amt"],
+                       [["Q1", "A", "100"], ["Q1", "B", "50"], ["Q2", "A", "120"]],
+                       "Q", "Seg", value="Amt")
+    chart = viz.stacked_bar(pv, title="From pivot")
+    vals = sorted(float(v.replace(",", "")) for v in re.findall(r": ([\d,.-]+)</title>", chart))
+    assert vals == [50.0, 100.0, 120.0]
+    assert "From pivot" in chart and 'class="legend"' in chart
+    assert "No data" in viz.stacked_bar({})
+
+
+def test_viz_num_reuses_the_engine_parser():
+    """The charts must read values exactly as the rest of the toolkit does. A second,
+    divergent numeric dialect in viz.py would put a different number on the chart than
+    in the working paper."""
+    assert viz._num("15%") == 0.15
+    assert viz._num("1.2m") == 1200000.0
+    assert viz._num("(500)") == -500.0
+    assert viz._num("1,234.50") == 1234.5
+    assert viz._num("abc") is None and viz._num("") is None
+    assert viz._num(True) is None                 # bools are not quantities
+    assert viz._num(float("nan")) is None and viz._num(float("inf")) is None
+
+
+def test_analyse_filter_rows_comparison_semantics():
+    """filter_rows standardises hand-rolled filtering, so its comparison rules are the
+    whole point. Two regressions are pinned here because both produce a *plausible
+    wrong answer* rather than an error:
+
+    - `parse_number('15/02/2026')` returns 15022026 (it strips the separators), so a
+      date column compared numerically puts 15 Feb after 1 Mar.
+    - falling back to a string compare on a type mismatch makes `'n/a' > 1000` true.
+    """
+    import analyse
+    hdr = ["Customer", "Status", "Amount", "Due", "Note"]
+    rows = [
+        ["Acme", "Open", "1,200", "01/03/2026", "urgent"],
+        ["Borex", "Closed", "900", "15/02/2026", ""],
+        ["Credix", "Open", "(500)", "20/04/2026", "credit note"],
+        ["Delta", "open", "30", "10/01/2026", "  "],
+        ["Echo", "Hold", "n/a", "", "review"],
+    ]
+
+    def ids(rs):
+        return [r[0] for r in rs]
+
+    # numeric, not lexical: '900' must not beat '1,200'
+    out, _ = analyse.filter_rows(hdr, rows, [{"column": "Amount", "op": ">", "value": 1000}])
+    assert ids(out) == ["Acme"]
+    out, _ = analyse.filter_rows(hdr, rows, [{"column": "Amount", "op": "<", "value": 0}])
+    assert ids(out) == ["Credix"]                       # accounting negative
+
+    # dates compare chronologically, not as stripped integers
+    out, _ = analyse.filter_rows(hdr, rows, [{"column": "Due", "op": ">",
+                                              "value": "01/03/2026"}])
+    assert ids(out) == ["Credix"]
+    out, _ = analyse.filter_rows(hdr, rows, [{"column": "Due", "op": "between",
+                                              "value": ["01/01/2026", "28/02/2026"]}])
+    assert ids(out) == ["Borex", "Delta"]
+
+    # between is inclusive of BOTH ends (finance quotes ranges inclusively)
+    out, _ = analyse.filter_rows(hdr, rows, [{"column": "Amount", "op": "between",
+                                              "value": [30, 900]}])
+    assert ids(out) == ["Borex", "Delta"]
+    out, _ = analyse.filter_rows(hdr, rows, [{"column": "Amount", "op": "not_between",
+                                              "value": [30, 900]}])
+    assert ids(out) == ["Acme", "Credix"]
+
+    # a text cell against a numeric threshold is incomparable — dropped AND counted
+    out, rep = analyse.filter_rows(hdr, rows, [{"column": "Amount", "op": ">", "value": 0}])
+    assert ids(out) == ["Acme", "Borex", "Delta"]
+    assert rep["incomparable"] == 1
+
+    # strings are case-insensitive across ==, in, contains
+    assert ids(analyse.filter_rows(hdr, rows, [{"column": "Status", "op": "==",
+                                                "value": "OPEN"}])[0]) == \
+        ["Acme", "Credix", "Delta"]
+    assert ids(analyse.filter_rows(hdr, rows, [{"column": "Status", "op": "in",
+                                                "value": ["open", "hold"]}])[0]) == \
+        ["Acme", "Credix", "Delta", "Echo"]
+    assert ids(analyse.filter_rows(hdr, rows, [{"column": "Note", "op": "contains",
+                                                "value": "CREDIT"}])[0]) == ["Credix"]
+
+    # whitespace-only is empty
+    assert ids(analyse.filter_rows(hdr, rows, [{"column": "Note",
+                                                "op": "is_empty"}])[0]) == ["Borex", "Delta"]
+
+    # AND across filters, with per-filter attribution and honest totals
+    out, rep = analyse.filter_rows(hdr, rows, [
+        {"column": "Status", "op": "==", "value": "open"},
+        {"column": "Amount", "op": ">", "value": 100},
+    ])
+    assert ids(out) == ["Acme"]
+    assert (rep["n_in"], rep["n_out"], rep["n_dropped"]) == (5, 1, 4)
+    assert [f["removed"] for f in rep["filters"]] == [2, 2]
+
+    assert len(analyse.filter_rows(hdr, rows, [])[0]) == 5      # no filters = passthrough
+    assert len(rows) == 5                                       # input not mutated
+
+    # a typo must raise, not quietly match nothing
+    for bad, exc in [([{"column": "Nope", "op": "==", "value": 1}], KeyError),
+                     ([{"column": "Status", "op": "~=", "value": 1}], ValueError),
+                     ([{"column": "Amount", "op": "between", "value": [1]}], ValueError),
+                     ([{"column": "Status", "op": "=="}], ValueError)]:
+        try:
+            analyse.filter_rows(hdr, rows, bad)
+            raise AssertionError(f"expected {exc.__name__} for {bad}")
+        except exc:
+            pass
+
+
+def test_viz_new_chart_acceptance_shapes():
+    """The documented call shapes for the three new charts, exactly as the SKILL.md
+    tables promise them — a signature or input-shape regression breaks a published
+    contract, not just an internal detail."""
+    import analyse
+
+    # scatter: raw columns, (label, value) pairs, axis labels, unit_x/unit_y
+    assert viz.scatter_chart([1, 2, 3, 4, 5], [2, 4, 6, 8, 10]).count("<circle") == 5
+    assert viz.scatter_chart([("a", 1), ("b", 2)],
+                             [("a", 5), ("b", 6)]).count("<circle") == 2
+    lab = viz.scatter_chart([1, 2], [3, 4], x_label="Spend", y_label="Revenue",
+                            unit_x="$", unit_y="%")
+    assert ">Spend</text>" in lab and "rotate(-90" in lab and ">Revenue</text>" in lab
+    assert viz.scatter_chart([1, None, 3], [2, 4, None]).count("<circle") == 1
+
+    # histogram: the brief's worked example
+    assert _tooltip_counts(viz.histogram([1, 1, 2, 2, 2, 3, 3, 3, 3, 4, 4, 5],
+                                         bins=5)) == [2, 3, 4, 2, 1]
+    assert _tooltip_counts(viz.histogram([5, 15, 25, 35, 45],
+                                         bins=[0, 10, 20, 30, 40, 50])) == [1, 1, 1, 1, 1]
+
+    # stacked_bar: all four input shapes reach the same geometry
+    flat = viz.stacked_bar({"Q1": [100, 50, 25], "Q2": [120, 60, 30]})
+    assert flat.count("<rect") == 6 and flat.count('class="lg"') == 3
+    assert "Segment 1" in flat                      # positional segments are named
+    assert viz.stacked_bar([("Q1", [10, 20]), ("Q2", [30, 40])]).count("<rect") == 4
+    assert viz.stacked_bar({"categories": ["Q1"], "series": {"A": [1]}}).count("<rect") == 1
+    pv = analyse.pivot(["Q", "Seg", "Amt"],
+                       [["Q1", "A", "100"], ["Q2", "B", "50"]], "Q", "Seg", value="Amt")
+    assert viz.stacked_bar(pv).count("<rect") >= 2
+
+    for empty in (viz.scatter_chart([], []), viz.histogram([]), viz.stacked_bar({})):
+        assert "No data" in empty
+
+
+def test_analyse_filter_rows_accepts_the_documented_spec_keys():
+    """The brief's filter-spec vocabulary: `col`, `values` for membership, `lo`/`hi`
+    for ranges, and an `n_dropped` report key. Pinned because these are the keys a
+    plan author writes by hand."""
+    import analyse
+    hdr = ["Region", "Amount", "Customer", "Status", "Date"]
+    rows = [
+        ["North", "1,200", "Acme", "Open", "01/03/2026"],
+        ["South", "$900", "Beta", "", "15/02/2026"],
+        ["North", "300", "Gamma", "Closed", "20/04/2026"],
+        ["East", "50", "Acme", "  ", "10/01/2026"],
+    ]
+
+    def who(rs):
+        return [r[2] for r in rs]
+
+    assert who(analyse.filter_rows(hdr, rows, [
+        {"col": "Region", "op": "==", "value": "North"}])[0]) == ["Acme", "Gamma"]
+    # currency symbols and thousands separators parse
+    assert who(analyse.filter_rows(hdr, rows, [
+        {"col": "Amount", "op": ">", "value": 500}])[0]) == ["Acme", "Beta"]
+    assert len(analyse.filter_rows(hdr, rows, [
+        {"col": "Customer", "op": "in", "values": ["Acme", "Beta"]}])[0]) == 3
+    assert who(analyse.filter_rows(hdr, rows, [
+        {"col": "Amount", "op": "between", "lo": 100, "hi": 1000}])[0]) == ["Beta", "Gamma"]
+    assert who(analyse.filter_rows(hdr, rows, [
+        {"col": "Date", "op": ">=", "value": "01/03/2026"}])[0]) == ["Acme", "Gamma"]
+    assert len(analyse.filter_rows(hdr, rows, [
+        {"col": "Customer", "op": "contains", "value": "ACM"}])[0]) == 2
+    assert who(analyse.filter_rows(hdr, rows, [
+        {"col": "Status", "op": "not_empty"}])[0]) == ["Acme", "Gamma"]
+
+    _out, rep = analyse.filter_rows(hdr, rows, [{"col": "Region", "op": "==",
+                                                 "value": "North"}])
+    assert (rep["n_in"], rep["n_out"], rep["n_dropped"]) == (4, 2, 2)
+    # the older/generic "column" key keeps working
+    assert len(analyse.filter_rows(hdr, rows, [{"column": "Region", "op": "==",
+                                                "value": "North"}])[0]) == 2
+
+
+def test_viz_heatmap_sparkline_waterfall_and_analysis_handoff():
+    hm = viz.heatmap([[1, -1], [0.5, 0.2]], row_labels=["A", "B"], col_labels=["X", "Y"],
+                     title="Corr", scale="diverging", mid=0)
+    assert 'class="chart heatmap"' in hm and "Corr" in hm and "A" in hm
+    sp = viz.sparkline([("W1", 10), ("W2", 14), ("W3", 9)], title="Shape")
+    assert "spark" in sp and "overall" in sp
+    wf = viz.waterfall([
+        {"label": "Open", "value": 100, "kind": "start"},
+        {"label": "Win", "value": 20, "kind": "delta"},
+        {"label": "Loss", "value": -5, "kind": "delta"},
+        {"label": "Close", "value": 115, "kind": "total"},
+    ], title="Bridge")
+    assert "Bridge" in wf and wf.count("<rect") >= 4
+    empty = viz.heatmap([], title="Empty")
+    assert "No data" in empty
+
+    analysis = {
+        "results": [
+            {"op": "breakdown", "name": "By customer", "result": {
+                "by": "Customer",
+                "groups": [
+                    {"key": "Acme", "count": 2, "total": "100", "share": "0.625"},
+                    {"key": "Beta", "count": 1, "total": "60", "share": "0.375"},
+                ],
+            }},
+            {"op": "period_series", "name": "Monthly", "result": {
+                "grain": "month",
+                "periods": [
+                    {"period": "2026-01", "count": 1, "total": "100", "delta": None},
+                    {"period": "2026-02", "count": 1, "total": "130", "delta": "30"},
+                ],
+            }},
+            {"op": "correlation_matrix", "name": "Corr", "result": {
+                "columns": ["A", "B"], "matrix": [[1.0, 0.5], [0.5, 1.0]],
+            }},
+            {"op": "forecast", "name": "skip me", "result": {"value": 1}},
+        ]
+    }
+    specs = viz.suggest_blocks_from_analysis(analysis)
+    assert [s["type"] for s in specs] == ["section", "section", "section"]
+    assert any(b["type"] == "waterfall" for s in specs for b in s["blocks"])
+    assert any(b["type"] == "heatmap" and b.get("scale") == "diverging"
+               for s in specs for b in s["blocks"])
+    filtered = viz.suggest_blocks_from_analysis(analysis, ops=["breakdown"])
+    assert len(filtered) == 1 and filtered[0]["title"] == "By customer"
+    html_blocks = viz.blocks_from_analysis(analysis)
+    page = viz.dashboard("Insight board", html_blocks, as_of="18 Jul 2026")
+    assert "By customer" in page and "period bridge" in page and "heatmap" in page
+
+
+def test_suggest_blocks_proposes_stacked_bar_for_pivot():
+    """pivot→heatmap is the default; a stacked_bar is also proposed when the
+    pivot has few enough columns (segments) that composition reads better as
+    bars than as a heat map. Follow-up #2: the handoff didn't suggest the new
+    chart types for the ops that map to them."""
+    analysis = {"results": [{"op": "pivot", "name": "Region × Segment", "result": {
+        "row_keys": ["North", "South"],
+        "col_keys": ["A", "B", "C"],
+        "matrix": [[100, 50, 25], [80, 40, 10]],
+    }}]}
+    specs = viz.suggest_blocks_from_analysis(analysis)
+    block_types = [b["type"] for b in specs[0]["blocks"]]
+    assert "heatmap" in block_types
+    assert "stacked_bar" in block_types, f"expected stacked_bar, got {block_types}"
+
+
+def test_suggest_blocks_proposes_histogram_for_distribution_when_values_carried():
+    """distribution→histogram only when the engine result carries the raw values;
+    otherwise the skew/kurt KPIs stand alone (the agent must re-supply the column)."""
+    analysis = {"results": [{"op": "distribution", "name": "Amount shape", "result": {
+        "skewness": 1.2, "kurtosis": 2.1, "classification": "right-skewed",
+        "values": [10, 20, 30, 40, 50, 60, 70, 80],
+    }}]}
+    specs = viz.suggest_blocks_from_analysis(analysis)
+    block_types = [b["type"] for b in specs[0]["blocks"]]
+    assert "histogram" in block_types, f"expected histogram, got {block_types}"
+    # without values, no histogram is proposed
+    analysis2 = {"results": [{"op": "distribution", "name": "x", "result": {
+        "skewness": 1.2, "kurtosis": 2.1, "classification": "right-skewed"}}]}
+    specs2 = viz.suggest_blocks_from_analysis(analysis2)
+    assert "histogram" not in [b["type"] for b in specs2[0]["blocks"]]
+
+
+def test_filter_rows_is_on_the_analysis_plan_surface():
+    """filter_rows must be accepted by _run_analyse (follow-up #1: it was
+    engine-only, not reachable from a plan). A filter op narrows the table that
+    downstream ops in the same plan see — so filter→breakdown chains work."""
+    import agent_runtime, tempfile, json
+    from pathlib import Path
+    src = Path(tempfile.mkdtemp()) / "src.csv"
+    src.write_text("Region,Amount\nNorth,100\nSouth,200\nNorth,300\n", encoding="utf-8")
+    plan = {
+        "skill": "data-analyse",
+        "inputs": [{"path": str(src)}],
+        "operations": [
+            {"op": "filter_rows", "name": "North only",
+             "filters": [{"col": "Region", "op": "==", "value": "North"}]},
+            {"op": "breakdown", "name": "By region (filtered)",
+             "by": "Region", "value": "Amount"},
+        ],
+        "output": str(src.parent / "analysis.json"),
+    }
+    result = agent_runtime._run_analyse(plan, src.parent, dry_run=True)
+    ops = [r["op"] for r in result["details"]["results"]]
+    assert ops == ["filter_rows", "breakdown"], ops
+    # the breakdown should only see North rows (2 rows, not 3)
+    breakdown = result["details"]["results"][1]["result"]
+    groups = breakdown.get("groups") or []
+    keys = [g.get("key") for g in groups]
+    assert keys == ["North"], f"filter should have removed South before breakdown, got {keys}"
+    # the filter report records what it dropped
+    filt = result["details"]["results"][0]["result"]
+    assert filt["n_in"] == 3 and filt["n_out"] == 2 and filt["n_dropped"] == 1, filt
 
 
 # --------------------------------------------------------------------------- #

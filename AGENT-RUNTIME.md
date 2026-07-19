@@ -241,8 +241,8 @@ Table mode uses one input and supplies `page`, `index`, and optionally a tidy `r
 
 Supported operations are `numeric_summary`, `outliers_iqr`, `breakdown`, `period_series`,
 `ageing`, `currency_mix`, `concentration`, `pivot`, `distribution`, `trend`, `percentile`,
-`cohort`, `correlation_matrix`, `rolling`, `gini`, `seasonality`, `join_on`, and
-`compare_series`.
+`cohort`, `correlation_matrix`, `rolling`, `gini`, `seasonality`, `join_on`, `compare_series`,
+and `filter_rows`.
 
 - `concentration` / `gini`: pass `by` (+ optional `value`) to aggregate group totals first, or
   `column` when the column is already one value per group.
@@ -252,6 +252,18 @@ Supported operations are `numeric_summary`, `outliers_iqr`, `breakdown`, `period
   Same-table `compare_series` uses `date_col` + `a_value` + `b_value`.
 - Zero and net-zero totals remain zero; concentration shares are `null` where the denominator
   is not meaningful.
+
+`filter_rows` is special: it narrows the table that **downstream operations in the same plan**
+see, so a plan can chain `filter_rows` → `breakdown` on the surviving subset. Each filter spec
+is `{"col": ..., "op": ..., "value"/"values"/"lo"+"hi"}` with the 12 operators documented in
+`data-analyse/SKILL.md`. The filter report (`n_in` / `n_out` / `n_dropped` + per-filter removed
+counts) is the analysis result for that op. Example:
+
+```json
+{"op": "filter_rows", "name": "Open items only",
+ "filters": [{"col": "Status", "op": "==", "value": "Open"},
+             {"col": "Amount", "op": ">", "value": 1000}]}
+```
 
 ### Visualise
 
@@ -272,8 +284,21 @@ Supported operations are `numeric_summary`, `outliers_iqr`, `breakdown`, `period
 }
 ```
 
-Supported blocks are `kpi_row`, `bar_chart`, `line_chart`, `donut_chart`, `table`, `section`
-and `grid`. `$source` refers to rows read from the plan input.
+Supported blocks are `kpi_row`, `bar_chart`, `line_chart`, `donut_chart`, `heatmap`,
+`sparkline`, `waterfall`, `table`, `section`, `grid`, `from_analysis`, and `chart`
+(Excel-only). `$source` refers to rows read from the plan input. Set
+`"blocks": "$analysis"` (or a `from_analysis` block) with an `analysis.json` input from
+data-analyse to expand metrics into proposed drawings — the runtime does not recompute
+figures.
+
+Format: `"format": "html"` (default) or `"xlsx"`, or infer from the output suffix
+(`.xlsx` / `.xlsm` → Excel chart workbook via `workbook.py`; otherwise HTML via `viz.py`).
+Excel chart types use OfficeCLI-aligned names (`column`, `bar`, `line`, `pie`, `doughnut`,
+`waterfall`).
+
+Parity: a plain table input is enough for HTML (`$source` + block `data`) and for Excel
+(explicit `type: "chart"` with `categories` / `series`). `$analysis` is optional on both
+paths when an analyse run already exists — it is not a prerequisite for Excel.
 
 ### Convert
 

@@ -1,5 +1,137 @@
 # Changelog
 
+## 0.8.1 — 2026-07-19
+
+**Follow-ups to the viz/filter PR (#25)** — closing the plan-surface and handoff
+gaps the review surfaced, plus the pre-existing test failure:
+
+- **`filter_rows` is now on the analysis plan surface.** Previously engine-only —
+  agents had to hand-call the script for filtering in planned runs. Now accepted
+  by `agent_runtime._run_analyse` and `analysis-plan.schema.json`. A `filter_rows`
+  op narrows the table that downstream ops in the same plan see, so
+  `filter_rows` → `breakdown` chains work on the surviving subset. Documented in
+  `AGENT-RUNTIME.md` with a worked example.
+- **`suggest_blocks_from_analysis` now proposes the new chart types.**
+  `pivot` → `stacked_bar` (when ≤8 segments — composition reads better than a
+  heat map at that width). `distribution` → `histogram` (only when the engine
+  result carries the raw values; otherwise the skew/kurt KPIs stand alone and
+  the agent re-supplies the column).
+- **Stacked-bar missing-cells→0 documented.** `_norm_stacked` treats
+  unparseable/missing cells as 0.0 — correct for composition (an absent value
+  contributes nothing to the stack) but now stated in the docstring so a blank
+  cell doesn't look like a real zero segment. Callers who need to distinguish
+  "zero" from "no data" are pointed to the `heatmap` block.
+- **`in` / `not_in` incomparable accounting documented.** These operators never
+  mark a cell as incomparable (a text cell against a numeric membership list
+  simply fails to match). The deliberate asymmetry with the ordering operators
+  is now explained in the `filter_rows` docstring.
+- **Pre-existing test failure resolved.** `test_officecli_render_is_optional_and_never_locks_the_workbook`
+  failed on environments where OfficeCLI is installed but no headless browser
+  (Chrome/Chromium/Firefox/Playwright) is available — OfficeCLI exits 0 but
+  produces no PNG. The test now probes for a working browser and skips the
+  live-render assertions when one isn't present (the absent-binary branch still
+  runs and covers the "nothing raises, nothing produced" contract). 73/73 pass.
+
+## 0.8.0 — 2026-07-19
+
+**Three chart types and a filtering primitive** — closing the gaps that forced agents to
+hand-roll the same code every run.
+
+- **`scatter_chart(x, y, …, x_label, y_label, unit_x, unit_y, trend_line=False)`** — paired
+  observations for correlation and outlier spotting; accepts raw numeric columns or
+  `[(label, value)]` pairs, and both axes float to the data via `_nice_ticks` (as
+  `line_chart` does). `trend_line=True` overlays an OLS fit with slope / intercept / Pearson
+  r / n in its tooltip — **descriptive, never a forecast**. A cloud with no x-variance has no
+  defensible slope, so no line is drawn at all. On a length mismatch the longer side is
+  trimmed and the unpaired tail is counted and reported.
+- **`histogram(values, bins=10, …)`** — distribution shape. `bins` is a count (equal-width) or
+  explicit edges like `[0, 30, 60, 90, 365]`; edges are half-open `[lo, hi)` except the last,
+  which includes its upper bound so the maximum observation is never silently dropped. The
+  y-axis is **forced to zero** (histogram convention — a floated frequency axis misstates every
+  bar) and bars touch to signal a continuous scale. Unparseable values and values outside the
+  caller's own edges are counted and reported *separately*, since they mean different things.
+- **`stacked_bar(data, …)`** — composition per category. Accepts a `pivot()` result straight
+  from analyse, `{category: [v1, v2, …]}`, `[(category, [values])]`, `{categories, series}`,
+  or `{segment: [(cat, value)]}` — positional shapes get numbered segment names. **Negative
+  segments stack below the zero line** rather than folding into the positive stack, so a
+  credit note or reversal reads as the reduction it is instead of inflating the bar it
+  belongs to.
+- **`filter_rows(header, rows, filters)`** (analyse) — the standard form of the ad-hoc filtering
+  that otherwise gets written differently every run. Thirteen operators, ANDed. Filter specs
+  take `{"col", "op", "value"}`, with `"values"` for membership and `"lo"`/`"hi"` for ranges
+  (`"column"` is accepted for the column key too). Returns `(rows, report)` carrying
+  `n_in` / `n_out` / `n_dropped` and per-filter removed counts.
+
+  Two comparison rules exist because the alternatives produce a *plausible wrong answer* rather
+  than an error, which is worse:
+  - **Dates compare as dates.** `parse_number('15/02/2026')` returns `15022026` — it strips the
+    separators — so a naive number-first coercion sorts 15 Feb *after* 1 Mar. Values that look
+    like dates are tested as dates first.
+  - **A type mismatch is incomparable, not a string compare.** Falling back to text would make
+    `'n/a' > 1000` **true**. Such rows are excluded *and* counted in `report["incomparable"]`.
+
+  Unknown columns and operators raise rather than matching nothing — a typo must not look like
+  "no results".
+- All three charts reuse the engine's `parse_number` when reachable (`'15%'` → 0.15, `'1.2m'` →
+  1200000, `'(500)'` → -500) instead of inventing a second numeric dialect, so the chart and the
+  working paper always show the same number. Non-numeric inputs are skipped and reported, never
+  plotted at the origin where they would read as a real zero.
+- Wired through the runtime (`_viz_block`) and `schemas/dashboard-spec.schema.json`. HTML-only:
+  the xlsx path refuses them with the existing clear message. Cookbook snippets for all three
+  added to `skills/data-visualise/references/blocks.md`.
+- **Docs accuracy fix.** The README's "no network calls / no cloud OCR / no credentials" claims
+  and `DATA-HANDLING.md`'s "no external APIs" bullet predated the opt-in vision image extract
+  shipped in #19, which calls a user-configured vision endpoint. All three now carve out that
+  one exception explicitly. `SKILL.md` and `COMPATIBILITY.md` already disclosed it correctly;
+  it was the top-level pitch that overstated.
+
+## 0.7.0 — 2026-07-18
+
+**`data-visualise` becomes an orchestrator** — the same metrics contract now drives two artefacts,
+and an `analysis.json` can drive either:
+
+- **New HTML blocks** — `heatmap`, `sparkline`, `waterfall`. Still pure inline SVG: no CDN, no
+  remote images, zero external references (verified in the self-test).
+- **analyse → dashboard handoff** — `suggest_blocks_from_analysis` / `blocks_from_analysis`, plus
+  plan shortcuts (`"blocks": "$analysis"`, `{"type": "from_analysis"}`). The mapper **never
+  recomputes a metric** — numbers stay exactly as the analyse engine produced them, and unknown
+  ops are skipped so older/newer `analysis.json` files degrade cleanly.
+- **Excel chart workbook** (`skills/data-visualise/scripts/workbook.py`) — a chart-only `.xlsx`
+  with native openpyxl charts for analysts who want to poke at the numbers. Values are written to
+  sheet cells and the chart *references* those cells, so the workbook stays auditable and editable
+  rather than a picture. Selected via `"format": "xlsx"` or an `.xlsx` output suffix.
+  `chart_type` names follow the AionUi / OfficeCLI vocabulary (`column`, `bar`, `line`, `pie`,
+  `doughnut`, `waterfall`) — **vocabulary only; no new runtime dependency** (`openpyxl` is already
+  a hard dependency).
+- **Both artefacts honour the same `theme`.** `write_charts_xlsx` / `charts_from_analysis` take a
+  `theme` and resolve the series palette (and the waterfall increase/decrease/total colours) from
+  the visualise theme, so a white-label brand colours the Excel workbook exactly as it colours the
+  HTML dashboard — one palette to maintain, not two. Per-chart `colors` still override.
+  Regression test added.
+- **Optional chart rendering via OfficeCLI** (`skills/data-visualise/scripts/officecli_render.py`)
+  — set `dashboard.render_png: true` to also emit one PNG per chart, cropped to the chart.
+  Strictly opt-in and **degrades to a warning** when the binary is absent (the `.xlsx` is still
+  written). [OfficeCLI](https://github.com/iOfficeAI/OfficeCLI) is a third-party Apache-2.0
+  binary installed separately; its docs state it runs fully locally, which we relay rather than
+  certify. This is the toolkit's **only** subprocess: argument list, never `shell=True`,
+  time-boxed, non-zero exit degrades rather than raises. The renderer **never authors or mutates
+  a workbook** — openpyxl writes it, OfficeCLI only reads it to make a picture — and the tool
+  version is recorded in the run report. Probed by `envcheck.py`.
+- **Release the OfficeCLI resident after rendering.** Reading a document starts a resident that
+  holds an OS file handle, so the workbook could not be moved/deleted/reopened afterwards
+  (Windows `PermissionError`); every render path now closes it in a `finally`. Regression test
+  asserts the workbook is releasable after a render.
+- **Hardened the optional path to an absolute guarantee: once the `.xlsx` is written, nothing in
+  the renderer can fail the run.** Every public function in `officecli_render` is now total —
+  a non-zero exit, a timeout, unparseable JSON, an unwritable destination or an unexpected
+  exception from the subprocess layer returns `[]` / `None` / `False` rather than propagating —
+  and the runtime's call site wraps the whole block *including the `import`*, so even a missing
+  or broken adapter module degrades to a warning with the workbook intact. Two regression tests
+  cover it (unit, across every failure mode; and end-to-end through `run_plan`).
+- Dry-run is honoured on the xlsx path (no file, no parent directory, no artefacts reported).
+- Docs: `README` skill table and `COMPATIBILITY` row updated for the second output format;
+  `references/workbook-charts.md` added; `.gitignore` covers the new `*-selftest.xlsx`.
+
 ## 0.6.0 — 2026-07-18
 
 **10 new analysis functions for the data-analyse engine** (additive — no existing

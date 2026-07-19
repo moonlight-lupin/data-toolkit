@@ -79,8 +79,10 @@ That writes working papers and HTML dashboards under `examples/out/`. Full notes
 
 ## Why teams choose it
 
-- **Local engine, no third-party services.** No network calls, no cloud OCR, no CDN,
-  no credentials, no connectors. Shared drives (SharePoint / OneDrive / Drive) are
+- **Local engine, no third-party services.** No network calls in the core path, no
+  cloud OCR, no CDN, no connectors. One opt-in exception, stated plainly: image/chart
+  extract calls a vision API *you* configure, and is the only feature that needs a key.
+  Shared drives (SharePoint / OneDrive / Drive) are
   read as synced local paths, so nothing is pushed through a cloud connector. And to
   be straight about the limit: an AI agent drives these skills, so whatever it reads
   into its context goes to your AI provider — we don't claim "it never left." What we
@@ -101,8 +103,12 @@ That writes working papers and HTML dashboards under `examples/out/`. Full notes
   sign off — clearly labelled, never dressed up as a decision or as financial / tax /
   investment advice. See [`PRINCIPLES.md`](PRINCIPLES.md).
 - **White-label ready.** Ships unbranded — a neutral default; pass a `theme` dict
-  (brand name, colours, fonts, local logo) to re-skin dashboards. See
+  (brand name, colours, fonts, local logo) to re-skin HTML dashboards **and** Excel
+  chart workbooks from the same palette. See
   [Onboarding §3](ONBOARDING.md#3-put-your-brand-on-a-dashboard-theme--logo).
+- **Agent-stable interface.** Plans validate against schemas, dry-run before write,
+  confirm-first for irreversible work — `bin/data-toolkit` is the stable entry point
+  (`AGENT-RUNTIME.md`).
 - **Standalone.** Plain Python plus optional libraries for non-spreadsheet inputs. It
   also slots in as a data-prep front end for the rest of the Phronesis Applied suite,
   but depends on none of them.
@@ -113,8 +119,9 @@ That writes working papers and HTML dashboards under `examples/out/`. Full notes
 |---|---|
 | Small one-off file, strong model, careful prompt | Correctness parity — you’re buying standardised artefacts and an audit trail, not magic arithmetic |
 | Recurring exports, multi-thousand-row reconciles, reviewable working papers | Cheaper, faster, flatter cost — and a smaller error surface than hand-rolled agent code |
-| Client / financial data that must not reach third-party services | Local engine by design — no cloud OCR, no connectors, no uploads (your own AI provider still sees what the agent reads) |
-| Stakeholder one-pager by end of day | Brandable HTML dashboard → browser → print to PDF |
+| Large spreadsheets (10k–100k+ rows) | Streaming / Parquet path via `ingest.read_large` (optional `pandas` + `pyarrow`) so you don’t OOM the tidy/analyse step |
+| Client / financial data that must not reach third-party services | Local engine by design — no cloud OCR, no connectors, no uploads (your own AI provider still sees what the agent reads; opt-in image/chart extract calls a vision API you configure) |
+| Stakeholder one-pager by end of day | Brandable HTML dashboard → browser → print to PDF — **or** a native Excel chart workbook when the reader wants to keep poking at the numbers |
 
 ## What you can do
 
@@ -124,25 +131,26 @@ flowchart LR
   B --> C[tidy]
   C --> D[reconcile]
   D --> E[analyse]
-  E --> F[dashboard]
+  E --> F[HTML dashboard / Excel charts]
   C --> G[convert → other system]
 ```
 
-Use one skill on its own, or chain them — each hands the next a clean `.xlsx`.
+Use one skill on its own, or chain them — each hands the next a clean `.xlsx`
+(and analyse can also hand visualise a machine `analysis.json`).
 
 | You need to… | Skill | You get |
 |---|---|---|
-| Get structured data **out of documents** (PDFs incl. multi-table & scanned, Word, Outlook `.msg`) | **data-extract** | a clean `.xlsx` + audit report — form (label → value) and table modes, local OCR for scans |
-| **Tidy** a junk-filled export, pasted table or PDF table into a validated table | **data-tidy** | a structured, validated `.xlsx` + change/audit report — profiles the mess, proposes a transform, you confirm, it applies deterministically |
+| Get structured data **out of documents** (PDFs incl. multi-table & scanned, Word, PowerPoint `.pptx`, Outlook `.msg`, and chart/table images via vision) | **data-extract** | a clean `.xlsx` + audit report — form (label → value) and table modes, local OCR for scans; image/chart extract is opt-in (vision API) and never silently falls back to Tesseract for chart data |
+| **Tidy** a junk-filled export, pasted table or PDF table into a validated table | **data-tidy** | a structured, validated `.xlsx` + change/audit report — profiles the mess, proposes a transform, you confirm, it applies deterministically; large files route through `ingest.read_large` |
 | **Reconcile** two record sets (bank vs ledger, invoice vs statement) | **data-reconcile** | a reconciliation working paper (`.xlsx`) — match on a key or amount + date; every unmatched item triaged; currency-aware; Debit/Credit, sign flips, ageing, GST hints; never force-fits, never posts |
-| **Analyse** a dataset and find what actually matters | **data-analyse** | an insight brief — headline findings, metrics for the data type (trends, concentration, outliers, ageing), honest caveats; engine computes, narrative only interprets |
-| **Present** the numbers to a stakeholder | **data-visualise** | a self-contained, brandable HTML dashboard (KPI cards, SVG charts, RAG tables) — any browser, print to PDF, live Artifact in Cowork / Claude.ai |
+| **Analyse** a dataset and find what actually matters | **data-analyse** | an insight brief — headline findings and type-aware playbooks (sales, AR, GL, inventory, cross-domain…); engine metrics include trends, concentration (HHI), ageing, pivot, cohort retention, seasonality, correlation, and more; narrative only interprets; optional machine `analysis.json` for the next step |
+| **Present** the numbers to a stakeholder | **data-visualise** | **HTML** — self-contained brandable dashboard (KPI cards, SVG charts incl. heatmap / sparkline / waterfall, RAG tables) → browser / print-to-PDF / live Artifact; **or Excel** — native chart workbook (`.xlsx`, cell-backed editable charts, same theme palette); plain table or `analysis.json` on either path; optional OfficeCLI PNGs of each chart when you want pictures too |
 | **Convert** a clean dataset to another system's format, or reshape it | **data-convert** | the target file (CSV / JSON / XLSX / fixed-width, or a filled template) + a reusable conversion card — maps onto an import **contract** (flags unmapped / required-missing, validates), reshapes (long↔wide, nested JSON↔flat, split, merge), enriches via lookup; deterministic, never invents |
 
 **A typical run:** scanned remittance PDF → `data-extract` → `data-tidy` →
 `data-reconcile` against the ledger → `data-analyse` for the exceptions →
-`data-visualise` one-pager for the controller. Or jump in mid-arc with data you
-already have.
+`data-visualise` HTML one-pager *and/or* Excel charts for the controller. Or jump
+in mid-arc with a table you already have — visualise does not require analyse.
 
 ## Benchmark
 
@@ -189,22 +197,45 @@ cell; on a weak model *at scale* the risk shifts to correctness — see the limi
 
 ## Under the hood
 
-One local engine in **`scripts/`**: `ingest.py` (CSV / multi-sheet `.xlsx` / PDF /
-`.docx` / `.msg` / pasted text), `dataclean.py` (deterministic normalisation + change
-log), `extract.py` (field/table location), `envcheck.py` (capability probe).
-`data-analyse` adds a metrics engine; `data-visualise` renders with pure stdlib
-HTML/SVG — no charting library, no CDN, no remote fetches.
+Shared local engines in **`scripts/`**:
+
+- `ingest.py` — CSV / multi-sheet `.xlsx` / PDF / `.docx` / `.pptx` / `.msg` / paste;
+  `read_large` for 10k+ row files (optional Parquet streaming)
+- `dataclean.py` — deterministic normalisation + change log
+- `extract.py` — field / table location
+- `streaming.py` — row-count gate, Excel→Parquet chunks, dtype downcasting
+- `agent_runtime.py` + `agent_schemas.py` — plan validate / dry-run / run, confirm-first
+  approvals, declarative specs (`bin/data-toolkit`)
+- `envcheck.py` — capability probe (incl. optional OfficeCLI)
+
+Per-skill engines:
+
+- **data-analyse** — `skills/data-analyse/scripts/analyse.py` (exact `Decimal` metrics)
+- **data-visualise** — `viz.py` (stdlib HTML/SVG, no CDN) and `workbook.py` (native
+  Excel charts via `openpyxl`); optional `officecli_render.py` for chart→PNG
+- **data-extract** — `image_extract.py` for vision chart/table images when configured
+
+Agent-facing docs: [`AGENT-FAST-PATH.md`](AGENT-FAST-PATH.md),
+[`AGENT-RUNTIME.md`](AGENT-RUNTIME.md).
 
 ## Getting started
 
 Requirements stay light:
 
-- **Python 3** + **`openpyxl`** — the one hard dependency (`.xlsx` I/O).
-- Optional, only for the inputs you use: **PyMuPDF** (PDF), **pdfplumber** (messy /
-  borderless PDF tables), **python-docx**, **extract_msg**, local **Tesseract** for
-  scanned-document OCR. Each degrades gracefully when absent.
-- `data-visualise` needs no third-party library to render; a browser is only for
-  preview / print to PDF.
+- **Python 3** + **`openpyxl`** — the one hard dependency (`.xlsx` I/O, incl. Excel chart
+  workbooks from visualise).
+- Optional, only for the inputs / modes you use:
+  - **PyMuPDF** (PDF), **pdfplumber** (messy / borderless PDF tables)
+  - **python-docx**, **python-pptx**, **extract_msg**
+  - local **Tesseract** for scanned-document OCR
+  - **pandas** + **pyarrow** for large-file Parquet streaming
+  - vision API + **Pillow** for image/chart extract
+  - **[OfficeCLI](https://github.com/iOfficeAI/OfficeCLI)** on `PATH` only if you want
+    optional PNG renders of Excel charts (`dashboard.render_png`) — absent → workbook
+    still writes, run warns, never fails
+- HTML dashboards need no third-party library to render; a browser is only for preview /
+  print to PDF. CJK and other non-Latin labels get a conditional browser font fallback
+  (no fonts shipped).
 
 ```
 python scripts/envcheck.py
@@ -215,15 +246,17 @@ Per-skill mode/environment matrix: [`COMPATIBILITY.md`](COMPATIBILITY.md).
 ## Trust & quality
 
 ```
-python bin/data-lint            # manifests, descriptions & engine self-tests
-python tests/test_engine.py     # regression suite — standalone, no pytest needed
+python bin/data-lint                 # manifests, descriptions & engine self-tests
+python tests/test_engine.py          # engine regression — standalone, no pytest needed
+python tests/test_agent_runtime.py   # plan / approval / visualise / analyse runtime
+python tests/test_agent_schemas.py   # declarative schema catalogue
 ```
 
-`bin/data-lint` is the authoring gate. The regression suite locks the highest-risk
-behaviours: exact `Decimal` amounts, currency comparison, reconciliation date window,
-multi-sheet selection, form-layout extraction, PDF engine scoring. See
-[`tests/README.md`](tests/README.md). GitHub Actions runs lint + suite + quickstart
-smoke on every push/PR to `main`.
+`bin/data-lint` is the authoring gate. The suites lock the highest-risk behaviours:
+exact `Decimal` amounts, currency comparison, reconciliation date window, multi-sheet
+selection, form-layout extraction, PDF engine scoring, analyse metrics, HTML/Excel
+visualise paths (incl. fail-soft OfficeCLI). See [`tests/README.md`](tests/README.md).
+GitHub Actions runs lint + suite + quickstart smoke on every push/PR to `main`.
 
 ## Contributing & security
 

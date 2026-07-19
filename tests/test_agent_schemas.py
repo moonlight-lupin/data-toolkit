@@ -45,6 +45,13 @@ def valid_payloads():
             "title": "Status", "blocks": [
                 {"type": "kpi_row", "items": [{"label": "Open", "value": 3, "status": "amber"}]},
                 {"type": "table", "rows": "$source", "sortable": True},
+                {"type": "heatmap", "matrix": [[1, 2], [3, 4]],
+                 "row_labels": ["A", "B"], "col_labels": ["X", "Y"]},
+                {"type": "sparkline", "data": [["W1", 1], ["W2", 2]]},
+                {"type": "waterfall", "steps": [
+                    {"label": "Open", "value": 10, "kind": "start"},
+                    {"label": "Close", "value": 10, "kind": "total"},
+                ]},
             ],
         },
         "data-convert": {
@@ -104,6 +111,30 @@ def test_extended_analyse_ops_validate_and_require_fields():
         "data-analyse", [{"op": "seasonality", "date_col": "Date", "grain": "year"}]
     )
     assert bad_season
+
+
+def test_visualise_analysis_shortcut_and_new_blocks_schema():
+    assert schemas.validate_payload("data-visualise", {"title": "From analyse", "blocks": "$analysis"}) == []
+    assert schemas.validate_payload("data-visualise", {
+        "title": "Mixed",
+        "blocks": [{"type": "from_analysis", "ops": ["breakdown", "period_series"]}],
+    }) == []
+    missing = schemas.validate_payload("data-visualise", {"title": "X", "blocks": [{"type": "heatmap"}]})
+    assert any(item["path"] == "/blocks/0" and "matrix" in item["message"] for item in missing)
+    assert schemas.validate_payload("data-visualise", {
+        "title": "Excel charts",
+        "blocks": [{
+            "type": "chart",
+            "chart_type": "column",
+            "title": "By region",
+            "categories": ["North", "South"],
+            "series": [{"name": "Amount", "values": [1, 2]}],
+        }],
+    }) == []
+    bad_chart = schemas.validate_payload("data-visualise", {
+        "title": "X", "blocks": [{"type": "chart", "chart_type": "column"}],
+    })
+    assert bad_chart
 
 
 def test_plan_validation_runs_schema_before_source():
@@ -221,6 +252,7 @@ def main():
         ("targeted analysis pointer", test_analysis_error_has_targeted_pointer),
         ("unknown operation and field", test_unknown_operation_and_field_are_rejected),
         ("extended analyse ops schema", test_extended_analyse_ops_validate_and_require_fields),
+        ("visualise analysis shortcut schema", test_visualise_analysis_shortcut_and_new_blocks_schema),
         ("plan schema validation", test_plan_validation_runs_schema_before_source),
         ("conversion card", test_conversion_card_validation),
         ("conversion card JSON fence", test_conversion_card_json_fence_validation),
