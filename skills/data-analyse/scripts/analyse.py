@@ -64,16 +64,27 @@ def numbers(values):
 
 
 def currency_mix(values):
-    """Distinct currency codes detected in a column (None = code unknown).
-    More than one real code means the column must NOT be summed as-is —
-    100 USD != 100 SGD (same rule as data-reconcile)."""
+    """Distinct currency codes detected in a column. Covers BOTH layouts:
+
+    - codes embedded in the amount string ('S$100', '£1,000', 'USD 50'), and
+    - a stand-alone currency column whose cells ARE the codes ('GBP', 'USD', '£').
+
+    The second layout is the common export shape and is where the mixed-currency
+    risk is most acute, so it must not silently return "no mix". More than one
+    real code means the column must NOT be summed as-is — 100 USD != 100 SGD
+    (same rule as data-reconcile). A bare '$' (ambiguous) resolves to no code
+    and is ignored here, as everywhere else in the toolkit."""
     codes = set()
     for v in values:
         if _s(v) == "":
             continue
         parsed, _ = parse_currency(v)
-        if parsed is not None:
-            codes.add(parsed[1])
+        if parsed is not None and parsed[1] is not None:
+            codes.add(parsed[1])            # code embedded alongside an amount
+            continue
+        code = dataclean._detect_code(v)    # bare code cell — no amount to parse
+        if code is not None:
+            codes.add(code)
     return codes
 
 
@@ -1372,6 +1383,12 @@ def _self_test():
 
     mix = currency_mix(["S$100", "SGD 50", "S$ 20"])
     assert mix == {"SGD"}, mix
+    # Bare currency-code column (the common two-column export layout) must be
+    # detected — else the currency gate silently blends GBP + USD into one sum.
+    mix2 = currency_mix(["GBP", "USD", "gbp", "£", ""])
+    assert mix2 == {"GBP", "USD"}, mix2
+    # A pure amount column with no per-cell code carries no mix (unchanged).
+    assert currency_mix(["100", "200.50", "-3"]) == set()
 
     # join_on — cross-domain: our weekly sales vs scraped competitor prices on week x product
     lh = ["Week", "Product", "Units", "Our price"]

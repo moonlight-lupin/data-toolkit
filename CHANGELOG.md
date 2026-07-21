@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.8.5 — 2026-07-21
+
+Two fixes from round-4 benchmark testing (v0.8.4), both on `data-analyse` at scale.
+
+- **`_infer_type` no longer scans the whole column — ~33× faster profiling at scale.**
+  `dataclean.profile_table` / `score_quality` were spending minutes on 250k-row inputs
+  (~240s observed). The cost was `_infer_type` running `parse_date` (≈13 `strptime` attempts
+  per cell) over *every* value of *every* non-date column, not the row-dedup hashing the
+  benchmark had fingered (that line measured 0.06s). Type **class** is a fraction-vs-threshold
+  decision, so it now estimates the parser fractions on an evenly-strided sample (`_INFER_SAMPLE`
+  = 5000) while cardinality/`distinct` stay on the full column. Type labels and distinct counts
+  are unchanged; a 250k-row profile drops from ~240s to ~7s. New self-test asserts large-column
+  classification is stable on the sampled path.
+
+- **`analyse.currency_mix()` now detects a stand-alone currency-code column.** It previously
+  only saw codes embedded in amount strings (`S$100`, `£1,000`), so on the common two-column
+  layout (`Amount` + a separate `Currency` of `GBP`/`USD`) the mandated currency gate silently
+  returned "no mix" — exactly the case where blending currencies is most likely. It now falls
+  back to `dataclean._detect_code` for bare-code cells; a pure-amount column with no per-cell
+  code still reports no mix. `SKILL.md`'s currency gate and `large-file-patterns.md` (CSV vs
+  `read_large` scope) updated to match; new self-tests cover both layouts.
+
 ## 0.8.4 — 2026-07-19
 
 - **Renamed `AGENT.md` → `RUNTIME.md`.** After the batch-1 consolidation the repo had both

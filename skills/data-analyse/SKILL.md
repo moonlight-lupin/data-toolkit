@@ -66,8 +66,11 @@ heavy duplication, mixed junk), stop and route to **data-tidy** first — analys
 data produces confident-looking nonsense. A little noise is fine: the engine counts every
 skipped/unparseable cell and the brief must disclose those counts.
 
-**Currency gate:** `analyse.currency_mix(col)` — if a value column carries more than one
-currency code, never sum it as-is (100 USD ≠ 100 SGD). Split by currency or ask.
+**Currency gate:** `analyse.currency_mix(col)` — pass the **currency-bearing column**: the
+amount column when codes ride inside the amounts (`S$100`, `£1,000`), **or** the separate
+ISO-code column when the layout is two columns (`Amount` + `Currency` of `GBP`/`USD`) — the
+common export shape. If it reports more than one code, never sum the amounts as-is
+(100 USD ≠ 100 SGD). Split by currency (`breakdown(by=<currency col>)`) or ask.
 
 ### 3 — Propose the analysis plan (confirm before computing)
 `analyse.suggest_playbook(header, rows)` maps columns to roles (dates, amounts,

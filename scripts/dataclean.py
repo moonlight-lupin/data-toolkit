@@ -257,12 +257,25 @@ def match_ordinal(distinct_lower):
     return None
 
 
+# Type CLASS is decided by the fraction of cells matching a parser against a threshold, so a
+# bounded, evenly-strided sample estimates that fraction to well within the decision margin —
+# and avoids a full-column parse. `parse_date` alone tries ~13 strptime formats per cell, which
+# dominates profiling at scale (250k rows × 12 cols ≈ minutes). Strided (not head) sampling so a
+# sorted/blocked column can't bias the estimate. Cardinality checks below stay on the full column.
+_INFER_SAMPLE = 5000
+
+
 def _infer_type(values):
     nonempty = [v for v in values if _s(v) != ""]
     if not nonempty:
         return "empty"
+    if len(nonempty) > _INFER_SAMPLE:
+        step = len(nonempty) // _INFER_SAMPLE
+        sample = nonempty[::step][:_INFER_SAMPLE]
+    else:
+        sample = nonempty
     def frac(fn):
-        return sum(1 for v in nonempty if fn(_s(v))) / len(nonempty)
+        return sum(1 for v in sample if fn(_s(v))) / len(sample)
     if frac(lambda s: parse_date(s)[0] is not None) > 0.8:
         return "date"
     if frac(lambda s: parse_currency(s)[0] is not None and any(k in s for k in CURRENCY_DETECT)) > 0.5:
@@ -1048,6 +1061,12 @@ if __name__ == "__main__":
     print("[self-test] ordinal order    :", match_ordinal(set(sizes)))
     assert _infer_type(sizes) == "ordinal", _infer_type(sizes)
     assert _infer_type(statuses) == "categorical", _infer_type(statuses)
+    # Large columns take the strided-sample path (>_INFER_SAMPLE): classification must be
+    # unchanged. Guards the profiling speed fix (parser-frac on a sample, not the full column).
+    big_n = _INFER_SAMPLE * 3
+    assert _infer_type([f"{i%28+1:02d}/{i%12+1:02d}/2025" for i in range(big_n)]) == "date"
+    assert _infer_type([f"{i}.50" for i in range(big_n)]) == "number"
+    assert _infer_type([("Open" if i % 2 else "Closed") for i in range(big_n)]) == "categorical"
 
     # --- C: string hygiene (encoding / case / specials) ---
     v, note, _ = _convert("Beta Famille FranÃ§aise", {"type": "text", "fix_encoding": True})

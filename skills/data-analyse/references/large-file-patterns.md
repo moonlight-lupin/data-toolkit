@@ -12,6 +12,16 @@ left-hand forms can take minutes (or OOM) with the right-hand forms.
 | `np.where(df['a'] > 0, 'Y', 'N')` | `df['a'].map(lambda ...)` | `np.where` / boolean assignment beats per-cell Python callables |
 | `df.groupby('a').agg({'b': 'sum'})` | `df.groupby('a').apply(custom_func)` | Named aggregations use the fast path; `apply` falls back to Python |
 
+## Scope: `read_large` is Excel-only — CSV goes through `read_any`
+
+`ingest.read_large` (the Parquet cache / stream path above) supports **`.xlsx` / `.xlsm` only**.
+A large **CSV** is read by `ingest.read_any`, whose single-pass `csv.reader` returns list-of-rows
+— fast (a 250k-row CSV ingests in well under a second) and the shape the analyse engine expects.
+Ingestion is not the bottleneck at this scale; there is no chunked/pyarrow CSV path today, so a
+genuinely memory-bound CSV (millions of rows) should be pre-split or loaded via your own
+`pandas.read_csv(chunksize=…)` outside the toolkit. Don't assume `read_large` will take a CSV —
+it raises `ValueError` on non-Excel extensions.
+
 ## Strategy reminder (`scripts/streaming.py`)
 
 | Rows (data) | Strategy | Behaviour |
