@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.8.7 — 2026-07-23
+
+- **`parse_number` no longer turns identifiers into confident wrong numbers.** It stripped
+  every non-digit character before parsing, so `SKU-0001` → `-1`, `ACC-100` → `-100`,
+  `REF10000` → `10000` and `100 Program` → `100000000` — each returned with an *empty* note,
+  i.e. claiming a clean parse. It also silently dropped markers that change meaning
+  (`1,234.50 CR` → `1234.50`, losing the credit sign).
+
+  It now removes only recognised currency tokens (`CURRENCY_DETECT`, longest-first so `US$`
+  is consumed whole) plus separators, and requires what remains to be a bare number. Anything
+  else fails with a note, which callers already surface as a skipped/unparseable count — a
+  flagged miss beats a silent wrong value.
+
+  Every money format is unaffected: `£1,234.50`, `(500)`, `US$ 2.5m`, `USD 50`, `S$100`,
+  `15%`, `2.5k`, `1 234.50`, `$99.99`, `€1.000`. `parse_currency` still resolves codes, so
+  the `currency_mix` gate is untouched. Knock-on: identifier columns now infer as `text`, not
+  `number`, so `suggest_playbook` stops offering a SKU column as an amount to sum.
+
+  Regression-checked end-to-end — the `t6m` reconciliation still reproduces ground truth
+  (4,930 matched / 75 exceptions); 109 tests and all skill self-tests pass. New self-tests
+  pin nine must-parse money formats and six must-reject identifiers/markers.
+
 ## 0.8.6 — 2026-07-23
 
 Closes the last open finding from the benchmark series (round 3, `data-reconcile`).

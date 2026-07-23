@@ -60,6 +60,15 @@ _CURRENCY_SIGN_ORDER = ("US$", "S$", "A$", "HK$", "NZ$", "C$", "R$",
 # A bare "$" still SIGNALS "this is money" for type inference, even though its code is unknown.
 CURRENCY_DETECT = set(CURRENCY_SIGNS) | {"$"}
 
+# Currency tokens `parse_number` is allowed to remove before parsing — longest first so "US$"
+# is consumed whole rather than leaving a stray "US". Anything NOT in this vocabulary is not
+# stripped: what survives must be a bare number, else the cell is an identifier or an
+# unrecognised marker, not an amount.
+_CURRENCY_TOKEN_RE = re.compile(
+    "|".join(re.escape(t) for t in sorted(CURRENCY_DETECT, key=len, reverse=True)), re.I)
+# A bare number after token removal: optional sign, digits with at most one decimal point.
+_BARE_NUMBER_RE = re.compile(r"^[+-]?(\d+(\.\d*)?|\.\d+)$")
+
 _DATE_FORMATS = ["%Y-%m-%d", "%Y%m%d", "%d/%m/%Y", "%d-%m-%Y", "%d-%b-%Y", "%d.%m.%Y",
                  "%d %b %Y", "%d %B %Y", "%b %d, %Y", "%B %d, %Y", "%d/%m/%y",
                  "%Y/%m/%d"]
@@ -78,7 +87,13 @@ def parse_number(v):
 
     Uses Decimal (not float) so finance amounts stay exact — no binary-float drift in sums,
     reconciliation or currency tables. Inputs that are already int/Decimal pass through; a
-    float is taken via its str() so 0.1 stays 0.1, not 0.1000000000000000055."""
+    float is taken via its str() so 0.1 stays 0.1, not 0.1000000000000000055.
+
+    Only RECOGNISED currency tokens (`CURRENCY_DETECT`) and separators are removed; whatever
+    remains must be a bare number. So identifiers ('SKU-0001', 'ACC-100', 'REF10000') and
+    markers this parser doesn't understand ('1,234.50 CR', where CR would flip the sign) are
+    REJECTED with a note rather than silently becoming a number. Callers surface that as a
+    skipped/unparseable count — a flagged miss beats a confident wrong value."""
     if isinstance(v, bool):                       # avoid True/False -> 1/0
         return None, f"not a number: {v!r}"
     if isinstance(v, Decimal):
@@ -101,8 +116,16 @@ def parse_number(v):
     elif low.endswith("k"):
         mult, s2 = 1_000, s2[:-1]
     pct = s2.rstrip().endswith("%")
-    s2 = re.sub(r"[^\d.\-]", "", s2.replace(",", ""))
-    if s2 in ("", "-", ".", "-."):
+    if pct:
+        s2 = s2.rstrip()[:-1]
+    # Remove ONLY recognised currency tokens and separators — never arbitrary letters. What
+    # remains must be a bare number. A blanket [^\d.\-] strip used to turn identifiers into
+    # confident wrong numbers with no flag ('SKU-0001' -> -1, 'ACC-100' -> -100,
+    # 'REF10000' -> 10000) and silently dropped markers that change meaning ('1,234.50 CR').
+    # Those now fail with a note, which the callers already surface as skipped/unparseable.
+    s2 = _CURRENCY_TOKEN_RE.sub("", s2.replace(",", ""))
+    s2 = re.sub(r"\s+", "", s2)
+    if not _BARE_NUMBER_RE.match(s2):
         return None, f"not a number: {s!r}"
     try:
         n = Decimal(s2) * mult
@@ -1061,6 +1084,17 @@ if __name__ == "__main__":
     print("[self-test] ordinal order    :", match_ordinal(set(sizes)))
     assert _infer_type(sizes) == "ordinal", _infer_type(sizes)
     assert _infer_type(statuses) == "categorical", _infer_type(statuses)
+    # parse_number strips only RECOGNISED currency tokens: money keeps parsing, identifiers and
+    # unrecognised markers fail with a note instead of becoming confident wrong numbers.
+    for good, want in (("£1,234.50", "1234.50"), ("(500)", "-500"), ("US$ 2.5m", "2500000.0"),
+                       ("USD 50", "50"), ("15%", "0.15"), ("1 234.50", "1234.50"),
+                       ("2.5k", "2500.0"), ("$99.99", "99.99"), ("-45.20", "-45.20")):
+        got, _ = parse_number(good)
+        assert got is not None and str(got) == want, (good, got, want)
+    for bad in ("SKU-0001", "ACC-100", "REF10000", "100 Program", "1,234.50 CR", "1.2.3"):
+        got, note = parse_number(bad)
+        assert got is None and note, (bad, got, note)      # rejected AND flagged, never silent
+    assert _infer_type([f"SKU-{i:04d}" for i in range(50)]) == "text"
     # Large columns take the strided-sample path (>_INFER_SAMPLE): classification must be
     # unchanged. Guards the profiling speed fix (parser-frac on a sample, not the full column).
     big_n = _INFER_SAMPLE * 3
