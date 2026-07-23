@@ -54,6 +54,13 @@ ledger / bank statement / fund administrator). Pick the **preset** if it's a rec
     resolvable date column the window can't apply, so equal-amount pairs are held as
     `ambiguous_match` ("matched on amount alone — confirm") and the run **warns** rather than
     matching on amount alone.
+  - **Never ship a run flagged `⛔ UNRELIABLE`.** When almost nothing reconciles although the two
+    sides share many exactly-equal amounts, the engine says so in the headline and leads the
+    warnings with `UNRELIABLE RESULT` (`summary["unreliable"]`). At thousands of rows no reviewer
+    can see by eye that virtually every item *should* have matched, so this is checked
+    mechanically. It nearly always means a misconfigured run, not a broken ledger — re-check the
+    sign convention (`--flip-b`), the `--debit`/`--credit` mapping and `--date`, then re-run.
+    Do **not** rationalise a 0%-matched working paper.
   - A **second pass** over the one-sided residue recovers `duplicate`, `sign_flip` and
     `amount_mismatch` (e.g. a double-entered cashbook line, a debit booked as a credit, a
     net-vs-gross **GST** gap) that key mode gets from the key — so they're classified, not left as

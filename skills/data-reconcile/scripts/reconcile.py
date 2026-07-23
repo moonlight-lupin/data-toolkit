@@ -229,6 +229,34 @@ def _ccy_relation(a_ccy, b_ccy, strict=False):
 # --------------------------------------------------------------------------- #
 # Stage 1 — match A <-> B
 # --------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
+# Absurd-result guard — a 0%/near-0% match against two sides that share thousands of equal
+# amounts is almost always a MISCONFIGURATION (sign convention, debit/credit mapping, date
+# wiring), not a real break. The engine can catch mechanically what a careful operator catches
+# by eye; at 5,000 rows nobody spots it by eye. We record the amount-only matching POTENTIAL
+# here (where both sides are in scope) and let `summarise` raise the warning, so aggregation
+# confirmed after matching still counts toward the achieved rate.
+# --------------------------------------------------------------------------- #
+ABSURD_MIN_POTENTIAL = 20          # below this, a low match rate is unremarkable — stay quiet
+ABSURD_RATE = 0.20                 # matched < 20% of what equal amounts alone could pair
+
+
+def _amount_pairs(a_amts, b_amts):
+    """1:1 pairs formable on exactly-equal amounts alone (multiset intersection) — an upper
+    bound on what any amount-based matching should achieve."""
+    from collections import Counter
+    cb = Counter(b_amts)
+    return sum(min(n, cb[amt]) for amt, n in Counter(a_amts).items() if amt in cb)
+
+
+def _amount_potential(A, B):
+    """Amount-only pairing potential both as-is and with B negated. A much larger `flipped`
+    count is the fingerprint of a wrong sign convention (--flip-b / debit-credit mapping)."""
+    a = [x["amt"] for x in A if x["amt"] is not None]
+    b = [x["amt"] for x in B if x["amt"] is not None]
+    return {"equal": _amount_pairs(a, b), "flipped": _amount_pairs(a, [-v for v in b])}
+
+
 def match(rows_a, rows_b, *, key=None, amount="amount", date=None, currency=None,
           mode="key", tol=0.01, date_window_days=5, strict_currency=False,
           debit=None, credit=None, flip_b=False):
@@ -400,6 +428,7 @@ def match(rows_a, rows_b, *, key=None, amount="amount", date=None, currency=None
         # Second pass: classify the one-sided residue (duplicate / sign_flip / amount_mismatch),
         # which 1:1 amount+date matching alone leaves as bare missing_in_A / missing_in_B.
         _refine_residues(res, tol=tol, win=win)
+    res["amount_potential"] = _amount_potential(A, B)
     return res
 
 
@@ -838,6 +867,31 @@ def render_balance_check(chk, label="A"):
 # --------------------------------------------------------------------------- #
 # Summary + report
 # --------------------------------------------------------------------------- #
+def _absurd_match_warning(res, reconciled):
+    """Warn when almost nothing reconciled although equal amounts alone could have paired
+    far more — the mechanical signature of a misconfigured run. Returns the message or None.
+
+    Deliberately blunt: this says the RESULT is not trustworthy, which is a different claim
+    from the individual exceptions being real. Silent on small files (< ABSURD_MIN_POTENTIAL)
+    and whenever a sane share of the potential was achieved."""
+    pot = res.get("amount_potential") or {}
+    equal, flipped = pot.get("equal", 0), pot.get("flipped", 0)
+    potential = max(equal, flipped)
+    if potential < ABSURD_MIN_POTENTIAL or reconciled >= potential * ABSURD_RATE:
+        return None
+    msg = (f"UNRELIABLE RESULT — only {reconciled} item(s) reconciled, but {potential} pair(s) "
+           f"of exactly-equal amounts exist across the two sides. A near-zero match rate at "
+           f"this scale is almost always a configuration error, not a real break. ")
+    if flipped > equal * 2:
+        msg += ("The two sides appear to be SIGN-INVERTED relative to each other "
+                f"({flipped} pairs match when one side is negated, vs {equal} as-is) — check "
+                "--flip-b and the debit/credit mapping. ")
+    else:
+        msg += "Check the sign convention (--flip-b), the debit/credit mapping "
+    msg += ("and that the date column is wired (--date) before accepting this working paper.")
+    return msg
+
+
 def summarise(res, exceptions, *, amount="amount"):
     agg = res.get("matched_agg", [])
     matched_n = len(res["matched"])
@@ -868,13 +922,17 @@ def summarise(res, exceptions, *, amount="amount"):
         _ccy_add(e.get("currency"), "exception_val", e["magnitude"])
     reds = sum(1 for e in exceptions if e["materiality"] in ("material", "escalate"))
     rag = "GREEN" if reds == 0 and exceptions == [] else ("RED" if reds else "AMBER")
+    warnings = list(res.get("warnings", []))
+    absurd = _absurd_match_warning(res, reconciled)
+    if absurd:
+        warnings.insert(0, absurd)          # lead with it — it questions the whole result
     return {
         "matched": matched_n, "aggregated": len(agg), "exceptions": len(exceptions), "total": total_n,
         "pct_reconciled": round(100 * reconciled / total_n, 1) if total_n else 100.0,
         "value_matched": round(mat_val, 2), "value_in_exception": round(exc_val, 2),
         "by_category": by_cat, "by_currency": by_ccy,
         "material_or_escalate": reds, "rag": rag,
-        "warnings": list(res.get("warnings", [])),
+        "warnings": warnings, "unreliable": bool(absurd),
     }
 
 
@@ -899,7 +957,8 @@ def render_report(summary, exceptions, *, a_label="A", b_label="B", title="Recon
     L = [f"# {_md_escape(title)}: {_md_escape(a_label)} vs {_md_escape(b_label)}", ""]
     s = summary
     agg = f", {s['aggregated']} aggregation(s)" if s.get("aggregated") else ""
-    L.append(f"**{s['rag']}** — {s['pct_reconciled']}% of items reconciled "
+    L.append(f"**{s['rag']}{' · ⛔ UNRELIABLE' if s.get('unreliable') else ''}** — "
+             f"{s['pct_reconciled']}% of items reconciled "
              f"({s['matched']} matched 1:1{agg}); {s['exceptions']} exception(s), "
              f"{s['material_or_escalate']} material/escalate.")
     L.append(f"Value matched: {_money(s['value_matched'])} · value in exception: {_money(s['value_in_exception'])}")
@@ -1164,6 +1223,32 @@ def _self_test():
     assert "amount alone" in exc_nd[0]["probable_cause"], exc_nd[0]
     assert summarise(rnd, exc_nd)["warnings"], "warning must surface in the summary"
     print("amount_date no-date safety: PASS")
+
+    # Absurd-result guard: a near-zero match rate against two sides sharing many equal amounts
+    # is a misconfiguration signature, not a real break — the summary must say so out loud.
+    n = ABSURD_MIN_POTENTIAL + 10
+    Aab = [{"amount": str(100 + i), "date": "05/01/2026"} for i in range(n)]
+    Bab = [{"amount": str(100 + i), "date": "05/01/2026"} for i in range(n)]
+    # (a) healthy run — same data wired correctly — must stay SILENT
+    ok = summarise(match(Aab, Bab, amount="amount", date="date", mode="amount_date"), [])
+    assert not ok["unreliable"] and not ok["warnings"], ("healthy run must not warn", ok)
+    # (b) date wiring lost -> everything held ambiguous, nothing reconciled -> must FIRE
+    bad_res = match(Aab, Bab, amount="amount", mode="amount_date")      # no date=
+    bad = summarise(bad_res, triage(bad_res))
+    assert bad["unreliable"], ("near-zero match vs equal amounts must warn", bad)
+    assert "UNRELIABLE RESULT" in bad["warnings"][0], bad["warnings"]
+    assert bad_res["amount_potential"]["equal"] == n, bad_res["amount_potential"]
+    # (c) sign-inverted sides -> the message must name the sign convention specifically
+    Binv = [{"amount": str(-(100 + i)), "date": "05/01/2026"} for i in range(n)]
+    inv_res = match(Aab, Binv, amount="amount", date="date", mode="amount_date")
+    inv = summarise(inv_res, triage(inv_res))
+    assert inv["unreliable"] and "SIGN-INVERTED" in inv["warnings"][0], inv["warnings"]
+    # (d) small files stay quiet — a low match rate there is unremarkable
+    Asm = [{"amount": "10", "date": "05/01/2026"}, {"amount": "20", "date": "05/01/2026"}]
+    sm_res = match(Asm, [{"amount": "10", "date": "30/06/2026"}], amount="amount",
+                   date="date", mode="amount_date")
+    assert not summarise(sm_res, triage(sm_res))["unreliable"], "must not warn on tiny inputs"
+    print("absurd-result guard: PASS")
 
     # amount_date residue triage (Stage 1.5): duplicate / sign_flip / amount_mismatch are
     # classified, not left as bare missing_in_A / missing_in_B (a bank-vs-cashbook staple).

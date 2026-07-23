@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.8.6 — 2026-07-23
+
+Closes the last open finding from the benchmark series (round 3, `data-reconcile`).
+
+- **Absurd-result guard: reconcile now refuses to present a near-zero match as a clean run.**
+  A Haiku run had hand-converted the bank side's signs and lost the date wiring, producing a
+  "successful" working paper with **0 matched and 4,935 ambiguous** — while both sides shared
+  4,935 exactly-equal amounts. The engine gave no mechanical signal that this is a
+  misconfiguration rather than a real break, and the small model rationalised it. At thousands
+  of rows no reviewer catches that by eye.
+
+  `match()` now records the amount-only pairing potential (`res["amount_potential"]`, both as-is
+  and with one side negated) and `summarise()` raises `UNRELIABLE RESULT` — leading the warnings
+  and stamping `⛔ UNRELIABLE` on the report headline plus `summary["unreliable"]` — when fewer
+  than 20% of that potential reconciled. A much larger negated-match count names the sign
+  convention specifically (`--flip-b` / debit-credit mapping). Silent on healthy runs and on
+  small inputs (< 20 potential pairs), where a low rate is unremarkable.
+
+  Verified on the original repro fixtures (`t6m`): the correct wiring reproduces ground truth
+  (4,930 matched / 75 exceptions) with the guard **silent**; the broken wiring fires it. Four
+  self-test cases cover healthy / near-zero / sign-inverted / small-input. `SKILL.md` tells the
+  agent never to ship a flagged run.
+
 ## 0.8.5 — 2026-07-21
 
 Two fixes from round-4 benchmark testing (v0.8.4), both on `data-analyse` at scale.
