@@ -1,14 +1,17 @@
-# Convert: GL export -> downstream accounting system journal import
+# Convert: GL export -> downstream journal import
 
-Monthly journal upload of the GL export into the downstream accounting system's import format. Recurring (runs every month on that month's GL export).
+Recurring MONTHLY conversion: convert the accounting system's GL export into the downstream accounting system's journal import CSV contract.
 
 ## Standing rules
 
-- Each month's source must be sense-checked against the Expected source (below) before converting.
-- Any discrepancy versus the Expected source -- a renamed, missing or new column -- must be flagged to the user and never silently converted.
-- Required target fields (JournalRef, Date, AccountCode, Amount) must never be empty. A row failing a required field must be flagged and EXCLUDED from the import file, never guessed or defaulted.
-- Never invent JournalRef, Date, AccountCode or Amount values.
-- Source column is a constant 'GLEXPORT' -- it is the fixed identifier for this feed, not a per-row source value.
+- This export arrives every month (recurring). Before converting any month's file, sense-check it against the 'Expected source' column list below -- a renamed, missing, or new column must be flagged to the user, never silently converted.
+- Required target fields (JournalRef, Date, AccountCode, Amount) must never be empty. A row failing a required field is flagged and EXCLUDED from the import file -- never guessed or invented.
+- Amount is signed: Debit positive, Credit negative (Debit minus Credit), quantised to 2 dp.
+- Date is re-expressed from the source's DD/MM/YYYY to the contract's YYYY-MM-DD.
+- Source column is always the constant 'GLEXPORT'.
+- 'Account Name' in the source is not part of the target contract and is deliberately left unmapped (reported, not dropped silently) -- do not add it to the target without a new confirmed mapping.
+- The engine never fetches data and never guesses a value; this is a draft for a qualified person to review before it is submitted to the downstream system.
+- Aug 2026 run: source renamed "Cost Centre" to "CC Code" (identical CC-1xx..5xx values, treated as a straight rename and re-pointed the CostCentre mapping) and added a new "Approved By" column (not part of the target contract, left unmapped like Account Name). Flagged for human confirmation in this non-interactive run; sense-check will re-flag if either changes again.
 
 - **Source:** xlsx (sheet `GL Export`)
 - **Target:** csv — contract `journal_import (downstream accounting system)`
@@ -22,11 +25,11 @@ Monthly journal upload of the GL export into the downstream accounting system's 
 | AccountCode | Account Code | as_is → text |
 | Narrative | Description | as_is → text |
 | Amount | Debit, Credit | debit_minus_credit |
-| CostCentre | Cost Centre | as_is → text |
-| Source | GLEXPORT | as_is → text |
+| CostCentre | CC Code | as_is → text |
+| Source | GLEXPORT | as_is |
 
 ## Expected source (verify before running)
-Columns: `Entry No`, `Posting Date`, `Account Code`, `Account Name`, `Description`, `Debit`, `Credit`, `Cost Centre`
+Columns: `Entry No`, `Posting Date`, `Account Code`, `Account Name`, `Description`, `Debit`, `Credit`, `CC Code`, `Approved By`
 
 > Before applying, sense-check today's source against this. Flag any missing, renamed or new columns to the user; don't blind-apply over drift.
 
@@ -34,14 +37,17 @@ Columns: `Entry No`, `Posting Date`, `Account Code`, `Account Name`, `Descriptio
 
 ```convert-spec
 {
-  "name": "GL export -> downstream accounting system journal import",
-  "purpose": "Monthly journal upload of the GL export into the downstream accounting system's import format. Recurring (runs every month on that month's GL export).",
+  "name": "GL export -> downstream journal import",
+  "purpose": "Recurring MONTHLY conversion: convert the accounting system's GL export into the downstream accounting system's journal import CSV contract.",
   "standing_rules": [
-    "Each month's source must be sense-checked against the Expected source (below) before converting.",
-    "Any discrepancy versus the Expected source -- a renamed, missing or new column -- must be flagged to the user and never silently converted.",
-    "Required target fields (JournalRef, Date, AccountCode, Amount) must never be empty. A row failing a required field must be flagged and EXCLUDED from the import file, never guessed or defaulted.",
-    "Never invent JournalRef, Date, AccountCode or Amount values.",
-    "Source column is a constant 'GLEXPORT' -- it is the fixed identifier for this feed, not a per-row source value."
+    "This export arrives every month (recurring). Before converting any month's file, sense-check it against the 'Expected source' column list below -- a renamed, missing, or new column must be flagged to the user, never silently converted.",
+    "Required target fields (JournalRef, Date, AccountCode, Amount) must never be empty. A row failing a required field is flagged and EXCLUDED from the import file -- never guessed or invented.",
+    "Amount is signed: Debit positive, Credit negative (Debit minus Credit), quantised to 2 dp.",
+    "Date is re-expressed from the source's DD/MM/YYYY to the contract's YYYY-MM-DD.",
+    "Source column is always the constant 'GLEXPORT'.",
+    "'Account Name' in the source is not part of the target contract and is deliberately left unmapped (reported, not dropped silently) -- do not add it to the target without a new confirmed mapping.",
+    "The engine never fetches data and never guesses a value; this is a draft for a qualified person to review before it is submitted to the downstream system.",
+    "Aug 2026 run: source renamed \"Cost Centre\" to \"CC Code\" (identical CC-1xx..5xx values, treated as a straight rename and re-pointed the CostCentre mapping) and added a new \"Approved By\" column (not part of the target contract, left unmapped like Account Name). Flagged for human confirmation in this non-interactive run; sense-check will re-flag if either changes again."
   ],
   "source": {
     "format": "xlsx",
@@ -54,14 +60,13 @@ Columns: `Entry No`, `Posting Date`, `Account Code`, `Account Name`, `Descriptio
       "Description",
       "Debit",
       "Credit",
-      "Cost Centre"
-    ],
-    "dayfirst": true
+      "CC Code",
+      "Approved By"
+    ]
   },
   "target": {
     "format": "csv",
     "contract": "journal_import (downstream accounting system)",
-    "delimiter": ",",
     "encoding": "utf-8",
     "columns": [
       {
@@ -99,7 +104,8 @@ Columns: `Entry No`, `Posting Date`, `Account Code`, `Account Name`, `Descriptio
     "Date": {
       "from": "Posting Date",
       "type": "date",
-      "format": "%Y-%m-%d"
+      "format": "%Y-%m-%d",
+      "dayfirst": true
     },
     "AccountCode": {
       "from": "Account Code",
@@ -118,12 +124,11 @@ Columns: `Entry No`, `Posting Date`, `Account Code`, `Account Name`, `Descriptio
       "dp": 2
     },
     "CostCentre": {
-      "from": "Cost Centre",
+      "from": "CC Code",
       "type": "text"
     },
     "Source": {
-      "const": "GLEXPORT",
-      "type": "text"
+      "const": "GLEXPORT"
     }
   },
   "rules": {

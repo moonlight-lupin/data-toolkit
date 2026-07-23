@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 import openpyxl
 
-BASE = pathlib.Path(__file__).resolve().parent.parent   # benchmark/ root (scripts live in scripts/)
+BASE = pathlib.Path(__file__).resolve().parent.parent   # benchmark root (scripts/ is a subdir)
 FIX = BASE / "fixtures"
 GT = BASE / "ground_truth"
 

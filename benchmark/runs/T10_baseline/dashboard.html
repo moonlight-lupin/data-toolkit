@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="UTF-8">
+<title>Sales Revenue Dashboard</title>
+<style>
+  :root {
+    --ink: #1a2230;
+    --muted: #5b6472;
+    --line: #d8dde3;
+    --bg: #ffffff;
+    --panel: #f6f8fa;
+    --accent: #1f4e79;
+    --accent2: #2e7d5b;
+    --warn-bg: #fff4e5;
+    --warn-border: #d98c1f;
+    --warn-ink: #7a4a00;
+    --info-bg: #eef3f8;
+    --info-border: #7fa8cc;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", Calibri, Arial, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    margin: 0;
+    padding: 28px 36px 40px;
+    max-width: 1000px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-bottom: 3px solid var(--accent);
+    padding-bottom: 10px;
+    margin-bottom: 6px;
+  }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); font-size: 13px; margin: 0; }
+  .asof { text-align: right; font-size: 12.5px; color: var(--muted); }
+  .asof strong { color: var(--ink); display:block; font-size: 13.5px; }
+
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin: 22px 0 20px;
+  }
+  .kpi {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 14px 16px;
+  }
+  .kpi .label {
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .kpi .value {
+    font-size: 26px;
+    font-weight: 600;
+    color: var(--accent);
+    line-height: 1.15;
+  }
+  .kpi .foot {
+    font-size: 11.5px;
+    color: var(--muted);
+    margin-top: 5px;
+  }
+
+  .notice {
+    border: 1px solid var(--warn-border);
+    background: var(--warn-bg);
+    color: var(--warn-ink);
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 12.5px;
+    margin-bottom: 12px;
+  }
+  .notice.info {
+    border-color: var(--info-border);
+    background: var(--info-bg);
+    color: var(--ink);
+  }
+  .notice strong { display: inline; }
+  .notice ul { margin: 6px 0 0 18px; padding: 0; }
+  .notice li { margin-bottom: 2px; }
+
+  section { margin-top: 26px; }
+  h2 {
+    font-size: 15px;
+    border-left: 4px solid var(--accent);
+    padding-left: 8px;
+    margin: 0 0 10px;
+  }
+  .chart-wrap {
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 14px 16px 6px;
+    background: #fff;
+  }
+  svg { width: 100%; height: auto; display: block; }
+  .chartbg { fill: #ffffff; }
+  .gridline { stroke: var(--line); stroke-width: 1; }
+  .axislabel { font-size: 11px; fill: var(--muted); font-family: "Segoe UI", Arial, sans-serif; }
+  .lineseries { fill: none; stroke: var(--accent); stroke-width: 2.4; }
+  .areafill { fill: var(--accent); opacity: 0.08; }
+  .datapoint { fill: var(--accent); }
+  .bar-0 { fill: var(--accent); }
+  .bar-1 { fill: #3f7ab0; }
+  .barvalue { font-size: 11px; fill: var(--ink); font-family: "Segoe UI", Arial, sans-serif; }
+
+  table.data {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 12.5px;
+    margin-top: 8px;
+  }
+  table.data th, table.data td {
+    border: 1px solid var(--line);
+    padding: 5px 8px;
+    text-align: right;
+  }
+  table.data th:first-child, table.data td:first-child { text-align: left; }
+  table.data th { background: var(--panel); font-weight: 600; }
+
+  footer {
+    margin-top: 34px;
+    border-top: 1px solid var(--line);
+    padding-top: 10px;
+    font-size: 11.5px;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+  }
+  .draft-stamp {
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #b23a3a;
+  }
+
+  @media print {
+    body { padding: 10mm 12mm; max-width: none; }
+    .kpi-row { break-inside: avoid; }
+    section { break-inside: avoid; }
+    .notice, .chart-wrap { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Sales Revenue Dashboard</h1>
+    <p class="subtitle">Source: t4_sales.csv &middot; 287 invoice rows &middot; GBP-denominated revenue unless stated</p>
+  </div>
+  <div class="asof">
+    <strong>As of 20 Jul 2026</strong>
+    Draft for review
+  </div>
+</header>
+
+<div class="kpi-row">
+  <div class="kpi">
+    <div class="label">GBP Revenue</div>
+    <div class="value">£833,807</div>
+    <div class="foot">Excludes 1 anomalous line and 2 blank-amount GBP rows. See disclosures below.</div>
+  </div>
+  <div class="kpi">
+    <div class="label">Top Customer Share of GBP Revenue</div>
+    <div class="value">69.7%</div>
+    <div class="foot">Bramley &amp; Cole &mdash; £581,016 of £833,807</div>
+  </div>
+  <div class="kpi">
+    <div class="label">Active Months (GBP)</div>
+    <div class="value">13</div>
+    <div class="foot">Apr 2025 to May 2026; gap: Nov 2025</div>
+  </div>
+</div>
+
+<div class="notice">
+  <strong>Anomaly disclosed and excluded from headline GBP revenue:</strong> invoice INV-9999
+  (Kestrel, 18/03/2026) records £250,000 &mdash;
+  roughly 25&ndash;100&times; every other line in the file (typical GBP invoice range is c. £600&ndash;£9,600).
+  This is treated as a data anomaly and excluded from all KPIs, charts and the customer breakdown above.
+  <strong>If included, GBP revenue would be £1,083,807</strong> instead of £833,807.
+  No adjusted/estimated replacement value has been substituted &mdash; the row is simply excluded, and this should be
+  confirmed against source records before reliance.
+</div>
+
+<div class="notice info">
+  <strong>Currency handling (not blended):</strong> the dataset contains 12 USD rows (11 with a value,
+  1 blank) alongside 275 GBP rows. USD rows are <strong>excluded</strong> from every GBP figure on this
+  dashboard rather than converted or combined. Valid USD invoices total <strong>US$ 37,278.00</strong>
+  (09 Apr 2025 to 21 May 2026) and are reported here for completeness only, at no FX rate.
+  <br><br>
+  <strong>Blank amounts:</strong> 2 GBP row(s) and 1 USD row(s) have no Amount value in the source
+  file and are excluded from all sums (treated as missing, not zero, and not estimated).
+</div>
+
+<section>
+  <h2>Monthly GBP Revenue Trend</h2>
+  <div class="chart-wrap">
+    <svg viewBox="0 0 760 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Monthly GBP revenue trend chart">
+  <rect x="0" y="0" width="760" height="300" class="chartbg"/>
+  <line x1="60" y1="250.0" x2="740" y2="250.0" class="gridline"/><text x="52" y="254.0" class="axislabel" text-anchor="end">£0</text><line x1="60" y1="192.5" x2="740" y2="192.5" class="gridline"/><text x="52" y="196.5" class="axislabel" text-anchor="end">£18,083</text><line x1="60" y1="135.0" x2="740" y2="135.0" class="gridline"/><text x="52" y="139.0" class="axislabel" text-anchor="end">£36,166</text><line x1="60" y1="77.5" x2="740" y2="77.5" class="gridline"/><text x="52" y="81.5" class="axislabel" text-anchor="end">£54,248</text><line x1="60" y1="20.0" x2="740" y2="20.0" class="gridline"/><text x="52" y="24.0" class="axislabel" text-anchor="end">£72,331</text>
+  <polygon points="60.0,250.0 60.0,42.9 116.7,51.5 173.3,63.3 230.0,42.2 286.7,43.9 343.3,50.4 400.0,41.5 456.7,20.0 513.3,49.2 570.0,40.0 626.7,47.7 683.3,60.8 740.0,45.3 740.0,250.0" class="areafill"/>
+  <polyline points="60.0,42.9 116.7,51.5 173.3,63.3 230.0,42.2 286.7,43.9 343.3,50.4 400.0,41.5 456.7,20.0 513.3,49.2 570.0,40.0 626.7,47.7 683.3,60.8 740.0,45.3" class="lineseries"/>
+  <circle cx="60.0" cy="42.9" r="3.2" class="datapoint"/><circle cx="116.7" cy="51.5" r="3.2" class="datapoint"/><circle cx="173.3" cy="63.3" r="3.2" class="datapoint"/><circle cx="230.0" cy="42.2" r="3.2" class="datapoint"/><circle cx="286.7" cy="43.9" r="3.2" class="datapoint"/><circle cx="343.3" cy="50.4" r="3.2" class="datapoint"/><circle cx="400.0" cy="41.5" r="3.2" class="datapoint"/><circle cx="456.7" cy="20.0" r="3.2" class="datapoint"/><circle cx="513.3" cy="49.2" r="3.2" class="datapoint"/><circle cx="570.0" cy="40.0" r="3.2" class="datapoint"/><circle cx="626.7" cy="47.7" r="3.2" class="datapoint"/><circle cx="683.3" cy="60.8" r="3.2" class="datapoint"/><circle cx="740.0" cy="45.3" r="3.2" class="datapoint"/>
+  <text x="60.0" y="270" class="axislabel" text-anchor="middle">Apr 2025</text><text x="116.7" y="270" class="axislabel" text-anchor="middle">May 2025</text><text x="173.3" y="270" class="axislabel" text-anchor="middle">Jun 2025</text><text x="230.0" y="270" class="axislabel" text-anchor="middle">Jul 2025</text><text x="286.7" y="270" class="axislabel" text-anchor="middle">Aug 2025</text><text x="343.3" y="270" class="axislabel" text-anchor="middle">Sep 2025</text><text x="400.0" y="270" class="axislabel" text-anchor="middle">Oct 2025</text><text x="456.7" y="270" class="axislabel" text-anchor="middle">Dec 2025</text><text x="513.3" y="270" class="axislabel" text-anchor="middle">Jan 2026</text><text x="570.0" y="270" class="axislabel" text-anchor="middle">Feb 2026</text><text x="626.7" y="270" class="axislabel" text-anchor="middle">Mar 2026</text><text x="683.3" y="270" class="axislabel" text-anchor="middle">Apr 2026</text><text x="740.0" y="270" class="axislabel" text-anchor="middle">May 2026</text>
+</svg>
+  </div>
+  <p class="foot" style="color:var(--muted); font-size:11.5px;">
+    13 months of GBP-only invoices, Apr 2025&ndash;May 2026.
+    No invoices recorded for Nov 2025 (gap in source data, not zeroed or interpolated). Anomaly and blank rows excluded.
+  </p>
+</section>
+
+<section>
+  <h2>Customer Breakdown &mdash; GBP Revenue</h2>
+  <div class="chart-wrap">
+    <svg viewBox="0 0 760 340" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Customer breakdown chart">
+  <rect x="0" y="0" width="760" height="340" class="chartbg"/>
+  <rect x="150" y="25.7" width="540.0" height="18.6" class="bar bar-0"/><text x="140" y="39.0" class="axislabel" text-anchor="end">Bramley &amp; Cole</text><text x="698.0" y="39.0" class="barvalue">£581,016</text><rect x="150" y="55.7" width="30.8" height="18.6" class="bar bar-1"/><text x="140" y="69.0" class="axislabel" text-anchor="end">Silverbirch</text><text x="188.8" y="69.0" class="barvalue">£33,103</text><rect x="150" y="85.7" width="29.4" height="18.6" class="bar bar-0"/><text x="140" y="99.0" class="axislabel" text-anchor="end">Orchard Lane</text><text x="187.4" y="99.0" class="barvalue">£31,580</text><rect x="150" y="115.7" width="28.4" height="18.6" class="bar bar-1"/><text x="140" y="129.0" class="axislabel" text-anchor="end">Kestrel</text><text x="186.4" y="129.0" class="barvalue">£30,514</text><rect x="150" y="145.7" width="27.8" height="18.6" class="bar bar-0"/><text x="140" y="159.0" class="axislabel" text-anchor="end">Fenwick</text><text x="185.8" y="159.0" class="barvalue">£29,951</text><rect x="150" y="175.7" width="25.5" height="18.6" class="bar bar-1"/><text x="140" y="189.0" class="axislabel" text-anchor="end">Marlowe</text><text x="183.5" y="189.0" class="barvalue">£27,401</text><rect x="150" y="205.7" width="25.3" height="18.6" class="bar bar-0"/><text x="140" y="219.0" class="axislabel" text-anchor="end">Hollis</text><text x="183.3" y="219.0" class="barvalue">£27,221</text><rect x="150" y="235.7" width="24.1" height="18.6" class="bar bar-1"/><text x="140" y="249.0" class="axislabel" text-anchor="end">Northgate</text><text x="182.1" y="249.0" class="barvalue">£25,906</text><rect x="150" y="265.7" width="23.6" height="18.6" class="bar bar-0"/><text x="140" y="279.0" class="axislabel" text-anchor="end">Dunmore</text><text x="181.6" y="279.0" class="barvalue">£25,412</text><rect x="150" y="295.7" width="20.2" height="18.6" class="bar bar-1"/><text x="140" y="309.0" class="axislabel" text-anchor="end">Verity</text><text x="178.2" y="309.0" class="barvalue">£21,703</text>
+</svg>
+  </div>
+  <table class="data">
+    <thead><tr><th>Customer</th><th>GBP Revenue</th><th>Share of Total</th></tr></thead>
+    <tbody>
+      <tr><td>Bramley &amp; Cole</td><td>£581,016</td><td>69.7%</td></tr><tr><td>Silverbirch</td><td>£33,103</td><td>4.0%</td></tr><tr><td>Orchard Lane</td><td>£31,580</td><td>3.8%</td></tr><tr><td>Kestrel</td><td>£30,514</td><td>3.7%</td></tr><tr><td>Fenwick</td><td>£29,951</td><td>3.6%</td></tr><tr><td>Marlowe</td><td>£27,401</td><td>3.3%</td></tr><tr><td>Hollis</td><td>£27,221</td><td>3.3%</td></tr><tr><td>Northgate</td><td>£25,906</td><td>3.1%</td></tr><tr><td>Dunmore</td><td>£25,412</td><td>3.0%</td></tr><tr><td>Verity</td><td>£21,703</td><td>2.6%</td></tr>
+      <tr><th>Total</th><th>£833,807</th><th>100.0%</th></tr>
+    </tbody>
+  </table>
+</section>
+
+<footer>
+  <span><org> &mdash; internal working draft, produced from t4_sales.csv. All figures computed directly from source rows; none estimated.</span>
+  <span class="draft-stamp">Draft for review</span>
+</footer>
+
+</body>
+</html>

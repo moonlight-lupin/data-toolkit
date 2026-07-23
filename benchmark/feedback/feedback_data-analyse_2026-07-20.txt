@@ -1,0 +1,63 @@
+### 2026-07-20 — data-analyse — large-file path (read_large) does not cover CSV, and profile_table is the bottleneck at 250k rows
+- Reporter:        Toolkit benchmark testing (round 4, toolkit v0.8.4, Claude Sonnet 5 agent)
+- Type:            Enhancement (plus a docs gap)
+- Severity:        Friction
+- What I was doing: Analysing a 249,905-row / 12.6 MB sales CSV per SKILL.md and
+                    references/large-file-patterns.md, expecting the documented
+                    large-file streaming path to engage (pandas + pyarrow installed).
+- What happened:    (1) ingest.read_large supports .xlsx/.xlsm only — for CSV the only
+                    path is read_any's single-pass csv.reader (fine at this size, but
+                    the large-file guidance implies broader coverage and CSV is the
+                    most common large-export format). (2) The dominant cost was not
+                    ingestion (0.42s) but dataclean.profile_table: 222.5s full-row
+                    duplicate hashing over 249,905 rows, plus score_quality 16.6s —
+                    ~60% of a 389.5s total engine time. A pandas baseline on the same
+                    task/file completed its entire compute in seconds and produced the
+                    same verified findings, 5.5x faster and 2.6x cheaper end-to-end.
+- What I expected:  read_large (or an equivalent chunked/pyarrow path) to cover CSV;
+                    and profile_table to have a fast path at scale — e.g. sample-based
+                    profiling with full-scan duplicate checking optional or vectorised
+                    (pandas/pyarrow when available), with the sampling disclosed in the
+                    profile output.
+- Impact:           At 250k rows the toolkit's cost advantage inverts for analyse: the
+                    correct-and-audited result arrives, but far slower and dearer than
+                    a competent hand-rolled pandas pass. The T6 finding ("engine
+                    absorbs scale, flat cost") holds for reconcile at 20k but not for
+                    analyse at 250k CSV.
+- Suggested fix:    Extend read_large to CSV (pyarrow.csv or pandas chunks); give
+                    profile_table an n_rows threshold above which it samples and/or
+                    uses a vectorised duplicate check; state the coverage honestly in
+                    large-file-patterns.md meanwhile.
+- Example / file:   Repro: data-toolkit-benchmark/fixtures/t9_sales_large.csv with the
+                    timing log at runs_v084/T9_skill/_timing_log.txt; pandas comparison
+                    in runs_v084/T9_base/insight_brief.md.
+
+### 2026-07-20 — data-analyse — currency_mix() returns empty for a stand-alone currency-code column
+- Reporter:        Toolkit benchmark testing (round 4, toolkit v0.8.4; hit independently by two agents on different datasets)
+- Type:            Bug (or a docs/clarity gap on the currency gate)
+- Severity:        Friction
+- What I was doing: Applying the SKILL.md currency gate ("analyse.currency_mix(col) —
+                    if a value column carries more than one currency code, never sum
+                    as-is") on files whose Currency is a separate ISO-code column
+                    (GBP/USD), the common export layout.
+- What happened:    currency_mix() returned an empty set — it detects codes/symbols
+                    embedded in amount strings ("S$100", "£1,000"), not a bare code
+                    column. Two separate agents hit this independently (T4 287-row and
+                    T9 250k-row datasets) and each had to work around it (reading
+                    distinct values / breakdown on the Currency column).
+- What I expected:  The gate to work on both layouts — either currency_mix accepting a
+                    code column (values that ARE codes), or the SKILL.md gate step
+                    naming the second layout and the breakdown() alternative.
+- Impact:           The mandated safety step silently returns "no mix" on the layout
+                    where the mixed-currency risk is most common. Both Sonnet agents
+                    caught it by inspection; a weaker model following the gate
+                    literally would conclude there is one currency and blend the sum —
+                    exactly the failure the gate exists to prevent.
+- Suggested fix:    If every non-blank value in the column matches a known ISO code /
+                    symbol, treat the column itself as the code carrier and return the
+                    distinct codes; add a self-test for the two-column layout.
+- Example / file:   Repro: fixtures/t4_sales.csv or t9_sales_large.csv, column
+                    "Currency"; agent workarounds noted in runs_v084/T4_skill and
+                    runs_v084/T9_skill execution logs.
+
+--- STATUS UPDATE 21 Jul 2026: addressed upstream in v0.8.5. Verified against the repro fixtures: profile_table on the 249,905-row t9 fixture now 6.6s (was ~222s; root cause was _infer_type date-parse attempts, not the dedup hashing this entry fingered - maintainer diagnosis correct); currency_mix now returns {GBP, USD} on the bare-code Currency columns of t4 and t9. read_large remains xlsx-only - addressed as a documentation fix (large-file-patterns.md now states the CSV scope honestly) rather than a feature. ---

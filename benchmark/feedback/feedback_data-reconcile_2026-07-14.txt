@@ -87,3 +87,15 @@
                     runs_haiku/T6M_skill/T6M_Reconciliation_Cashbook_BankStatement.xlsx
                     (0 matched / 4,985 exceptions); correct result: 4,930 matched,
                     75 exceptions (see ground_truth/t6m.json).
+
+--- STATUS UPDATE 23 Jul 2026 (maintainer): fixed upstream in v0.8.6 (commit b28c297).
+    match() records the amount-only pairing potential (as-is and with one side negated);
+    summarise() raises "UNRELIABLE RESULT" as the leading warning, stamps the report
+    headline with UNRELIABLE and sets summary["unreliable"] when under 20% of that
+    potential reconciled. A much larger negated-match count names the sign convention
+    (--flip-b / debit-credit mapping) specifically. Silent on healthy runs and on inputs
+    with under 20 potential pairs. SKILL.md instructs the agent never to ship a flagged run.
+    Verified against these repro fixtures: the correct wiring reproduces ground truth
+    (4,930 matched / 75 exceptions) with the guard silent; the broken wiring fires it.
+    Self-tests cover healthy / near-zero / sign-inverted / small-input. NOT yet re-scored
+    by a fresh benchmark run. ---

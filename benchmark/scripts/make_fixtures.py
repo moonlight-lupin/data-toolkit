@@ -3,7 +3,7 @@
 import json, pathlib
 from decimal import Decimal
 
-BASE = pathlib.Path(__file__).resolve().parent.parent   # benchmark/ root (scripts live in scripts/)
+BASE = pathlib.Path(__file__).resolve().parent.parent   # benchmark root (scripts/ is a subdir)
 FIX = BASE / "fixtures"
 GT = BASE / "ground_truth"
 FIX.mkdir(exist_ok=True)

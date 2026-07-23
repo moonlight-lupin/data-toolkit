@@ -1,7 +1,10 @@
-# Regenerable large T6 scaling fixtures — recreate with scripts/make_fixtures_t6.py
-# (omitted from the repo for size; see REPORT.md §6 / REPORT_HAIKU.md §8 and README.md).
+# Regenerable large fixtures — omitted for size, recreated byte-identically by the
+# generators in scripts/ (all deterministic: no RNG, no timestamps). See README.md.
+#   T6 scaling pair  -> scripts/make_fixtures_t6.py     (REPORT.md §4/§6)
+#   T9 250k-row CSV  -> scripts/make_fixtures_t8t9.py   (REPORT.md §4 T9, 12.6 MB)
 fixtures/t6l_*
 fixtures/t6m_*
+fixtures/t9_sales_large.csv
 
 # T6 scaling-run workbooks (Sonnet runs/ and Haiku runs_haiku/) are not committed —
 # only their metrics, in run_metrics.csv.

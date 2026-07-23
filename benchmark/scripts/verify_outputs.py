@@ -4,9 +4,9 @@ import json, re, pathlib, sys
 from decimal import Decimal
 import openpyxl
 
-BASE = pathlib.Path(__file__).resolve().parent.parent   # benchmark/ root (scripts live in scripts/)
+BASE = pathlib.Path(__file__).resolve().parent.parent   # benchmark root (scripts/ is a subdir)
 RUNS = sys.argv[1] if len(sys.argv) > 1 else "runs"
-ARMS = sys.argv[2:] if len(sys.argv) > 2 else ["skill", "baseline"]
+ARMS = sys.argv[2:] if len(sys.argv) > 2 else ["skill", "baseline"]   # dirs are T<n>_baseline
 GT = {n: json.loads((BASE / "ground_truth" / f"t{n}.json").read_text()) for n in range(1, 6)}
 
 def sheet_rows(path, sheet=None):

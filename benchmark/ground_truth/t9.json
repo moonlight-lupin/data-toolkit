@@ -1,0 +1,13 @@
+{
+  "rows": 249905,
+  "gap_month": "Sep 2025",
+  "usd_rows": 300,
+  "blank_amounts": 50,
+  "sum_GBP": "446463727",
+  "sum_USD": "524670",
+  "median_GBP": "1548",
+  "outliers": "5 x INV @ 2,000,000 GBP, Mar 2026, Customer AA",
+  "top_customer": "Kestrel Group",
+  "top1_share_pct": "53.1",
+  "file_mb": 12.6
+}

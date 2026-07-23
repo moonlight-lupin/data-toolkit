@@ -1,0 +1,91 @@
+<!DOCTYPE html><html lang="en" dir="ltr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sales — GBP revenue dashboard</title><style>
+:root{--burg:#163F3A;--rose:#4FB3A0;--ink:#14171A;
+--grey:#565C63;--line:#D9DEDB;--bg:#F1F3F2}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif}
+.wrap{max-width:1040px;margin:0 auto;padding:0 20px 40px}
+header{display:flex;align-items:flex-end;justify-content:space-between;
+gap:16px;border-bottom:3px solid var(--burg);padding:22px 0 12px;margin-bottom:18px}
+.brand{display:flex;align-items:center;gap:13px}
+.brand .logo{height:46px;width:auto;display:block}
+.mark{font-family:'Space Grotesk','Inter','Segoe UI',system-ui,sans-serif;font-weight:700;letter-spacing:2px;color:var(--ink);font-size:24px}
+h1{font-family:'Space Grotesk','Inter','Segoe UI',system-ui,sans-serif;font-size:21px;margin:0;font-weight:700}
+.sub{color:var(--grey);font-size:13px;margin-top:2px}
+.asof{text-align:right;color:var(--grey);font-size:12px;white-space:nowrap}
+.asof b{display:block;color:var(--ink);font-size:13px}
+.btn{margin-top:8px;font:12px 'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif;background:var(--burg);color:#fff;border:0;
+border-radius:5px;padding:6px 12px;cursor:pointer}
+.sec{margin:22px 0}
+.sec h2{font-family:'Space Grotesk','Inter','Segoe UI',system-ui,sans-serif;font-size:15px;color:var(--burg);margin:0 0 10px;
+border-left:4px solid var(--burg);padding-left:9px}
+.block{background:#fff;border:1px solid var(--line);border-radius:9px;
+padding:14px 16px;margin:0 0 14px}
+.bt{font-size:13px;margin:0 0 10px;color:var(--ink)}
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+gap:14px;margin:0 0 14px}
+.kpi{background:#fff;border:1px solid var(--line);border-top:4px solid var(--burg);
+border-radius:9px;padding:14px 16px}
+.kpi-val{font-family:'Space Grotesk','Inter','Segoe UI',system-ui,sans-serif;font-size:30px;font-weight:700;line-height:1.1}
+.kpi-lbl{color:var(--grey);font-size:12px;margin-top:4px;text-transform:uppercase;
+letter-spacing:.4px}
+.kpi-sub{color:var(--ink);font-size:12px;margin-top:6px}
+.lay{display:grid;gap:14px}
+.lay .block{margin:0}
+.chart{width:100%;height:auto;display:block}
+.chart .v{font:11px 'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif;fill:var(--ink)}
+.chart .x{font:11px 'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif;fill:var(--grey)}
+.donut-wrap{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+.donut{max-width:240px}
+.dn-c{font:700 26px 'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif;fill:var(--burg)}
+.dn-l{font:11px 'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif;fill:var(--grey)}
+.heatmap .hm-v{font:10px 'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif;pointer-events:none}
+.spark-wrap{display:flex;align-items:center;gap:12px}
+.spark{flex:0 0 auto}
+.spark-meta{display:flex;flex-direction:column;gap:2px;font-size:12px}
+.spark-last{font-family:'Space Grotesk','Inter','Segoe UI',system-ui,sans-serif;font-size:18px;font-weight:700;color:var(--ink)}
+.spark-delta{color:var(--grey)}
+.note{color:var(--grey);font-size:11px;margin-top:6px;font-style:italic}
+.legend{display:flex;flex-wrap:wrap;gap:10px 16px;margin-top:8px;font-size:12px}
+.legend.col{flex-direction:column;gap:6px}
+.lg{display:inline-flex;align-items:center;gap:6px;color:var(--ink)}
+.lg i{width:11px;height:11px;border-radius:2px;display:inline-block}
+.pill{display:inline-block;padding:2px 9px;border-radius:11px;font-size:11px;
+font-weight:600}
+table.grid{border-collapse:collapse;width:100%;font-size:13px}
+table.grid th{background:var(--burg);color:#fff;text-align:left;padding:7px 9px;
+font-weight:600;font-size:12px}
+table.grid td{border-bottom:1px solid var(--line);padding:6px 9px}
+table.grid tbody tr:nth-child(even){background:#E7EBE955}
+table.grid[data-sortable] th{cursor:pointer;user-select:none}
+.so{font-size:9px;opacity:.85}
+.legend[data-toggle] .lg{cursor:pointer}
+.legend[data-toggle] .lg.off{opacity:.35}
+.filterbar{font-size:12px;color:var(--grey);margin:0 0 10px}
+.filterbar select{font:12px 'Inter','Segoe UI','Helvetica Neue',Arial,sans-serif;padding:3px 7px;border:1px solid var(--line);
+border-radius:5px;color:var(--ink);background:#fff}
+.empty{color:var(--grey);text-align:center;padding:18px;font-style:italic}
+footer{margin-top:26px;border-top:1px solid var(--line);padding-top:10px;
+color:var(--grey);font-size:11px}
+@media print{
+ body{background:#fff}
+ .btn{display:none}
+ .wrap{max-width:none;padding:0}
+ .block,.kpi,.sec{break-inside:avoid}
+ header{padding-top:0}
+}
+</style></head><body><div class="wrap">
+<header>
+ <div>
+  <div class="brand"><span class="mark">Data Toolkit</span><h1>Sales — GBP revenue dashboard</h1></div>
+  <div class="sub">t4_sales.csv — Apr 2025 to May 2026 · <org></div>
+ </div>
+ <div class="asof">as of<b>20 Jul 2026</b>
+  <button class="btn" onclick="window.print()">Print / Save&nbsp;PDF</button></div>
+</header>
+<div class="kpi-row"><div class="kpi" style="border-top-color:#163F3A"><div class="kpi-val" style="color:#163F3A">£833,807</div><div class="kpi-lbl">GBP revenue (clean)</div><div class="kpi-sub">Excl. 1 extreme anomaly (INV-9999, £250,000). Incl. anomaly: £1,083,807</div></div><div class="kpi" style="border-top-color:#B26B00"><div class="kpi-val" style="color:#B26B00">69.7%</div><div class="kpi-lbl">Top customer share of GBP revenue</div><div class="kpi-sub">Bramley &amp; Cole — £581,016 of £833,807 (clean basis); HHI 4,959 = concentrated</div></div><div class="kpi" style="border-top-color:#163F3A"><div class="kpi-val" style="color:#163F3A">13 of 14</div><div class="kpi-lbl">Active months</div><div class="kpi-sub">Apr 2025 - May 2026 span; Nov 2025 had no recorded invoices (zero-filled, not missing data)</div></div></div><section class="sec"><h2>Monthly GBP revenue trend</h2><div class="block"><h3 class="bt">Monthly GBP revenue (anomaly excluded)</h3><svg viewBox="0 0 640 240" class="chart" preserveAspectRatio="xMidYMid meet"><line x1="34" y1="214.0" x2="630" y2="214.0" stroke="#D9DEDB" stroke-width="1"/><text x="29" y="217.0" text-anchor="end" class="x">0</text><line x1="34" y1="164.5" x2="630" y2="164.5" stroke="#D9DEDB" stroke-width="1"/><text x="29" y="167.5" text-anchor="end" class="x">20,000</text><line x1="34" y1="115.0" x2="630" y2="115.0" stroke="#D9DEDB" stroke-width="1"/><text x="29" y="118.0" text-anchor="end" class="x">40,000</text><line x1="34" y1="65.5" x2="630" y2="65.5" stroke="#D9DEDB" stroke-width="1"/><text x="29" y="68.5" text-anchor="end" class="x">60,000</text><line x1="34" y1="16.0" x2="630" y2="16.0" stroke="#D9DEDB" stroke-width="1"/><text x="29" y="19.0" text-anchor="end" class="x">80,000</text><g data-series="0"><path d="M34.0,52.8 L79.8,59.5 L125.7,68.7 L171.5,52.2 L217.4,53.5 L263.2,58.7 L309.1,51.7 L354.9,214.0 L400.8,35.0 L446.6,57.7 L492.5,50.5 L538.3,56.6 L584.2,66.7 L630.0,54.7" fill="none" stroke="#163F3A" stroke-width="2.5"/><circle cx="34.0" cy="52.8" r="3" fill="#163F3A"><title> 65,142</title></circle><circle cx="79.8" cy="59.5" r="3" fill="#163F3A"><title> 62,410</title></circle><circle cx="125.7" cy="68.7" r="3" fill="#163F3A"><title> 58,727</title></circle><circle cx="171.5" cy="52.2" r="3" fill="#163F3A"><title> 65,363</title></circle><circle cx="217.4" cy="53.5" r="3" fill="#163F3A"><title> 64,830</title></circle><circle cx="263.2" cy="58.7" r="3" fill="#163F3A"><title> 62,757</title></circle><circle cx="309.1" cy="51.7" r="3" fill="#163F3A"><title> 65,584</title></circle><circle cx="354.9" cy="214.0" r="3" fill="#163F3A"><title> 0</title></circle><circle cx="400.8" cy="35.0" r="3" fill="#163F3A"><title> 72,331</title></circle><circle cx="446.6" cy="57.7" r="3" fill="#163F3A"><title> 63,147</title></circle><circle cx="492.5" cy="50.5" r="3" fill="#163F3A"><title> 66,041</title></circle><circle cx="538.3" cy="56.6" r="3" fill="#163F3A"><title> 63,608</title></circle><circle cx="584.2" cy="66.7" r="3" fill="#163F3A"><title> 59,505</title></circle><circle cx="630.0" cy="54.7" r="3" fill="#163F3A"><title> 64,362</title></circle></g><text x="34.0" y="232.0" text-anchor="middle" class="x">Apr 2025</text><text x="79.8" y="232.0" text-anchor="middle" class="x">May 2025</text><text x="125.7" y="232.0" text-anchor="middle" class="x">Jun 2025</text><text x="171.5" y="232.0" text-anchor="middle" class="x">Jul 2025</text><text x="217.4" y="232.0" text-anchor="middle" class="x">Aug 2025</text><text x="263.2" y="232.0" text-anchor="middle" class="x">Sep 2025</text><text x="309.1" y="232.0" text-anchor="middle" class="x">Oct 2025</text><text x="354.9" y="232.0" text-anchor="middle" class="x">Nov 2025</text><text x="400.8" y="232.0" text-anchor="middle" class="x">Dec 2025</text><text x="446.6" y="232.0" text-anchor="middle" class="x">Jan 2026</text><text x="492.5" y="232.0" text-anchor="middle" class="x">Feb 2026</text><text x="538.3" y="232.0" text-anchor="middle" class="x">Mar 2026</text><text x="584.2" y="232.0" text-anchor="middle" class="x">Apr 2026</text><text x="630.0" y="232.0" text-anchor="middle" class="x">May 2026</text></svg></div></section><div class="lay" style="grid-template-columns:repeat(2,1fr)"><section class="sec"><h2>Customer breakdown</h2><div class="block"><h3 class="bt">GBP revenue by customer (anomaly excluded)</h3><svg viewBox="0 0 640 220" class="chart" preserveAspectRatio="xMidYMid meet"><rect x="8.0" y="20.0" width="53.2" height="172.0" rx="3" fill="#163F3A"><title>Bramley &amp; Cole: 581,016</title></rect><text x="34.6" y="16.0" text-anchor="middle" class="v">581,016</text><text x="34.6" y="211.0" text-anchor="middle" class="x">Bramley &amp; Cole</text> <rect x="71.2" y="182.2" width="53.2" height="9.8" rx="3" fill="#163F3A"><title>Silverbirch: 33,103</title></rect><text x="97.8" y="178.2" text-anchor="middle" class="v">33,103</text><text x="97.8" y="211.0" text-anchor="middle" class="x">Silverbirch</text> <rect x="134.4" y="182.7" width="53.2" height="9.3" rx="3" fill="#163F3A"><title>Orchard Lane: 31,580</title></rect><text x="161.0" y="178.7" text-anchor="middle" class="v">31,580</text><text x="161.0" y="211.0" text-anchor="middle" class="x">Orchard Lane</text> <rect x="197.6" y="183.0" width="53.2" height="9.0" rx="3" fill="#163F3A"><title>Kestrel: 30,514</title></rect><text x="224.2" y="179.0" text-anchor="middle" class="v">30,514</text><text x="224.2" y="211.0" text-anchor="middle" class="x">Kestrel</text> <rect x="260.8" y="183.1" width="53.2" height="8.9" rx="3" fill="#163F3A"><title>Fenwick: 29,951</title></rect><text x="287.4" y="179.1" text-anchor="middle" class="v">29,951</text><text x="287.4" y="211.0" text-anchor="middle" class="x">Fenwick</text> <rect x="324.0" y="183.9" width="53.2" height="8.1" rx="3" fill="#163F3A"><title>Marlowe: 27,401</title></rect><text x="350.6" y="179.9" text-anchor="middle" class="v">27,401</text><text x="350.6" y="211.0" text-anchor="middle" class="x">Marlowe</text> <rect x="387.2" y="183.9" width="53.2" height="8.1" rx="3" fill="#163F3A"><title>Hollis: 27,221</title></rect><text x="413.8" y="179.9" text-anchor="middle" class="v">27,221</text><text x="413.8" y="211.0" text-anchor="middle" class="x">Hollis</text> <rect x="450.4" y="184.3" width="53.2" height="7.7" rx="3" fill="#163F3A"><title>Northgate: 25,906</title></rect><text x="477.0" y="180.3" text-anchor="middle" class="v">25,906</text><text x="477.0" y="211.0" text-anchor="middle" class="x">Northgate</text> <rect x="513.6" y="184.5" width="53.2" height="7.5" rx="3" fill="#163F3A"><title>Dunmore: 25,412</title></rect><text x="540.2" y="180.5" text-anchor="middle" class="v">25,412</text><text x="540.2" y="211.0" text-anchor="middle" class="x">Dunmore</text> <rect x="576.8" y="185.6" width="53.2" height="6.4" rx="3" fill="#163F3A"><title>Verity: 21,703</title></rect><text x="603.4" y="181.6" text-anchor="middle" class="v">21,703</text><text x="603.4" y="211.0" text-anchor="middle" class="x">Verity</text></svg></div></section><section class="sec"><h2>Customer breakdown — detail</h2><div class="block"><h3 class="bt">Customer breakdown (detail)</h3><table class="grid"><thead><tr><th>Customer</th><th>GBP revenue</th><th>Share of clean revenue</th></tr></thead><tbody><tr><td>Bramley &amp; Cole</td><td>£581,016</td><td>69.7%</td></tr><tr><td>Silverbirch</td><td>£33,103</td><td>4.0%</td></tr><tr><td>Orchard Lane</td><td>£31,580</td><td>3.8%</td></tr><tr><td>Kestrel</td><td>£30,514</td><td>3.7%</td></tr><tr><td>Fenwick</td><td>£29,951</td><td>3.6%</td></tr><tr><td>Marlowe</td><td>£27,401</td><td>3.3%</td></tr><tr><td>Hollis</td><td>£27,221</td><td>3.3%</td></tr><tr><td>Northgate</td><td>£25,906</td><td>3.1%</td></tr><tr><td>Dunmore</td><td>£25,412</td><td>3.0%</td></tr><tr><td>Verity</td><td>£21,703</td><td>2.6%</td></tr></tbody></table></div></section></div><section class="sec"><h2>Data-quality notes</h2><div class="block"><h3 class="bt">Data-quality notes</h3><table class="grid"><thead><tr><th>Item</th><th>Detail</th></tr></thead><tbody><tr><td>Extreme anomaly</td><td>Invoice INV-9999 (Kestrel, North, 18 Mar 2026): £250,000 — ~26x the next-highest genuine invoice (£9,576) and an invoice number well outside the INV-7001..INV-7286 sequence used by every other row. Treated as a data anomaly and excluded from all headline KPIs and charts; included value disclosed above for transparency.</td></tr><tr><td>USD rows (not blended)</td><td>12 rows are billed in USD (11 with a parseable amount, total $37,278; 1 row — INV-7150 — has a blank amount). USD is never summed into the GBP figures above; report separately if a combined view is needed, using an approved FX rate.</td></tr><tr><td>Blank Amount cells</td><td>2 GBP-currency rows have a blank Amount (INV-7025, INV-7248) and 1 USD-currency row (INV-7150); all are excluded from totals/averages, not treated as zero.</td></tr><tr><td>Gap month</td><td>November 2025 has zero recorded invoices — shown as £0 on the trend line (a filled calendar gap, not a data gap) rather than omitted, so the month is not mistaken for missing data.</td></tr></tbody></table></div></section>
+<footer><div>Figures computed by the data-analyse engine (exact Decimal arithmetic); currencies are not blended.</div>
+ Data Toolkit. Generated 20 Jul 2026. A draft for review by a
+ qualified person, not advice.</footer>
+</div></body></html>

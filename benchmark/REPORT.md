@@ -1,146 +1,150 @@
-# data-toolkit benchmark — Claude Sonnet 5, with vs without skills
+# data-toolkit benchmark — skills vs baseline, two model tiers, ten tests
 
-**Date:** 14 Jul 2026 · **Toolkit under test:** [moonlight-lupin/data-toolkit](https://github.com/moonlight-lupin/data-toolkit) **v0.4.3** (Apache-2.0, Phronesis Applied) · **Test model:** Claude Sonnet 5 (`claude-sonnet-5`) · **Orchestration/evaluation:** Claude Fable 5 · **Status:** published 16 Jul 2026
-
----
-
-## 1. Verdict up front
-
-Six tasks, each run by a Sonnet 5 agent twice — once following the toolkit's skills, once with plain Python — against synthetic fixtures with planted traps and recorded ground truth.
-
-1. **Correctness: parity on headline numbers.** Both arms produced substantively correct outputs on every task. A well-prompted Sonnet 5 without the toolkit matched the toolkit's figures at ordinary sizes.
-2. **Quality: the skill arm produced the stronger artefacts** — a reconciliation working paper in a standard taxonomy with materiality/RAG grading, an insight brief with dual-lens disclosure, a branded print-ready dashboard — where the baseline produced good but bespoke one-off formats. Rubric: 50/50 vs 48.5/50.
-3. **Cost at ordinary sizes: the toolkit costs more** — +45% tokens on the five small-data tasks, driven by reading skill documentation and engine source before working.
-4. **Cost at scale: the economics invert.** On the scaling test (the same reconciliation at ~85 / ~5,000 / ~20,000 rows per side), the skill arm's cost is essentially **flat** across a 235× size increase, while the baseline's grows: from ~5,000 rows the skill arm is **~25% cheaper on tokens and ~3× faster**.
-5. **Risk: the baseline's error surface grows with data size; the engine's doesn't.** Every baseline error was self-caught in these runs, but they included a matcher that began force-pairing unrelated items and a real formula bug in a delivered workbook — precisely the failure class a tested deterministic engine removes.
-
-**One caveat before generalising:** to keep the comparison fair, both arms received the same intent context and integrity rules ("flag, don't guess"; "be careful how you total"; the ±5-day window). Those rules are much of what the skills encode, so this design measures the toolkit's *mechanical* value floor and likely **understates** its value in everyday unscaffolded use, where the skills carry that discipline by default.
+**Period:** 14–21 Jul 2026 · **Toolkit under test:** [moonlight-lupin/data-toolkit](https://github.com/moonlight-lupin/data-toolkit), final version **v0.8.5** (six skills + shared deterministic engine; per-test versions in the Appendix) · **Test models:** Claude Sonnet 5 (primary series) and Claude Haiku 4.5 (model-tier companion), each in both arms · **Orchestration & evaluation:** Claude Fable 5 · **Status:** draft for review
 
 ---
+
+## 1. Verdict
+
+Ten tests, each run by an agent twice — once following the toolkit's skills (**skill arm**), once with plain Python and no toolkit (**baseline arm**) — against synthetic fixtures with planted traps and recorded ground truth, every deliverable independently verified.
+
+1. **Correctness on a strong model: parity at ordinary sizes.** On Sonnet 5, both arms produced substantively correct outputs on every test. The toolkit's edge is artefact quality — standard reconciliation taxonomy with materiality/RAG, dual-lens analysis disclosure, branded print-ready dashboards, reusable conversion cards — not headline numbers. Quality rubric: skill 50/50 vs baseline 48.5/50 (T1–T5).
+2. **On a weaker model the toolkit prevents real failures.** The Haiku baseline blended GBP+USD into a single headline revenue figure (the planted currency trap) and under-triaged reconciliations at scale; the Haiku skill arm, riding the engine's rails, matched Sonnet-quality artefacts nearly check-for-check at ~60% of the cost. Quality gap widened to 50 vs 44.
+3. **Economics are size- and task-dependent.** At small sizes the skills cost more (+38% tokens on Sonnet, ~+14% on Haiku — the price of reading the skill docs). At reconciliation scale the trade inverts: ~5,000+ rows runs in a third of the baseline's wall-clock at fewer tokens, flat-cost across a 235× size increase. At analyse scale (250k-row CSV) the deterministic engine is correct but still ~2× dearer than a competent pandas baseline — the audit trail is what the premium buys.
+4. **Repeat work is where the design pays.** The conversion skill's reusable card made month-2 conversions a ~1–2 minute, sense-check-then-run exercise for a *fresh* agent, with schema drift flagged (never silently converted) and required-field failures excluded by the engine per the card's recorded policy.
+5. **The feedback loop works.** Testing filed seven engine findings across five feedback documents; the maintainer fixed six within days (each fix re-verified here against the original repro fixtures), one remains open. The toolkit's architecture — small composable functions, self-tests, honest docs — made every gap either work-aroundable or quickly fixable.
+
+**Standing caveat:** both arms received the same intent context and integrity rules ("flag, don't guess"; currency discipline; match windows), which is much of what the skills encode — so these results measure the toolkit's *mechanical* floor and likely understate its value on terse real-world prompts.
 
 ## 2. Method
 
-- One task per skill (T1–T5) plus a scaling test (T6). Each task ran twice: **WITH-SKILL** (agent pointed at the toolkit's `SKILL.md`, told to follow its workflow and engine) and **BASELINE** (standard Python only; skills/toolkits forbidden).
-- **Identical prompts** between arms apart from that one instruction block. Both arms got the same intent/context (audience, purpose, target shape — standing in for the skills' "intent-first" questions, since runs were non-interactive), the same integrity rules, the same environment note, and the same required output format (RESULTS / EXECUTION LOG / FILES) so error reporting was comparable.
-- Agents ran in parallel from shared read-only fixtures into isolated output folders.
-- Every deliverable was **independently verified** against ground truth by the orchestrator (`verify_outputs.py` — re-summing workbooks, re-counting exception categories, grepping dashboards for external references, checking briefs for the planted findings). Agents' self-reports were not trusted for scoring.
-- Environment: Windows 11, Python 3.14, openpyxl / PyMuPDF / python-docx / extract_msg installed (pandas also present; one baseline run used it). pdfplumber and Tesseract absent (not needed). Toolkit lint and engine self-tests green before testing.
-- During early testing, four engine issues were found, reported upstream in the toolkit's own feedback format, and **fixed by the maintainer in v0.4.3** (commit `4e6e266`, with self-tests added for the exact repro scenarios). All results below are against v0.4.3; the fixes were independently verified against the repro fixtures.
+- **Paired runs, identical prompts** apart from one block pointing the skill arm at the toolkit's SKILL.md (baseline: standard Python, no skills/toolkits). Same intent context, integrity rules, environment notes, and required report format (RESULTS / EXECUTION LOG / FILES) in both arms.
+- **Fresh agent per run** (and per month, for the recurring-conversion test) — no shared conversation state; reuse must happen through artefacts on disk.
+- **Synthetic fixtures, deterministic generators, recorded ground truth** (`scripts/`, `ground_truth/`). All data fictional.
+- **Independent verification:** every workbook re-summed, every exception category re-counted, every dashboard grepped for external references, every brief checked for the planted findings (`scripts/verify_outputs.py`). Agents' self-reports were not trusted for scoring.
+- Environment: Windows 11, Python 3.14, openpyxl / PyMuPDF / pandas / pyarrow et al.; no OCR binary; **no vision API key** (deliberately — see T8).
 
-## 3. Fixtures — synthetic, with planted traps and recorded ground truth
+## 3. The test suite
 
-All data fictional, generated deterministically (`make_fixtures.py`, `make_fixtures_t6.py`); ground truth in `ground_truth/*.json`.
+| Test | Skill under test | Fixture & planted traps |
+|---|---|---|
+| T1 | data-tidy | 43-row messy payments CSV: junk headers, 3 date formats, duplicates, mid-table TOTAL row, `pending`/blank amounts (flag, never guess), £-embedded amounts, country spelling variants |
+| T2 | data-extract | 6 subscription-confirmation PDFs; one missing Close Date (blank + flag, never invent); GBP/S$/USD mix |
+| T3 | data-reconcile | Bank CSV (Debit/Credit) vs cashbook XLSX (signed), ~85 rows/side, no shared key: 8 discrepancy types incl. a 12-day equal-amount decoy and an exact-9%-GST gap |
+| T4 | data-analyse | 287-row sales CSV: mixed-currency amount column, gap month, 125×-median outlier, 53.6% customer concentration, blank amounts |
+| T5 | data-visualise | 3-sheet metrics XLSX → self-contained HTML dashboard: 4 KPIs with known values, RAG table, print CSS, zero external refs |
+| T6 | data-reconcile at scale | T3's task at ~5,000 and ~20,000 rows/side (70 and 130 planted exceptions among thousands of matches) |
+| T7 | data-convert, repeat | Recurring GL→journal-import conversion, three monthly legs by fresh agents: build+card → clean repeat → drifted repeat (renamed column, new column, blank required field ⇒ exclude) |
+| T8 | data-extract, images | A bar chart (2 bars deliberately unlabelled) + a skewed rasterised table, **no vision API key**: tests honest degradation and never-invent on the vision path |
+| T9 | data-analyse, large file | 249,905-row / 12.6 MB CSV: concentration, gap month, outlier cluster, currency mix, blanks — plus the large-file ingestion path |
+| T10 | data-visualise, orchestrator | One dataset → consistent HTML dashboard **and** native Excel chart workbook (real chart objects, verified at XML level) |
 
-| Test | Skill | Fixture | Planted traps |
+## 4. Results — Sonnet 5 series (all verified against ground truth)
+
+| Test | Skill | Baseline | Notes |
 |---|---|---|---|
-| T1 | data-tidy | 43-row messy payments CSV | 3 junk header rows; 3 mixed date formats; 2 exact duplicates; a mid-table TOTAL row; `pending`/blank amounts (must flag, never guess); £ embedded in Amount with blank Currency; country spelling variants; stray whitespace |
-| T2 | data-extract | 6 subscription-confirmation PDFs | One document has **no Close Date** (must be left blank + flagged); mixed GBP / S$ / USD commitments; label-value layout |
-| T3 | data-reconcile | Bank CSV (Debit/Credit) vs cashbook XLSX (signed), ~85 rows/side | No shared key (amount+date matching); 33 exact matches; 3 timing differences (3–5 days); 1 equal-amount pair **12 days** apart (must be flagged, not matched); 1 sign flip; 1 cashbook duplicate; 2 bank-only; 2 cashbook-only; 1 amount gap of exactly **9% GST** |
-| T4 | data-analyse | 287-row sales CSV, 14 months | Mixed GBP/USD amount column (must not be blindly summed); zero-invoice **gap month**; a 250,000 outlier (~125× median); 53.6% single-customer concentration; 3 blank amounts |
-| T5 | data-visualise | Clean 3-sheet metrics XLSX | Self-containment (no CDN/external refs), 4 KPIs with known values, RAG status table, print CSS, as-of stamp, draft footer |
-| T6 | data-reconcile (scaling) | Same task as T3 at **~5,000** and **~20,000 rows/side** | Same taxonomy scaled: 70 exceptions hidden among 4,910 matchable pairs (5k); 130 among 19,880 (20k) |
+| T1 | ✓ 10 | ✓ 10 | Identical substance (40 rows, GBP 115,173.00 / USD 5,803.75, dedup, standardisation). Skill carries a reproducible recipe + engine change log; baseline's decisive date-order proof and TOTAL-row tie-back were sharp. |
+| T2 | ✓ 10 | ✓ 10 | Identical: all fields exact, missing field blank + flagged in both. |
+| T3 | ✓ 10 | ✓ 9.5 | Both classified all 8 planted types incl. the GST hint; both refused the 12-day decoy. Skill working paper is the stronger artefact (standard taxonomy, materiality, RAG). |
+| T4 | ✓ 10 | ✓ 9.5 | Both caught every trap; skill reported both outlier-inclusive/exclusive lenses, baseline one (disclosed). |
+| T5 | ✓ 10 | ✓ 9.5 | Both correct and fully self-contained; skill branded/print-first. |
+| T6 (5k / 20k) | ✓ / ✓ | ✓ / ✓ | All four correct with full taxonomy; baseline needed to patch a force-pairing near-miss at 5k and shipped-then-fixed a summary formula bug at 20k — the hand-rolled risk class the engine removes. |
+| T7 (3 legs) | ✓ ✓ ✓ | ✓ ✓ ⚠ | Skill: card with `on_missing_required: exclude` + standing rules; July reuse via sense-check (~1½ min); August drift flagged by the engine, rename re-pointed with disclosure, invalid row engine-excluded (113 rows, −317.85 — exact). Baseline: excellent June runner and 46-second July; August **halted entirely** on the drift (SchemaError, log, no deliverable) — maximally safe, zero output. |
+| T8 | ✓ 10 | ✓ 10 | Both: printed values exact (chart 4/4, table 50/50), unlabelled bars estimated by local pixel calibration and **presented as estimates**; nothing sent externally. Skill additionally verified the vision path fails closed without a key. Shared artefact: both "saw" the scan-skew as italics — flagged, not corrected. |
+| T9 | ✓ 10 | ✓ 10 | Both found every planted fact (53.1% concentration, gap month, £2m outlier cluster, currencies separated). Economics in §5. |
+| T10 | ✓ 10 | ✓ 10 | Both delivered consistent dashboards + **verified native Excel charts** (chart XML, zero embedded images). Skill: 3 themed chart types via the engine; baseline hand-built to the same standard at 45% fewer tokens. |
 
-## 4. Results — correctness and quality
+**Errors across the series:** every error in both arms was self-caught and resolved; no run delivered a known-wrong result and no arm ever invented a value. The baseline's errors were the classic hand-rolled risks (matcher force-pairing, a delivered formula bug, instruction drift toward browsers); the skill arm's were engine-gap discoveries — which became the feedback loop (§8).
 
-Rubric per task (max 10): correctness vs ground truth (5) · traps caught (2) · auditability/transparency (2) · deliverable polish (1).
+## 5. Economics — Sonnet 5
 
-| Test | WITH skill | BASELINE | Quality edge | Notes |
-|---|---|---|---|---|
-| T1 tidy | 10 | 10 | Tie | Identical row counts, per-currency sums, dedup, standardisation in both. Baseline proved DD/MM date order from an unambiguous date and reconciled the planted TOTAL row against the true sum; skill arm carried a reproducible recipe + engine change log. |
-| T2 extract | 10 | 10 | Tie | Identical substance: all fields correct, the missing Close Date blank + flagged in both, S$→SGD normalised in both. |
-| T3 reconcile | 10 | 9.5 | **Skill** | Both classified all eight planted discrepancy types, including the 9% GST hint and refusing the 12-day "match". The skill working paper is the stronger artefact: standard taxonomy, materiality bands, RAG, value-matched statistics. Baseline's control-total tie-out was excellent practice. |
-| T4 analyse | 10 | 9.5 | **Skill** | Both caught concentration, outlier, gap month, currency mix, blanks. The skill brief reported both outlier-inclusive and exclusive totals/shares; the baseline led with one lens (disclosed). |
-| T5 visualise | 10 | 9.5 | **Skill** | Both dashboards pass every check (correct KPIs, zero external references, print CSS, stamp, footer). The skill output is branded and print-first; the baseline burned ~5 minutes attempting a browser preview against an explicit instruction. |
-| **Total** | **50/50** | **48.5/50** | | |
+| Test | Tokens skill / base | Wall-clock skill / base | Reading |
+|---|---|---|---|
+| T1–T5 total | 463.2k / 335.1k (**+38%**) | 16m 45s / 21m 0s † | Fixed doc-reading overhead at small sizes; buys the audit trail, not correctness |
+| T6 5k | 105.1k / 140.2k (**−25%**) | 4m 05s / 13m 13s (**0.31×**) | The inversion: engine absorbs scale |
+| T6 20k | 158.6k ‡ / 110.7k | ~4m / 10m 34s (**0.38×**) | Skill wall-clock flat across 235× size growth |
+| T7 repeat leg (Jul) | 99.2k / 57.6k | 1m 21s / **46s** | Both cheap once a good artefact exists; the card needs no code maintenance |
+| T8 | 84.8k / 70.7k | 3m 38s / 3m 56s | Tie |
+| T9 250k | 142.6k / 67.2k (**+112%**) | 6m 29s / 3m 02s (**2.1×**) | Engine correct but dearer than pandas at this scale; premium buys exact-Decimal audit trail |
+| T10 | 150.5k / 82.8k (**+82%**) | 7m 08s / 6m 59s | New-surface convenience, not cheaper |
 
-Headline numbers were identical between arms on every task (e.g. T1: GBP 115,173.00 / USD 5,803.75; T3: 37 matched with the same eight exception classifications; T5: all four KPI values).
+† baseline total inflated ~5 min by a self-inflicted browser timeout in one run. ‡ includes a double-counted agent-resume; the clean pre-resume figure was 79.2k.
 
-## 5. Time and token spend (T1–T5, ordinary sizes)
+**Rule of thumb the series supports:** small one-off files — either arm is fine, the toolkit's premium buys standardisation and reviewability; recurring or multi-thousand-row reconciliation work — the toolkit is cheaper, ~3× faster and safer; very large analyse jobs — the toolkit is correct and auditable but a pandas baseline is ~2× cheaper if you don't need the deterministic trail.
 
-Figures as reported by the agent harness (subagent tokens ≈ total tokens consumed by that agent; duration = wall-clock).
+## 6. Model-tier companion — Haiku 4.5 (same suite, T1–T7)
 
-| Test | Tokens WITH | Tokens BASE | Δ tokens | Time WITH | Time BASE | Δ time |
-|---|---|---|---|---|---|---|
-| T1 tidy | 141,236 | 67,230 | +110% | 7m 12s | 3m 04s | +135% |
-| T2 extract | 71,594 | 55,330 | +29% | 2m 27s | 1m 59s | +23% |
-| T3 reconcile | 78,182 | 81,757 | **−4%** | 3m 23s | 5m 28s | **−38%** |
-| T4 analyse | 100,550 | 70,881 | +42% | 4m 31s | 3m 12s | +41% |
-| T5 visualise | 94,696 | 59,932 | +58% | 2m 37s | 7m 14s † | −64% † |
-| **Total** | **486,258** | **335,130** | **+45%** | 20m 10s | 20m 57s † | −4% † |
+1. **The toolkit matters more as the model gets weaker — shown by real failures.** Haiku baseline: blended-currency headline on T4 ("£1,121,085" = GBP + USD, no rate — the planted trap), muddled reconciliation taxonomy at T3, and at T6 scale both baselines dropped the triage the task required ("Unknown" buckets). Haiku skill arm: none of those — its T3/T4 artefacts match Sonnet's skill artefacts nearly check-for-check at ~60% of Sonnet's cost, and its skill overhead vs its own baseline was only ~+14%.
+2. **But a weaker model needs operating guard rails at scale.** Unguarded, one Haiku skill run misdrove the reconcile engine (hand-converted signs, lost the date wiring) into a 0%-matched paper and rationalised it. Two sentences of standing rules (use the engine's convention flags; sanity-check the match rate before delivering) fixed it at no extra cost — the canonical guarded run reproduces the ground-truth taxonomy exactly. The rules a stronger model carries as judgement, a weaker model needs written down — ideally in the deterministic layer itself (one such engine guard remains an open feedback item).
+3. **Repeat conversion works on the small model** — June card → July reuse (~1 min) → August drift flagged and the invalid row excluded by the engine per the card's recorded policy. With the policy in the machine spec, the outcome stopped depending on the model's memory of the rules.
+4. Quality scoreboard: skill 50/50 vs baseline 44/50 (T1–T5); at T6 scale, skill 2/2 correct vs baseline 0/2.
 
-† The T5 baseline includes a ~300 s self-inflicted browser-preview timeout; excluding T5, the skill arm was ~28% slower overall on these small datasets.
+## 7. The August drift spectrum (both models, T7 leg 3)
 
-**Where the overhead goes:** reading `SKILL.md` + references + engine source before starting, and environment pre-checks. The overhead is a fixed per-task cost — which is exactly why it amortises at scale (§6).
+All four arms flagged the schema drift; **none silently converted** — but the deliverable ranged across a spectrum of defensible conservatism: Sonnet baseline halted entirely (no import file, failure log, ask-first); Sonnet skill delivered with the required-field exclusion enforced and the renamed non-required column held back pending confirmation; Haiku skill re-pointed the rename with disclosure and delivered the complete correct file; Haiku baseline likewise via a code alias. For attended use all four are acceptable; for unattended use, the card's explicit `on_missing_required` policy is what removes the judgement spread on the part that matters.
 
-## 6. Scaling test (T6) — the gap inverts as data grows
+## 8. The feedback loop — findings filed and their outcomes
 
-**Hypothesis:** the skill arm's overhead should shrink and eventually invert as datasets grow, because the deterministic engine's cost is fixed while hand-rolled matching logic gets harder to design, debug and verify as the data grows.
+Seven engine findings were filed during testing in the toolkit's own feedback format (`feedback/`); each fix was re-verified here against the original repro fixtures:
 
-Same reconciliation task at three sizes, both arms. All six runs produced substantively correct working papers — every planted category recovered at every size, no force-fitted matches, row accounting tying out exactly (130 planted discrepancies among 40,000 rows all found and classified).
+| Finding | Severity | Outcome |
+|---|---|---|
+| reconcile: no-date silently disabled the amount+date window (false matches) | Blocker | **Fixed** — warns, holds pairs as ambiguous |
+| reconcile: duplicate/sign-flip/amount-mismatch triage missing in amount_date mode | Enhancement | **Fixed** — residue-refinement pass |
+| extract: currency fields discarded the detected code | Bug | **Fixed** — `code_target` |
+| tidy: unparseable amount lost its Currency value | Bug | **Fixed** — `code_source` |
+| convert: `required: true` was report-only; standing rules dropped in hand-off | Enhancement/Bug | **Fixed** — `on_missing_required: exclude/error/flag` + mandatory Standing-rules card section |
+| analyse: profiler minutes-slow at 250k rows; large-file path is xlsx-only | Enhancement | **Fixed** (profiling 222s → 6.6s on the repro; CSV scope now documented honestly — feature request stands) |
+| analyse: `currency_mix()` blind to stand-alone code columns (safety-gate blind spot) | Bug | **Fixed** — detects bare-code columns |
+| reconcile: warn when matched=0 but thousands of equal amounts coincide (absurd-result guard) | Enhancement | **Open** at report date — since **fixed in v0.8.6**, see [Addendum](#addendum--maintainer-status-after-the-report-date) |
 
-| Rows/side | Tokens: skill | Tokens: base | skill ÷ base | Time: skill | Time: base | skill ÷ base |
-|---|---|---|---|---|---|---|
-| ~85 | 78,182 | 81,757 | 0.96 | 3m 23s | 5m 28s | 0.62 |
-| ~5,000 | 105,060 | 140,162 | **0.75** | 4m 05s | 13m 13s | **0.31** |
-| ~20,000 | 158,618 ‡ (79,159 pre-stop) | 110,683 | 1.43 ‡ (≈0.72 excl. anomaly) | ≈4m 00s active ‡ | 10m 34s | **0.38** |
-
-‡ The 20k skill agent hit a process anomaly unrelated to the toolkit: it backgrounded the engine run and stopped its turn to "wait", needing an orchestrator resume that re-reads its whole transcript (double-counting context tokens). Its pre-stop figure — with the engine run already complete — is the cleaner estimate; both are reported.
-
-**Findings:**
-
-1. **Time: confirmed, strongly.** Skill wall-clock is essentially flat across a 235× size increase (3.4 → 4.1 → ~4.0 min): the engine absorbs the scaling inside one command (123 s of compute at 20k×20k). Baseline time roughly doubles (5.5 → 13.2 → 10.6 min), spent building and debugging bespoke matchers. From ~5,000 rows the skill arm runs in roughly a third of the baseline's time.
-2. **Tokens: confirmed with a caveat.** Parity at 85 rows (0.96) → clear skill advantage at 5k (0.75); the 20k point is contaminated by the anomaly, though the pre-stop figure suggests ~0.72. The mechanism is visible either way: skill-arm tokens are **size-independent** (the agent reads the same docs and writes the same ~10-line driver whether n = 85 or 20,000), while baseline tokens buy matcher-building that grows with the data.
-3. **The unplanned third finding: the baseline's error surface grows with size.** Skill arm: zero engine errors at every size. Baseline arm: 1 self-caught bug at 85 rows → 3 at 5k — including a near-miss where a fuzzy amount-mismatch heuristic began **force-pairing unrelated items** (~1.3% apart by coincidence) and had to be patched with a bespoke narrative-token check → 2 at 20k, including a **real formula bug in the delivered summary sheet**, caught only on self-review. Bigger data means more coincidental near-collisions — the failure class a tested deterministic engine removes.
-4. Baseline effort is visible in tool calls too: 16 → 40 → 27 across the sizes, vs the skill arm's stable 18–24.
-
-## 7. Errors encountered and how the agents resolved them
-
-Every error in both arms was self-diagnosed and resolved; no run failed or delivered a known-wrong result, and no arm ever invented a value to get unstuck.
-
-**With-skill arm (v0.4.3):** zero engine/toolkit errors across all eight runs. Remaining incidents were minor agent-side slips: one agent's report draft mis-stated flag counts and was corrected against the raw data before delivery (T1); two trivial probe mistakes (a read-only worksheet attribute; a module import path) fixed in seconds (T6L); and the T6L premature stop described in §6.
-
-**Baseline arm:** the errors were the classic hand-rolled-logic risks — a matcher pass that paired leftovers by nearest date regardless of amount (T3, caught via a control-total tie-out); the T6M force-pairing near-miss and the T6L summary-sheet formula bug (§6); plus environment friction (a `python3` Windows Store stub; console codepage mangling of `£`/`±`, display-only) and the T5 browser-preview detour.
-
-**Toolkit issues found and fixed during testing:** four engine findings from early runs — a silent date-window bypass in reconcile's amount_date mode when no date column resolves (the one silent-wrong-answer path found); missing duplicate/sign-flip/amount-mismatch triage in that mode; a currency-typed extract field discarding the detected code; and a tidy recipe losing a row's Currency when its Amount was unparseable — were reported upstream and fixed in v0.4.3, which now warns / triages / carries the code through. The fixes were verified directly against the repro fixtures. That the maintainer turned filed findings into a released, self-tested fix the same day is a good signal for the toolkit as a dependency; that the test agents diagnosed and worked around every gap using the engine's own primitives speaks well of its architecture (small, composable, readable functions).
-
-## 8. Ranked quality of outputs (T1–T5)
-
-1. **T3 skill** — working paper in a standard taxonomy with materiality, RAG, probable causes, value statistics; an artefact a reviewer could sign off against policy.
-2. **T4 skill** — dual-lens totals and concentration, calibrated language, engine-computed figures, honest note that the automated quality score cannot catch outliers/concentration.
-3. **T3 base** — same classifications plus an exact control-total tie-out; formatting a notch simpler.
-4. **T4 base** — all findings present; single-lens headline (disclosed).
-5. **T5 skill** — branded, print-first, self-contained, correct.
-6. **T5 base** — correct and self-contained; plainer, with a process wobble.
-7. **T1 skill / T1 base** (near-tie) — both flawless on substance; pick by what you value: sharp one-off insight (base) or a reproducible recipe + engine log (skill).
-9. **T2 skill / T2 base** (tie) — identical substance; both flagged the missing field rather than inventing it.
+The toolkit's other governance change during the period — an opt-in vision-API path for image extraction, its first network-touching feature — is disclosed prominently in its PRINCIPLES/README (opt-in, never implicit, fails closed without a key); T8 confirmed the fail-closed behaviour in practice.
 
 ## 9. Limitations
 
-- **n = 1 per cell.** Single run per task/arm; agent variance is real (visible in T1/T5). Treat deltas under ~10% as noise; the scaling *trend* rests on three points per arm.
-- **Prompt scaffolding favoured the baseline** (§1 caveat). The unscaffolded gap is plausibly larger and in the toolkit's favour.
-- **Sonnet 5 is a strong baseline model.** On a weaker model the deterministic engine should matter more; this benchmark cannot confirm that extrapolation.
-- **No scanned-PDF/OCR, `.msg` or `.docx` inputs tested** (Tesseract absent; scope kept to the common paths).
-- **Token figures** are harness-reported subagent totals (reading + thinking + output). The T6L 20k skill token figure carries the anomaly noted in §6.
-- Reuse runners (`emit_runner`), aggregation proposals, presets and the white-label theming were not exercised.
+- n = 1 per cell; treat deltas under ~10% as noise. Scaling claims rest on three sizes (reconcile) and two (analyse).
+- Prompts scaffolded both arms with the integrity rules the skills encode — the unscaffolded gap likely favours the toolkit further.
+- Not covered: the agent-runtime driving mode (`bin/data-toolkit` plans), scanned-PDF OCR, `.pptx`/`.msg` ingest, analyse plan-ops, reuse runners (`emit_runner`), FX-pinned conversions.
+- Token figures are harness-reported agent totals (reading + reasoning + output).
 
-## 10. Conclusion
+## 10. Conclusions
 
-For small one-off files, a strong model with a careful prompt matches the toolkit's correctness, and the toolkit's fixed overhead (+45% tokens here) buys artefact standardisation, fuller disclosure and a deterministic audit trail rather than better numbers. **From roughly 5,000 rows the trade inverts: the skills are cheaper, ~3× faster, and flat-cost as data grows, while the hand-rolled alternative gets slower and — more importantly — riskier, with an error surface that grows with the data.** For recurring or high-volume data work, the deterministic engine is both the cheaper and the safer path; the skills' reuse bundles (not tested here) would push the marginal cost lower still.
+For finance-grade data work driven by agents: **adopt the toolkit for reconciliation (any volume), recurring conversions, and any output a reviewer must sign off** — the deterministic engine, standard taxonomies and recorded policies are worth the modest overhead, and they are what keeps a smaller model safe. For one-off tidy/extract jobs a strong model matches it; for very large ad-hoc analysis a pandas baseline is cheaper when the audit trail isn't required. Pin the version you adopt (upstream ships fast), re-run this suite per adopted version — the fixtures, ground truth and verifier in this bundle make that a one-afternoon regression pass — and route by model tier: strong models for scale and for authoring reusable artefacts; small models for routine attended tasks on the engine's rails, with operating guard rails written into the prompt or, better, the toolkit's deterministic layer.
 
 ---
 
-## 11. Addendum — T7: repeat conversion (data-convert), closing off the Sonnet rounds
+## Appendix — provenance
 
-The toolkit later added a sixth skill, **data-convert** (v0.5.x), tested with a three-leg recurring-conversion design: **June** builds a GL-export → journal-import conversion to a defined contract and saves a reusable artefact with standing rules; **July** is a clean repeat run by a *fresh* agent told only "convert as June was done — check the working folder first"; **August** is a drifted repeat (renamed column, new column, one blank required AccountCode; ground truth: drift flagged, 113 rows, sum −317.85). Run on toolkit **v0.5.3**, which added `on_missing_required: exclude/error/flag` enforcement and mandatory Standing-rules card sections — both added by the maintainer in response to feedback from this benchmark's smaller-model round (see REPORT_HAIKU.md §5).
+Canonical runs in this bundle and the toolkit version each skill-arm run executed against: T1–T5 skill, T7 skill, T8, T10 — **v0.8.4**; T9 skill — **v0.8.5**; T6 skill (Sonnet) — **v0.4.3**; Haiku series — **v0.5.3** (T7) / **v0.5.2** (T1–T6, with the two 5k guarded runs as canon). Baseline runs never touch the toolkit. Engine-level fixes listed in §8 were verified on **v0.8.5** against the original repro fixtures. Earlier iterations superseded by upstream fixes or guard-rail adjustments are excluded from this bundle by design; `run_metrics.csv` lists the canonical runs only.
 
-| Leg | Skill | Baseline |
+*Draft for review — reproduce any figure from `fixtures/`, `ground_truth/`, `scripts/` and the run artefacts in `runs/` (Sonnet) and `runs_haiku/` (Haiku).*
+
+---
+
+## Addendum — maintainer status after the report date
+
+**Written by the toolkit maintainer, not the benchmark authors.** Everything above is the
+independent report as delivered against **v0.8.5**; no measurement, score, verdict or economic
+figure in it has been altered. This section records only what changed upstream *afterwards*, so
+a reader comparing the report against the current toolkit isn't misled by the §8 status table.
+These fixes have **not** been re-scored by a fresh benchmark run — re-running the suite is the
+one-afternoon regression pass §10 recommends.
+
+| Version | Change | Verification |
 |---|---|---|
-| June (build) | ✓ 120 rows, sum 0.00; card carries the exclusion policy in the machine spec (96.3k tok / 3m 21s) | ✓ 120 rows; self-built runner enforcing required-exclusion in code (58.0k / 2m 22s) |
-| July (repeat) | ✓ card reused unchanged; 118 rows (60.6k / 1m 55s) | ✓ runner reused unchanged; 118 rows (57.6k / **46s** — cheapest leg of the benchmark) |
-| August (drift) | ✓ drift flagged; invalid row **excluded by the engine** — 113 rows, sum −317.85, exact ground truth; renamed non-required column conservatively left blank pending confirmation (83.6k / 2m 59s) | ⚠ runner **halted the entire run** (SchemaError, failure log, no CSV) and deferred to human confirmation (64.0k / 3m 13s) |
+| **v0.8.6** | Closes the last open §8 finding — the reconcile **absurd-result guard**. `match()` now records the amount-only pairing potential (as-is and with one side negated); `summarise()` raises `UNRELIABLE RESULT`, leads the warnings with it, stamps `⛔ UNRELIABLE` on the report headline and sets `summary["unreliable"]` when under 20% of that potential reconciled. A much larger negated-match count names the sign convention (`--flip-b` / debit-credit mapping) specifically. Silent on healthy runs and on inputs under 20 potential pairs. | Re-run against the original `t6m` repro fixtures: correct wiring reproduces ground truth (**4,930 matched / 75 exceptions**) with the guard **silent**; the broken wiring that produced the round-3 failure **fires** it. Four self-tests cover healthy / near-zero / sign-inverted / small-input. |
+| **v0.8.7** | Unrelated to any §8 finding — found while reviewing the report. `parse_number` stripped every non-digit before parsing, so identifiers became confident wrong numbers *with an empty note*: `SKU-0001` → `-1`, `ACC-100` → `-100`, `REF10000` → `10000`, `100 Program` → `100000000`; it also silently dropped sign-changing markers (`1,234.50 CR` → `1234.50`). It now strips only recognised currency tokens and requires a bare number, else fails with a note. | All money formats unchanged (`£1,234.50`, `(500)`, `US$ 2.5m`, `USD 50`, `15%`, `2.5k`, `$99.99`); `parse_currency` still resolves codes so the T4/T9 currency gate is untouched; `t6m` still reproduces ground truth. 109 tests + all skill self-tests pass. |
 
-Findings: repeat conversions cost ~1–2 minutes in both arms once a good artefact exists; the August drift produced a spectrum of *defensible* conservatism (halt entirely → deliver-with-exclusions-and-questions → deliver-with-disclosed-remap on the smaller-model round) with **no run on any tier silently converting**; and the v0.5.3 card policy makes the required-field rule mechanical rather than judgement-dependent — which is what makes the repeat legs safe to delegate.
+**Effect on §8's scoreboard:** seven of seven filed findings are now fixed; none open.
 
-A full companion round on **Claude Haiku 4.5** (same T1–T7 including scaling, plus guard-rail experiments and two further found→filed→fixed toolkit issues) is in **REPORT_HAIKU.md** in this bundle.
+**Two report observations deliberately not actioned.** (1) §8's CSV note — `read_large` remains
+Excel-only. The report's own T9 timings show ingestion at 0.42s, so this is a memory-headroom
+feature, not a bottleneck; the scope is now stated honestly in
+`skills/data-analyse/references/large-file-patterns.md` rather than implied. (2) §5's finding
+that large analyse jobs stay ~2× dearer than a pandas baseline stands — that is the cost of the
+exact-`Decimal` audit trail, and the v0.8.5 profiler fix (222s → 6.6s on the T9 repro) addressed
+the pathological part, not the premium.
 
-*All figures are reproducible from the artefacts in this folder: fixtures, ground-truth JSON, the deterministic generators and `verify_outputs.py`, per-run metrics, and the T1–T5 / T7 deliverables. The large T6 scaling fixtures and workbooks are omitted for size — regenerate the inputs with `scripts/make_fixtures_t6.py` (see [`README.md`](README.md)).*
+*Benchmark bundle synced into this repo at v3 (21 Jul 2026). Per the repo's size policy the
+regenerable large fixtures (`t6l_*`, `t6m_*`, `t9_sales_large.csv`) and the T6 run workbooks are
+not committed — see `README.md` and `.gitignore`.*

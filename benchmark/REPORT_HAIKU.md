@@ -1,3 +1,10 @@
+> **Historical — round 3 (v0.5.2), retained for detail.** The current consolidated report is
+> **[REPORT.md](REPORT.md)** (bundle v3, ten tests, both model tiers), which folds this round's
+> conclusions into its §6 *Model-tier companion*. This file is kept because it carries the
+> full T1–T7 Haiku working — per-test detail, the scaling runs and the guard-rail experiments —
+> that §6 summarises in four points. Figures here describe **v0.5.2/v0.5.3**, not the current
+> toolkit; where the two differ, REPORT.md is authoritative.
+
 # data-toolkit benchmark, round 3 — Claude Haiku 4.5, with vs without skills
 
 **Date:** 14 Jul 2026 · **Toolkit:** moonlight-lupin/data-toolkit **v0.5.2** (now six skills, incl. the new **data-convert**) · **Test model:** Claude Haiku 4.5 (both arms) · **Orchestration/evaluation:** Claude Fable 5 · **Status:** published 16 Jul 2026

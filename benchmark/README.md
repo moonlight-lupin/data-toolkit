@@ -1,83 +1,117 @@
 # data-toolkit benchmark
 
 An independent, reproducible benchmark of the toolkit's skills — **the same model with the
-toolkit vs. with plain Python** — now across **two model tiers**, all six skills, a
-reconciliation scaling test, and a recurring-conversion test, scored against recorded ground
-truth (deliverables independently verified, never the agents' self-reports).
+toolkit vs. with plain Python** — across **two model tiers**, all six skills, ten tests
+including reconciliation scaling, a large-file analyse test, and a recurring-conversion test.
+Scored against recorded ground truth, with every deliverable independently verified (never the
+agents' self-reports).
 
-**Two reports:**
-- **[`REPORT.md`](REPORT.md)** — **Claude Sonnet 5** (a strong model): T1–T5, the T6 scaling
-  test, and the T7 recurring-conversion addendum.
-- **[`REPORT_HAIKU.md`](REPORT_HAIKU.md)** — **Claude Haiku 4.5** (a small, cheap model): the
-  full T1–T7 companion, incl. scaling and guard-rail experiments.
+**Start here: [`REPORT.md`](REPORT.md)** — the consolidated report (bundle v3, 21 Jul 2026):
+ten tests, both model tiers, economics, scaling, repeat conversion, and the upstream feedback
+loop with outcomes.
 
-- **Toolkit under test:** v0.4.3 (Sonnet T1–T6) · v0.5.2 / v0.5.3 (T7 and the Haiku round)
+- **Toolkit under test:** **v0.8.5** final; per-test provenance in the report's Appendix
+  (T6 Sonnet ran on v0.4.3, the Haiku series on v0.5.2/v0.5.3)
+- **Test models:** Claude Sonnet 5 (primary series, T1–T10) · Claude Haiku 4.5 (companion, T1–T7)
 - **Orchestration / evaluation:** Claude Fable 5
+
+[`REPORT_HAIKU.md`](REPORT_HAIKU.md) is the **historical** round-3 Haiku report (v0.5.2), kept
+for its per-test detail; its conclusions are folded into REPORT.md §6. Where they differ,
+REPORT.md is authoritative.
 
 ## Headline
 
-- **Correctness parity on a strong model.** On Sonnet, a well-prompted baseline matched the
-  toolkit's numbers at ordinary sizes — the value is standardised artefacts + a deterministic
-  audit trail, not better arithmetic. Rubric **50 / 50 vs 48.5 / 50**.
-- **The value grows as the model gets cheaper — shown, not assumed.** On **Haiku**, the baseline
-  fell into a planted currency trap and headlined a blended **£1,121,085** GBP+USD total; the
-  skill arm's currency gate held. The arm gap **widens to 50 / 50 vs 44 / 50**, and skill
-  overhead nearly vanishes (**+14% tokens vs +45% on Sonnet**).
-- **The value grows as the data gets bigger.** On Sonnet's scaling test the engine's cost is
-  ~flat across a 235× size increase — from ~5,000 rows the skill arm is **~3× faster** and
-  cheaper, while hand-rolled code gets slower *and* riskier (a matcher force-paired unrelated
-  items; a formula bug shipped in a workbook).
-- **Recurring conversion (T7) is cheap and safe to repeat** — month 2+ costs ~1 minute; on the
-  drift month the toolkit **excluded the invalid row mechanically** to exact ground truth where a
-  hand-rolled baseline **halted the whole run**.
-- **Found → filed → fixed → re-verified, inside the benchmark.** Issues surfaced by testing were
-  filed in the toolkit's own feedback format and fixed upstream (v0.4.3, and v0.5.3 / PR #17 for
-  the required-field enforcement), then re-verified on the same fixtures. See `feedback/`.
+- **Correctness parity on a strong model.** On Sonnet both arms were substantively correct on
+  all ten tests — the toolkit's edge is artefact quality and the audit trail, not arithmetic.
+  Rubric **50 / 50 vs 48.5 / 50** (T1–T5).
+- **On a weaker model the toolkit prevents real failures.** The Haiku baseline blended GBP+USD
+  into one headline revenue figure (the planted currency trap) and under-triaged reconciliations
+  at scale; the skill arm did neither, at ~60% of Sonnet's cost. Gap widens to **50 vs 44**.
+- **Economics are size- and task-dependent.** Small files cost *more* with the skills (+38%
+  tokens on Sonnet — the price of reading the docs). At reconciliation scale the trade inverts:
+  ~5,000+ rows runs in ~a third of the baseline's wall-clock, flat across a 235× size increase.
+  At 250k-row analyse scale the engine is correct but ~2× dearer than a competent pandas
+  baseline — the audit trail is what the premium buys.
+- **Repeat work is where the design pays.** A recorded conversion card made month-2 conversions
+  a ~1–2 minute exercise for a *fresh* agent, with schema drift flagged (never silently
+  converted) and required-field failures excluded mechanically.
+- **The feedback loop works.** Seven engine findings were filed across five feedback documents
+  and **all seven are now fixed** (six during the series, the last in v0.8.6 — see the report's
+  Addendum), each re-verified against its original repro fixture.
 
 ## Honest limits (read these)
 
-- **n = 1 per cell** — single run per task/arm; treat sub-~10% deltas as noise.
-- **The prompt scaffolding favours the baseline** — both arms get the same integrity rules, which
-  are much of what the skills encode; the unscaffolded gap is plausibly larger in the toolkit's
-  favour.
+- **n = 1 per cell** — single run per task/arm; treat sub-~10% deltas as noise. Scaling claims
+  rest on three sizes (reconcile) and two (analyse).
+- **The prompt scaffolding favours the baseline** — both arms get the same integrity rules,
+  which are much of what the skills encode; the unscaffolded gap plausibly favours the toolkit
+  further.
 - **On a weak model at scale, the risk shifts from cost to correctness.** Haiku needs explicit
   operating guard rails, and a wrong 20k-row working paper is invisible to eyeball review — so:
-  Sonnet + skills for large / high-stakes work; Haiku + skills only for small, attended tasks.
-  (Full detail in `REPORT_HAIKU.md` §8.)
+  Sonnet + skills for large / high-stakes work; Haiku + skills for small, attended tasks.
+- **The report predates the current toolkit.** It measures v0.8.5; v0.8.6–0.8.7 landed after.
+  Those changes are recorded in the report's Addendum and have **not** been re-scored by a fresh
+  benchmark run.
 
 ## Contents
 
 | Path | What |
 |---|---|
-| `REPORT.md` / `REPORT_HAIKU.md` | The two reports (method, results, cost, scaling, errors, limits). |
-| `run_metrics.csv` | Tokens / tool calls / wall-clock per run. Row suffixes: none = Sonnet r1, `_v2` = Sonnet on v0.4.3, `_sn` = Sonnet T7, `_hk` = Haiku, `_hk_v2` = Haiku canonical re-runs. |
-| `fixtures/` | Synthetic inputs (all fictional). T1–T5 + T7 committed; the large T6 scaling inputs are regenerable (below). |
-| `ground_truth/` | The planted-trap answer keys the outputs were scored against. |
-| `scripts/` | `make_fixtures.py`, `make_fixtures_t6.py`, `make_fixtures_t7.py` (deterministic generators) and `verify_outputs.py` (independent verification). |
-| `runs/` | Sonnet deliverables (T1–T5, T7). *T7_baseline has no August CSV by design — its runner halted on drift and wrote a `SCHEMA_FAILURE.log`.* |
-| `runs_haiku/` | Haiku deliverables. Canonical markers: `T7_skill_v053_CANON` (the post-fix T7) and, for T6, the `*_guarded_CANON` runs — the unguarded originals are retained as the prompting-for-weaker-models finding. |
-| `feedback/` | Issues filed to the maintainer in the toolkit's own template (all fixed upstream: v0.4.3 and v0.5.3 / PR #17). |
+| `REPORT.md` | The consolidated report — method, results, economics, scaling, feedback loop, limits, and the maintainer Addendum for post-report fixes. |
+| `REPORT_HAIKU.md` | Historical round-3 Haiku detail (v0.5.2); superseded in summary by REPORT.md §6. |
+| `run_metrics.csv` | Tokens / tool calls / wall-clock for every canonical run. |
+| `fixtures/` | Synthetic inputs, all fictional. T1–T5, T7, T8 committed; the large T6 and T9 inputs are regenerable (below). |
+| `ground_truth/` | The planted-trap answer keys the outputs were scored against (t1–t9). |
+| `scripts/` | Deterministic fixture generators (`make_fixtures.py`, `_t6`, `_t7`, `_t8t9`) and `verify_outputs.py` (independent re-scoring). |
+| `runs/` | Sonnet deliverables, canonical runs only (T1–T10). *T7_baseline has no August CSV by design — its runner halted on schema drift and wrote a `SCHEMA_FAILURE.log`.* |
+| `runs_haiku/` | Haiku deliverables, canonical runs only (T1–T7). |
+| `feedback/` | The seven findings filed to the maintainer in the toolkit's own template, each with a verified status update. |
 
 ## Reproducing
 
-Everything is deterministic — no randomness, all data fictional.
+All generators are deterministic — no RNG, so the *data* is identical on every run. Text
+outputs (`.csv`, `.json`) regenerate **byte-identically**; binary outputs (`.xlsx`, `.pdf`,
+`.png`) do **not**, because those formats embed a creation timestamp or renderer version. Their
+content is unchanged, but expect a git diff if you regenerate them — verified, not assumed.
 
 ```bash
 cd benchmark
-python scripts/make_fixtures.py       # T1–T5 fixtures + ground truth
+python scripts/make_fixtures.py       # T1-T5 fixtures + ground truth
 python scripts/make_fixtures_t7.py    # T7 monthly GL exports + ground truth
-python scripts/make_fixtures_t6.py    # the large T6 scaling fixtures (omitted from the repo)
-python scripts/verify_outputs.py      # re-score the Sonnet T1–T5 deliverables in runs/
+python scripts/make_fixtures_t6.py    # large T6 scaling fixtures (not committed)
+python scripts/make_fixtures_t8t9.py  # T8 images + the 250k-row T9 CSV (not committed)
 ```
 
-The **T6 scaling fixtures** (`fixtures/t6{l,m}_*`) and all T6 run workbooks are **omitted for
-size**; `make_fixtures_t6.py` regenerates the inputs and the scaling results live in the reports
-(§6 / §8) and `run_metrics.csv`.
+Re-score the committed deliverables against ground truth:
+
+```bash
+python scripts/verify_outputs.py                          # Sonnet runs/  -> 38 checks
+python scripts/verify_outputs.py runs_haiku skill baseline # Haiku runs_haiku/
+```
+
+Expected: the Sonnet series passes every check. The Haiku series shows **three failures, all in
+the `baseline` arm** (T4's excl-outlier total and concentration share, T5's SVG charts) — that
+is the documented weak-model gap the report describes, reproduced, not a regression.
+
+**Omitted for size** (see `.gitignore`): the T6 scaling fixtures (`fixtures/t6{l,m}_*`), the
+12.6 MB T9 CSV (`fixtures/t9_sales_large.csv`), and all T6 run workbooks. All are CSV/XLSX the
+generators above recreate on demand — the T9 CSV byte-identically — and the scaling results live
+in the report and `run_metrics.csv`.
+
+Do **not** regenerate `fixtures/t8_chart.png`: matplotlib's PNG output is not byte-stable across
+versions, and T8 scored pixel-calibrated estimates of two deliberately unlabelled bars against
+that exact image. The committed file is canonical.
 
 ## Notes
 
-- Prompts were identical between the two arms except for one block pointing the skill arm at the
-  toolkit. The Haiku T6 *guarded* runs and the T7 v0.5.3 legs are documented in the reports.
+- Prompts were identical between arms except one block pointing the skill arm at the toolkit.
+  Runs superseded by upstream fixes or prompt guard-rail adjustments are excluded; the report's
+  Appendix states each run's toolkit version and canon choices.
 - **Sanitised:** absolute local paths and a test organisation's name (which some agents inferred
   from file paths) were replaced with neutral placeholders. No figures, classifications or
   structure were altered.
+- **Maintainer edits to the bundle:** the `scripts/` path base was corrected to resolve to the
+  benchmark root (the generators previously wrote to `scripts/fixtures/` and only worked from
+  the bundle root), and `verify_outputs.py`'s default arm suffix was corrected from `base` to
+  `baseline` so the bare invocation works. No fixture content, ground truth, run artefact or
+  reported figure was changed.
