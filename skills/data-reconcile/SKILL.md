@@ -7,12 +7,10 @@ description: >-
   reconciliation working paper (.xlsx). Use whenever the user wants to "reconcile A to B",
   "reconcile the bank to the ledger", "reconcile the invoice tracker to the accounts", "tie
   out", "match these two lists/exports", "find the differences between", "what doesn't match",
-  "reconciliation working paper", or "discrepancy triage". Ships presets for common recurring
-  reconciliations (invoice tracker vs accounting records, bank vs cashbook, fund administrator
-  vs internal records, payments/PRF vs bank); generic for anything else. Deterministic and
-  computed locally — it never force-fits a match and never posts an adjustment; it produces a working
-  paper for finance to review and sign off. NOT budget/variance analysis, and NOT deal/asset
-  analysis (that is out of scope).
+  "reconciliation working paper", or "discrepancy triage". Presets for common recurring
+  reconciliations (invoice tracker vs accounting records, bank vs cashbook, fund
+  administrator vs internal records, payments/PRF vs bank); generic for anything else.
+  NOT budget/variance analysis, and NOT deal/asset analysis (that is out of scope).
 ---
 
 # Finance Reconciliation

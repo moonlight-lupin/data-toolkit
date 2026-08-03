@@ -7,9 +7,9 @@ description: >-
   "visualise this", "make a chart / KPI cards / scorecard", "Excel charts", "chart this
   in a spreadsheet", "a one-pager of these numbers", "RAG status board", or wants a
   shareable visual summary. HTML path: inline SVG, no CDN. Excel path: openpyxl charts
-  with OfficeCLI-aligned chartType names (column/bar/line/pie/doughnut/waterfall).
-  Draft for review, not advice. NOT PowerPoint or letters; clean/extract first via
-  data-tidy / data-extract; compute metrics via data-analyse when numbers must be exact.
+  with OfficeCLI-aligned chartType names (column/bar/line/pie/doughnut/waterfall). NOT
+  PowerPoint or letters; clean/extract first via data-tidy / data-extract; compute
+  metrics via data-analyse when numbers must be exact.
 ---
 
 # Data Visualise

@@ -2,15 +2,13 @@
 name: data-extract
 description: >-
   Get STRUCTURED data OUT of documents — PDFs (incl. multi-table/scanned via local OCR), Word,
-  PowerPoint (.pptx), and Outlook .msg — into a clean .xlsx plus an audit report. Use when the user wants to "extract
-  data from this PDF/document", "pull the table out of this report", "get the figures from these
-  statements/certificates", "turn these confirmations into a table", "read the fields off this
-  form", or "extract these line items". Two modes: key-value/FORM extraction (label → value, one
-  record per document — certificates, confirmations, cover sheets) and TABLE extraction (list a
-  document's tables, pick one, pull it). Intent-first; normalises via the shared engine (dates →
-  DD MMM YYYY, currency → amount + code) and flags anything unfound or uncertain — never invents
-  values. Extraction is computed locally (local OCR only). NOT for already-tabular data (use data-tidy) or deal-document
-  intelligence like lease abstraction/model review (out of scope).
+  PowerPoint (.pptx), and Outlook .msg — into a clean .xlsx plus an audit report. Use when
+  the user wants to "extract data from this PDF/document", "pull the table out of this
+  report", "get the figures from these statements/certificates", "turn these confirmations
+  into a table", "read the fields off this form", or "extract these line items". Two modes:
+  key-value/FORM extraction (label → value, one record per document) and TABLE extraction
+  (list a document's tables, pick one, pull it). NOT for already-tabular data (use data-tidy)
+  or deal-document intelligence like lease abstraction/model review (out of scope).
 ---
 
 # Data Extract

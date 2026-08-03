@@ -7,12 +7,9 @@ description: >-
   list, any table). Use when the user says "analyse this data", "what are the key
   metrics", "any insights from this spreadsheet", "summarise this export", "what's
   driving the numbers", "who are the top customers", or hands over a table and asks what
-  it says. Works INTENT-FIRST: asks what question the data should answer, profiles it,
-  proposes a plan → you confirm → computes every metric deterministically (local engine,
-  exact Decimal, currency-aware) → writes a calibrated brief separating observation from
-  interpretation. Metrics computed locally by the engine. NOT data cleaning (data-tidy),
-  NOT matching two datasets (data-reconcile), NOT a dashboard (data-visualise — natural
-  next step); descriptive analysis only, never financial or investment advice.
+  it says. NOT data cleaning (data-tidy), NOT matching two datasets (data-reconcile),
+  NOT a dashboard (data-visualise — natural next step); descriptive analysis only, never
+  financial or investment advice.
 ---
 
 # Data Analyse

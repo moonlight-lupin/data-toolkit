@@ -6,12 +6,10 @@ description: >-
   table, split one file into many, union many into one). Use when the user wants to "convert this
   to X's format", "map these columns to the import template", "get this into the format System B
   needs", "reshape / pivot / unpivot this", "flatten this JSON", "split this file by column",
-  "combine these files", or "prepare this for upload/import". Works INTENT-FIRST: proposes the
-  target shape from the contract + purpose, you confirm, it applies deterministically and writes
-  a reusable **conversion card** (Markdown + an embedded JSON spec) a future agent re-runs after
-  sense-checking the source. Delegates cleaning to data-tidy; never invents values; live inputs
-  (FX) are pinned/user-approved, not fetched. NOT data cleaning (data-tidy), NOT matching two
-  record sets (data-reconcile), NOT raw file-format-only conversion.
+  "combine these files", or "prepare this for upload/import". Writes a reusable conversion card
+  (Markdown + embedded JSON spec) a future agent re-runs after sense-checking the source. NOT
+  data cleaning (data-tidy), NOT matching two record sets (data-reconcile), NOT raw
+  file-format-only conversion.
 ---
 
 # Data Convert
