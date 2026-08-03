@@ -53,6 +53,8 @@ show the tabs, then `read_any(path, sheet="<name>")`.
 For files with 10k+ rows, use `ingest.read_large` instead of `read_any` to avoid OOM. See
 `references/large-file-patterns.md` for vectorised operation guidance.
 
+**Done when:** you have `(header, rows, note)` from `read_any` (or `read_large` for 10k+ rows), and `note` has been read for any source-quality flags. If `SheetSelectionRequired` was raised, the user has chosen a sheet.
+
 ### 2 — Profile (against the target)
 `dataclean.profile_table(header, rows)` / `dataclean.render_profile(...)` — shows columns,
 inferred types (incl. **categorical** / **ordinal**), % missing, distinct counts, sample
@@ -88,6 +90,8 @@ dataclean.write_xlsx(header, rows, "clean.xlsx")
 Deterministic: header detection, drop blank/total rows, per-column conversion (failures
 **kept raw + flagged**, soft warnings **converted + flagged**), exact dedup, fuzzy
 near-dups **flagged not merged**, validation (required / regex / master-list / unique).
+
+**Done when:** the recipe is confirmed by the user, applied via `apply_recipe`, and `write_xlsx` has written the output file. The log from `apply_recipe` is retained for step 6.
 
 ### 6 — Report
 `dataclean.render_report(log)` → a change report: rows in/out, per-column converted/flagged counts,

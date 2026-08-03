@@ -39,6 +39,8 @@ Before computing anything, ask (a short `AskUserQuestion`):
 An open-ended "just analyse it" is fine — then the playbook (step 3) drives the metric
 selection, and the brief says so.
 
+**Done when:** you have the question (or "open-ended"), the audience/decision, and any prior figures/hypotheses — or the user has explicitly said "just analyse it". A one-line restatement to the user confirms alignment.
+
 ### 1 — Ingest
 Same shared engine as the other skills (`../../scripts/`):
 ```python
@@ -55,6 +57,8 @@ list the sheets and ask, don't guess.
 
 For files with 10k+ rows, use `ingest.read_large` instead of `read_any` to avoid OOM. See
 `references/large-file-patterns.md` for vectorised operation guidance.
+
+**Done when:** you have `(header_rows, note)` from `read_any` (or `read_large` for 10k+ rows). If `SheetSelectionRequired` was raised, the user has chosen a sheet. `note` has been read for source-quality flags.
 
 ### 2 — Profile & quality gate
 `dataclean.profile_table(header, rows)` / `score_quality(...)` — column types, missing %,
@@ -134,10 +138,14 @@ ALWAYS this structure (markdown; British English, dates DD MMM YYYY, currency wi
 Deliver the brief as a `.md` (plus the optional metrics `.xlsx`). Keep it to one page of
 reading unless asked for depth.
 
+**Done when:** the brief follows the exact structure (Headline / Key metrics / Notable / Caveats & quality / footer), every number in it came from the engine, and the `.md` file is written. If a metrics `.xlsx` was requested, that too is written.
+
 ### 6 — Offer the next step
 - **Visual one-pager wanted?** → hand the computed series/breakdowns to **data-visualise**
   (its `rows_from_xlsx` reads the metrics workbook directly).
 - **Numbers look wrong vs another source?** → that's **data-reconcile**, not this skill.
+
+**Done when:** the next step is offered to the user (visualise, reconcile, or "done") and the brief has been delivered. The skill does not start the next step without the user's go-ahead.
 
 ## Insight discipline (what makes the brief trustworthy)
 

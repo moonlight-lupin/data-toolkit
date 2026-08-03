@@ -41,6 +41,8 @@ What's the document, and **which fields / which table** do you want out? For for
 **field list** (name + the labels to look for + type). For tables, the **target columns**.
 This pins extraction to a target — economical, no guessing.
 
+**Done when:** you have the field list (name + labels + type per field) for form mode, or the target columns for table mode, and the user has confirmed. If the document type is unfamiliar, you've seen at least one page via `ingest.read_text` first.
+
 ### 1 — Set up (run from the skill directory)
 First, **check for an existing runner/card for this doc type** (see *Reuse* below) — if one
 exists, follow that flow instead of re-deriving. Otherwise:
