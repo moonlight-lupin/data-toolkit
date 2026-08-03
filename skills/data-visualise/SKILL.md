@@ -108,27 +108,15 @@ live Artifact in Cowork / Claude.ai when handed over as written.
 
 Each returns an HTML fragment; `dashboard()` assembles them.
 
-| Block | What it makes |
+| Category | Blocks |
 |---|---|
-| `kpi_card(label, value, sub, status)` / `kpi_row([...])` | metric cards with a RAG accent (`brand`/`green`/`amber`/`red`/`grey`) |
-| `bar_chart(data, title, unit)` | vertical bars (inline SVG); `data` = `[(label, value)]` or dicts |
-| `line_chart(series, title, unit, toggle)` | one line `[(label, value)]` or many `{name: [...]}` with a legend; floated y-axis + gridlines; `toggle=True` → click legend to show/hide a series |
-| `donut_chart(data, title, centre)` | donut with a centre total; themed slice colours |
-| `heatmap(matrix, row_labels, col_labels, …)` | matrix heat map (pivot / cohort / correlation); `scale="sequential"` or `"diverging"` |
-| `sparkline(data, …)` | compact trend path for KPI strips; shape over scale |
-| `waterfall(steps, …)` | bridge chart (`start` / `delta` / `total`) for period or variance walks |
-| `scatter_chart(x, y, …, x_label, y_label, unit_x, unit_y, trend_line=False)` | paired observations for correlation / outlier spotting; both axes float to the data. `trend_line=True` overlays an OLS fit across the observed x-range only — **descriptive, never a forecast**, and omitted entirely when x has no variance |
-| `histogram(values, bins=10, …)` | distribution shape; `bins` = a count (equal-width) or explicit edges like `[0,30,60,90,365]`. Edges are `[lo,hi)` except the last, which includes its upper bound. Y-axis forced to 0; bars touch |
-| `stacked_bar(data, …)` | composition per category; accepts a `pivot()` result, `{category: [v1, v2]}`, `[(category, [values])]`, `{categories, series}`, or `{segment: [(cat, value)]}`. **Negative segments stack below the zero line** so a credit never inflates the bar it reduces |
-| `table(rows, columns, title, rag, sortable, filter_by)` | themed table; `rag={col: value->status}` colours cells (RAG conditional formatting); `sortable=True` → click-to-sort headers; `filter_by=[col]` → a dropdown row-filter |
-| `status_pill(text, status)` | a small RAG pill |
-| `section(title, *blocks)` / `grid(*blocks, cols)` | titled section / N-column layout |
-| `suggest_blocks_from_analysis(analysis.json)` | map a data-analyse metrics payload → editable declarative blocks (no recomputation) |
-| `blocks_from_analysis(analysis.json)` | same mapping, already rendered to HTML fragments |
-| `dashboard(title, blocks, subtitle, as_of, out_path, footnote, theme)` | full page: header, as-of stamp, print CSS, footer disclaimer; `theme` re-skins the shell |
-| `apply_theme(theme)` | rebind the active palette/font/logo so blocks built afterwards use a firm's brand |
-| `rows_from_xlsx(path, sheet)` | read a header+rows `.xlsx` → list of dicts (needs `openpyxl`); multi-tab safe — auto-reads the single data sheet, raises if several hold data (pass `sheet=`) |
-| `open_in_browser(path)` | open the rendered file for review / print-to-PDF |
+| KPI / status | `kpi_card`, `kpi_row`, `status_pill` |
+| Charts | `bar_chart`, `line_chart`, `donut_chart`, `waterfall`, `scatter_chart`, `histogram`, `stacked_bar`, `heatmap`, `sparkline` |
+| Table | `table` (RAG colouring, sortable, filterable) |
+| Layout | `section`, `grid`, `dashboard` |
+| Data import | `rows_from_xlsx`, `suggest_blocks_from_analysis`, `blocks_from_analysis`, `open_in_browser` |
+
+Full signatures, parameters, and examples for every block: **`references/blocks.md`**.
 
 Minimal example:
 
