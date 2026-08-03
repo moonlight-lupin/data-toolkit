@@ -113,6 +113,14 @@ Ready-made example contracts: `references/contracts/journal-import.md`,
   value. Output is a **draft for review**, not a posting or an upload — a person submits it.
 - **Never blind-applies** — a drifted source is flagged, not force-converted.
 
+## Files
+
+- `scripts/convert.py` — engine: `load_spec`, `render_card`, `convert_file`, `convert_rows`,
+  `sense_check`, `render_report`; `--self-test`.
+- `references/conversion-spec.md` — full spec schema, every reshape op and compute function.
+- `references/contracts/journal-import.md` — ready-made example contract.
+- `references/contracts/payments-upload.md` — ready-made example contract.
+
 ## Principles
 
 Behavioural charter: `../../PRINCIPLES.md` — drafts not advice, never invent, honesty and
