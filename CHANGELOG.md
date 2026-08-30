@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.8.8 — 2026-08-30
+
+- **`image_extract.py` now validates the vision model's answer before accepting it**
+  (concept borrowed from DocETL's schema-validate-and-retry pattern, docetl#426).
+  Previously any well-formed HTTP answer was trusted: a garbled or half-missing table
+  flowed into the `.xlsx` with no signal.
+  For `chart` / `table` images the answer must now contain a parseable Markdown table
+  with at least one data row (`validate_description`); `ui` / `diagram` / `general`
+  answers only need to be non-empty, since prose is legitimate there. A non-conforming
+  answer triggers **one corrective retry** whose prompt names the failure and restates
+  the output contract. An answer that still fails is **kept and flagged**
+  (`validation: "flagged: …"`, `attempts` = model calls) — never dropped, never rewritten,
+  and the retry never invents values (the corrective prompt instructs blank cells for
+  unreadable values). Token usage is summed across attempts so cost accounting stays
+  honest. Flagged results are cached (a re-run must not re-bill the same judgement),
+  error results are not; the CLI now prints `[flagged] … verify manually`.
+  Legacy cache entries get their validation label derived live from the cached answer.
+  5 new tests (78 engine tests total; 114 with pytest across all suites).
+
+- **Cache hygiene rule documented** in `image-prompts.md` for any future LLM-backed step:
+  cache by content hash + exact prompt text + model, validate before caching, cache
+  flagged answers too, never cache errors, `--force` bypasses.
+
 ## 0.8.7 — 2026-07-23
 
 - **`parse_number` no longer turns identifiers into confident wrong numbers.** It stripped

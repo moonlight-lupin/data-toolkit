@@ -106,6 +106,12 @@ OpenAI-compatible endpoint (`VISION_API_KEY` / `OPENAI_API_KEY`, optional `VISIO
 OCR. Results are cached by file+prompt hash; large images (>5MB / >2048px) are compressed
 before the API call.
 
+**Answer validation (built in):** for chart/table images the answer must contain a real
+Markdown table (≥1 data row). A non-conforming answer gets **one corrective retry** with the
+failure named. An answer that still fails is **kept, flagged** (`validation: "flagged: …"`,
+`attempts` = model calls), and shown in the delivered report — verify flagged images before
+relying on them (fits the "never invent, flag instead" workflow).
+
 **PowerPoint decks (`.pptx`)** — `ingest.read_any` / `ingest.read_pptx` extracts
 **tables** from all slides (same row contract as `.docx`). Slide titles/bullets are
 summarised in the ingest note, not mixed into the table rows. Image-only slides are

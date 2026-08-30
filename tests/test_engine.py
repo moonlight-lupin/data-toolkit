@@ -1789,6 +1789,167 @@ def test_seasonality_month_and_quarter():
 
 
 # --------------------------------------------------------------------------- #
+# 18. Vision answer validation + corrective retry (DocETL #426 concept)
+# --------------------------------------------------------------------------- #
+class _VisionResp:
+    """Minimal requests.Response stand-in for mocked vision calls."""
+
+    def __init__(self, text, status=200):
+        self.status_code = status
+        self.text = text
+        self._text = text
+
+    def json(self):
+        return {
+            "choices": [{"message": {"content": self._text}}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 20},
+            "model": "mock-vision",
+        }
+
+
+def test_validate_description_table_kinds_require_table():
+    ie = _load_image_extract()
+    # Empty / None → invalid for every kind
+    for kind in ("chart", "table", "ui", "diagram", "general"):
+        ok, reason = ie.validate_description(None, kind)
+        assert ok is False and reason, f"{kind}: empty answer must be invalid"
+    # Table kinds: prose without a Markdown table → invalid, with a reason
+    ok, reason = ie.validate_description("I see a bar chart with five values, all positive.", "chart")
+    assert ok is False and "table" in reason.lower(), (ok, reason)
+    ok, reason = ie.validate_description("\n| A | B |\n|---|---|\n", "table")
+    assert ok is False, "header-only table must be invalid"
+    # Table kinds: a real table (header + separator + body row) → valid
+    good = "\n| Category | Value |\n|---|---|\n| Q1 | 120 |\n"
+    ok, reason = ie.validate_description(good, "chart")
+    assert ok is True, reason
+    ok, reason = ie.validate_description(good, "table")
+    assert ok is True, reason
+
+
+def test_validate_description_descriptive_kinds_accept_prose():
+    ie = _load_image_extract()
+    prose = "A dashboard with four KPI cards across the top and a line chart below."
+    for kind in ("ui", "diagram", "general"):
+        ok, reason = ie.validate_description(prose, kind)
+        assert ok is True, f"{kind}: prose must be acceptable, got: {reason}"
+    # A table is also fine for descriptive kinds
+    ok, _ = ie.validate_description("\n| A | B |\n|---|---|\n| 1 | 2 |\n", "ui")
+    assert ok is True
+
+
+def test_extract_image_retries_once_on_nonconforming_answer():
+    ie = _load_image_extract()
+    try:
+        from PIL import Image
+    except ImportError:
+        print("  SKIP  test_extract_image_retries_once_on_nonconforming_answer (no Pillow)")
+        return
+
+    d = Path(tempfile.mkdtemp())
+    chart = d / "revenue_chart.png"
+    Image.new("RGB", (320, 200), color=(10, 120, 60)).save(chart)
+    good_md = "\n| Quarter | Revenue |\n|---|---|\n| Q1 | 500 |\n| Q2 | 650 |\n"
+
+    seen_prompts = []
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        prompt = json["messages"][0]["content"][0]["text"]
+        seen_prompts.append(prompt)
+        if len(seen_prompts) == 1:
+            return _VisionResp("Sorry, I cannot read this image precisely.")  # no table
+        return _VisionResp(good_md)
+
+    cache = d / "cache"
+    r = ie.extract_image(
+        str(chart), api_key="test-key", model="mock-vision",
+        cache_dir=cache, _request=fake_post,
+    )
+    assert r.get("error") is None, f"unexpected error: {r.get('error')}"
+    assert len(seen_prompts) == 2, f"expected 2 calls (1 retry), got {len(seen_prompts)}"
+    # First call: the original prompt. Second: a corrective retry that names
+    # the failure and restates the requirement.
+    assert seen_prompts[0].startswith(ie.prompt_for("chart")[:20])
+    assert seen_prompts[1].startswith(ie.prompt_for("chart")[:20])
+    assert "Previous answer" in seen_prompts[1] or "did not" in seen_prompts[1]
+    # Result records the validation outcome and the attempt count
+    assert r["validation"] == "ok", r["validation"]
+    assert r.get("attempts") == 2
+    assert r["dataframe"] is not None and len(r["dataframe"]) == 2
+    # Usage from both calls is merged for cost accounting
+    assert r["usage"].get("prompt_tokens", 0) >= 2, r["usage"]
+
+
+def test_extract_image_flags_unrepairable_answer_and_caches_it():
+    ie = _load_image_extract()
+    try:
+        from PIL import Image
+    except ImportError:
+        print("  SKIP  test_extract_image_flags_unrepairable_answer_and_caches_it (no Pillow)")
+        return
+
+    d = Path(tempfile.mkdtemp())
+    chart = d / "opaque_chart.png"
+    Image.new("RGB", (320, 200), color=(90, 20, 90)).save(chart)
+
+    calls = {"n": 0}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        calls["n"] += 1
+        return _VisionResp("The image is too blurry to extract any table.")  # never a table
+
+    cache = d / "cache"
+    r = ie.extract_image(
+        str(chart), api_key="test-key", model="mock-vision",
+        cache_dir=cache, _request=fake_post,
+    )
+    assert calls["n"] == 2, f"exactly one retry expected, got {calls['n']} calls"
+    assert r.get("error") is None, "flagging is not an error"
+    assert r["validation"] != "ok" and r["validation"], r["validation"]
+    assert r.get("attempts") == 2
+    # The raw answer is preserved for the human to judge — never dropped.
+    assert "blurry" in (r.get("description") or "")
+    # The flagged result is cached: re-running does not re-bill tokens.
+    r2 = ie.extract_image(
+        str(chart), api_key="test-key", model="mock-vision",
+        cache_dir=cache, _request=fake_post,
+    )
+    assert r2["cached"] is True
+    assert calls["n"] == 2, "cached flagged result must not call the API again"
+    assert r2["validation"] == r["validation"]
+
+
+def test_extract_image_valid_answer_single_call():
+    ie = _load_image_extract()
+    try:
+        from PIL import Image
+    except ImportError:
+        print("  SKIP  test_extract_image_valid_answer_single_call (no Pillow)")
+        return
+
+    d = Path(tempfile.mkdtemp())
+    table = d / "positions_table.png"
+    Image.new("RGB", (400, 240), color=(200, 200, 200)).save(table)
+    good_md = "\n| Security | Qty |\n|---|---|\n| GOV bond | 1000 |\n"
+
+    seen_prompts = []
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        prompt = json["messages"][0]["content"][0]["text"]
+        seen_prompts.append(prompt)
+        return _VisionResp(good_md)
+
+    cache = d / "cache"
+    r = ie.extract_image(
+        str(table), api_key="test-key", model="mock-vision",
+        cache_dir=cache, _request=fake_post,
+    )
+    assert r.get("error") is None
+    assert len(seen_prompts) == 1, "conforming answer must not trigger a retry"
+    assert r["validation"] == "ok"
+    assert r.get("attempts") == 1
+
+
+# --------------------------------------------------------------------------- #
 # Standalone runner (no pytest needed)
 # --------------------------------------------------------------------------- #
 def _run_all():

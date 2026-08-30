@@ -18,7 +18,21 @@ data — Tesseract cannot read data points from charts.
 - Images **>5MB** or **>2048px** on the long edge are compressed (Pillow) before the API call.
 - Results are cached by `(file hash + prompt hash + model)` under
   `~/.cache/data-toolkit/image_extract/` (override with `--cache-dir`).
-- Transient API failures retry once; permanent failures return an error object.
+- **Answer validation** — for `chart` / `table` images the model's answer must contain a
+  parseable Markdown table with at least one data row (`validate_description`); other kinds
+  only need a non-empty answer (prose is legitimate there). A non-conforming answer triggers
+  **one corrective retry** — the retry prompt names the failure and restates the output
+  contract (`_corrective_prompt`). An answer that still fails is **kept and flagged**
+  (`validation: "flagged: …"`), never dropped and never rewritten. `attempts` counts model
+  calls; `usage` sums them, so cost accounting stays honest across retries.
+- **Cache hygiene rule (apply to any future LLM-backed step in this toolkit):** cache by
+  content hash + exact prompt text + model, so a prompt edit invalidates automatically;
+  validate the answer before caching; cache flagged answers too (a re-run must not re-bill
+  tokens for the same judgement); never cache error results; `--force` bypasses. Reference
+  implementation: `image_extract.py` (`validate_description`, `_corrective_prompt`,
+  `_merge_usage`, `cache_get` / `cache_put`).
+- Transient API failures (429/5xx) retry once inside `call_vision`; permanent failures
+  return an error object and are **not** cached.
 - Parsed Markdown tables auto-convert comma thousands separators, `%` suffixes, and
   currency symbols via `parse_markdown_table`.
 - Optional deps: vision API key + endpoint, `Pillow`, `requests`, `pandas`, `openpyxl`.

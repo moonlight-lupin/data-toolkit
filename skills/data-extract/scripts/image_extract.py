@@ -2,9 +2,11 @@
 
 Accepts chart / table / UI / diagram / general images (``.png`` ``.jpg`` ``.jpeg``
 ``.gif`` ``.webp`` ``.bmp``), classifies them, calls an OpenAI-compatible vision
-endpoint, parses any Markdown table into a DataFrame, and writes a styled
-``.xlsx``. Batch mode processes a directory into one workbook (one sheet per
-image, plus a combined sheet with a ``source`` column).
+endpoint, validates the answer (chart/table answers must yield a parseable Markdown
+table; one corrective retry; answers that still fail are kept and flagged), parses any
+Markdown table into a DataFrame, and writes a styled ``.xlsx``. Batch mode processes a
+directory into one workbook (one sheet per image, plus a combined sheet with a
+``source`` column).
 
 Does **not** fall back to Tesseract for chart data — Tesseract cannot read
 charts. If no vision endpoint/key is configured the script exits clearly.
@@ -422,8 +424,58 @@ def parse_markdown_table(text: str):
 
 
 # --------------------------------------------------------------------------- #
-# XLSX export
+# Answer validation (schema-check on the model's answer, DocETL #426 pattern)
 # --------------------------------------------------------------------------- #
+# Kinds whose answer must contain a Markdown table. Other kinds legitimately
+# return prose, so prose is acceptable (and a table is never penalised).
+_TABLE_KINDS = frozenset({"chart", "table"})
+
+
+def validate_description(text: str | None, kind: str) -> tuple[bool, str]:
+    """Check a vision answer against the expectation for its image kind.
+
+    Returns ``(ok, reason)``. ``reason`` is human-readable and is embedded in
+    the corrective retry prompt on failure; it is also recorded on the result
+    so the agent/human can see why an answer was flagged.
+    """
+    if not text or not str(text).strip():
+        return False, "empty answer"
+    if kind in _TABLE_KINDS:
+        df = parse_markdown_table(str(text))
+        if df is None:
+            return False, "answer does not contain a Markdown table"
+        if len(df) == 0:
+            return False, "answers table has a header but no data rows"
+    return True, ""
+
+
+def _merge_usage(a: dict, b: dict) -> dict:
+    """Sum two token-usage dicts so retried calls report combined cost."""
+    out = dict(a)
+    for k, v in (b or {}).items():
+        if isinstance(v, (int, float)) and isinstance(out.get(k), (int, float)):
+            out[k] = out[k] + v
+        elif isinstance(v, (int, float)):
+            out[k] = v
+    return out
+
+
+def _corrective_prompt(prompt: str, kind: str, reason: str) -> str:
+    """Build the retry prompt: restate the task, name the failure, repeat the contract."""
+    needs_table = kind in _TABLE_KINDS
+    contract = (
+        "Your previous answer did not conform to the requested output."
+        f" Problem: {reason}."
+        + (" You must output the extracted data as a well-formed Markdown table:"
+           " a header row, a |---|---| separator row, and one row per data point."
+           if needs_table
+           else " Please output a complete, non-empty answer.")
+        + " If a value is genuinely unreadable, include the row and leave the cell"
+          " blank rather than omitting it. Do not round numbers."
+    )
+    return f"{prompt}\n\n{contract}"
+
+
 def write_styled_xlsx(sheets: dict, out_path: str) -> str:
     """Write ``{sheet_name: DataFrame}`` to a styled workbook (bold white-on-blue headers)."""
     from openpyxl import Workbook
@@ -491,6 +543,9 @@ def extract_image(
             hit["file"] = path
             if hit.get("description"):
                 hit["dataframe"] = parse_markdown_table(hit["description"])
+            if not hit.get("validation"):
+                ok, reason = validate_description(hit.get("description"), hit.get("type") or kind)
+                hit["validation"] = "ok" if ok else f"flagged: {reason}"
             return hit
 
     if not key:
@@ -505,26 +560,53 @@ def extract_image(
 
     try:
         img_bytes, mime, compressed = compress_image(p)
-        result = call_vision(
-            img_bytes, mime, prompt,
-            api_key=key, base_url=url, model=mdl, _request=_request,
-        )
     except Exception as e:  # noqa: BLE001
         return {"file": path, "type": kind, "description": None, "usage": {},
                 "cached": False, "error": str(e), "compressed": False}
 
+    # Validate-and-retry (schema-check on the model's answer): one corrective
+    # retry with the failure named in the prompt; then accept + flag, never drop.
+    usable = None
+    attempts = 0
+    usage = {}
+    attempt_prompt = prompt
+    max_attempts = 2
+    result = None
+    reason = ""
+    for _ in range(max_attempts):
+        attempts += 1
+        try:
+            result = call_vision(
+                img_bytes, mime, attempt_prompt,
+                api_key=key, base_url=url, model=mdl, _request=_request,
+            )
+        except Exception as e:  # noqa: BLE001
+            return {"file": path, "type": kind, "description": None, "usage": usage,
+                    "cached": False, "error": str(e), "compressed": compressed}
+        usage = _merge_usage(usage, result.get("usage") or {})
+        ok, reason = validate_description(result.get("description"), kind)
+        if ok:
+            usable = result
+            break
+        if attempts >= max_attempts:
+            break
+        attempt_prompt = _corrective_prompt(prompt, kind, reason)
+
+    last_description = (usable or result).get("description")
     payload = {
         "file": path,
         "type": kind,
-        "description": result["description"],
-        "usage": result.get("usage") or {},
+        "description": last_description,
+        "usage": usage,
         "cached": False,
-        "model": result.get("model", mdl),
+        "model": (usable or result).get("model", mdl),
         "compressed": compressed,
+        "attempts": attempts,
+        "validation": "ok" if usable else f"flagged: {reason}",
     }
     cache_put(file_hash, prompt, mdl, {k: v for k, v in payload.items() if k != "dataframe"},
               cache_dir=cache_dir)
-    payload["dataframe"] = parse_markdown_table(result["description"])
+    payload["dataframe"] = parse_markdown_table(payload["description"] or "")
     return payload
 
 
@@ -630,10 +712,19 @@ def main(argv=None):
     else:
         print(f"Wrote {summary['out']} ({summary['count']} image(s), sheets: {', '.join(summary['sheets'])})")
         for r in summary["results"]:
-            flag = "cached" if r.get("cached") else ("error" if r.get("error") else "ok")
+            if r.get("error"):
+                flag = "error"
+            elif str(r.get("validation", "")).startswith("flagged"):
+                flag = "flagged"
+            elif r.get("cached"):
+                flag = "cached"
+            else:
+                flag = "ok"
             print(f"  [{flag}] {r.get('file')} type={r.get('type')}")
             if r.get("error"):
                 print(f"           {r['error']}")
+            elif flag == "flagged":
+                print(f"           {r.get('validation')} — verify manually")
     return 0
 
 
