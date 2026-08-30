@@ -33,3 +33,7 @@ the unified agent runtime, and "testing" means the regression suites.
 - Quickstart (no Claude): `python3 examples/run_quickstart.py`.
 - CI (`.github/workflows/ci.yml`) runs `bin/data-lint`, both regression suites, and the
   quickstart smoke on Python 3.10–3.12.
+- **Releasing:** a version bump is never push-only. For every `plugin.json` version change:
+  (1) update `CHANGELOG.md`, (2) commit and push, (3) `git tag -a vX.Y.Z && git push origin vX.Y.Z`,
+  (4) `gh release create vX.Y.Z --notes-file <notes>` with notes drawn from the CHANGELOG section.
+  Tags and releases are part of "shipped" — a pushed version without its tag/release is incomplete.
