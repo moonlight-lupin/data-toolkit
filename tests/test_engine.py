@@ -1794,15 +1794,16 @@ def test_seasonality_month_and_quarter():
 class _VisionResp:
     """Minimal requests.Response stand-in for mocked vision calls."""
 
-    def __init__(self, text, status=200):
+    def __init__(self, text, status=200, usage=None):
         self.status_code = status
         self.text = text
         self._text = text
+        self._usage = usage or {"prompt_tokens": 10, "completion_tokens": 20}
 
     def json(self):
         return {
             "choices": [{"message": {"content": self._text}}],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 20},
+            "usage": dict(self._usage),
             "model": "mock-vision",
         }
 
@@ -1875,8 +1876,9 @@ def test_extract_image_retries_once_on_nonconforming_answer():
     assert r["validation"] == "ok", r["validation"]
     assert r.get("attempts") == 2
     assert r["dataframe"] is not None and len(r["dataframe"]) == 2
-    # Usage from both calls is merged for cost accounting
-    assert r["usage"].get("prompt_tokens", 0) >= 2, r["usage"]
+    # Usage from both calls is merged for cost accounting (exact sums, not just presence)
+    assert r["usage"]["prompt_tokens"] == 20, r["usage"]
+    assert r["usage"]["completion_tokens"] == 40, r["usage"]
 
 
 def test_extract_image_flags_unrepairable_answer_and_caches_it():
@@ -1947,6 +1949,102 @@ def test_extract_image_valid_answer_single_call():
     assert len(seen_prompts) == 1, "conforming answer must not trigger a retry"
     assert r["validation"] == "ok"
     assert r.get("attempts") == 1
+
+
+def test_extract_image_retry_transport_failure_keeps_first_answer():
+    """Hazard: a transport failure on the corrective retry used to discard the
+    first (non-conforming) answer entirely, contradicting keep-and-flag. The
+    first answer must survive, flagged, with the retry error surfaced separately,
+    and the uncertain result must NOT be cached."""
+    ie = _load_image_extract()
+    try:
+        from PIL import Image
+    except ImportError:
+        print("  SKIP  test_extract_image_retry_transport_failure_keeps_first_answer (no Pillow)")
+        return
+
+    d = Path(tempfile.mkdtemp())
+    chart = d / "flaky_chart.png"
+    Image.new("RGB", (320, 200), color=(120, 120, 30)).save(chart)
+
+    calls = {"n": 0}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        calls["n"] += 1
+        if calls["n"] in (1, 3):  # first call of each run
+            return _VisionResp("I see some bars but cannot read exact values.")
+        # call_vision re-raises RuntimeError immediately (no internal retry).
+        raise RuntimeError("connection reset during retry")
+
+    cache = d / "cache"
+    r = ie.extract_image(
+        str(chart), api_key="test-key", model="mock-vision",
+        cache_dir=cache, _request=fake_post,
+    )
+    assert calls["n"] == 2
+    assert r.get("error"), "the retry transport error must be surfaced"
+    assert "connection reset" in r["error"]
+    # The first answer is kept and flagged, never dropped.
+    assert "some bars" in (r.get("description") or "")
+    assert str(r.get("validation", "")).startswith("flagged"), r.get("validation")
+    assert r.get("attempts") == 2
+    # First attempt's usage is still accounted.
+    assert r["usage"].get("prompt_tokens") == 10, r["usage"]
+    # Uncertain outcome is not cached — a re-run retries rather than trusting it.
+    r2 = ie.extract_image(
+        str(chart), api_key="test-key", model="mock-vision",
+        cache_dir=cache, _request=fake_post,
+    )
+    assert r2.get("cached") is not True
+    assert calls["n"] == 4, "error result must not be served from cache"
+
+
+def test_extract_image_force_bypasses_cached_flagged_result():
+    """Hazard: cached flagged answers (and cached everything) must be bypassable
+    with force=True; legacy cache entries without a validation label get one
+    derived from the answer itself, deterministically, without an API call."""
+    ie = _load_image_extract()
+    try:
+        from PIL import Image
+    except ImportError:
+        print("  SKIP  test_extract_image_force_bypasses_cached_flagged_result (no Pillow)")
+        return
+
+    d = Path(tempfile.mkdtemp())
+    chart = d / "flagged_chart.png"
+    Image.new("RGB", (320, 200), color=(60, 60, 120)).save(chart)
+    calls = {"n": 0}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        calls["n"] += 1
+        return _VisionResp("Too blurry to extract any table.")
+
+    cache = d / "cache"
+    r1 = ie.extract_image(
+        str(chart), api_key="test-key", model="mock-vision",
+        cache_dir=cache, _request=fake_post,
+    )
+    assert str(r1["validation"]).startswith("flagged")
+    # force=True must call the API again even though a flagged result is cached.
+    r2 = ie.extract_image(
+        str(chart), api_key="test-key", model="mock-vision",
+        cache_dir=cache, force=True, _request=fake_post,
+    )
+    assert calls["n"] == 4, "force must bypass the cache (2 calls per run)"
+    # Simulate a legacy cache entry (pre-validation shape: no validation/attempts keys)
+    hits = list(cache.glob("*.json"))
+    assert hits, "flagged result should have been cached"
+    import json as _json
+    legacy = _json.loads(hits[0].read_text(encoding="utf-8"))
+    legacy.pop("validation", None)
+    legacy.pop("attempts", None)
+    hits[0].write_text(_json.dumps(legacy, ensure_ascii=False), encoding="utf-8")
+    r3 = ie.extract_image(
+        str(chart), api_key="test-key", model="mock-vision",
+        cache_dir=cache, _request=fake_post,
+    )
+    assert r3["cached"] is True and calls["n"] == 4
+    assert str(r3["validation"]).startswith("flagged"), r3["validation"]
 
 
 # --------------------------------------------------------------------------- #

@@ -443,17 +443,20 @@ def validate_description(text: str | None, kind: str) -> tuple[bool, str]:
     if kind in _TABLE_KINDS:
         df = parse_markdown_table(str(text))
         if df is None:
-            return False, "answer does not contain a Markdown table"
-        if len(df) == 0:
-            return False, "answers table has a header but no data rows"
+            # parse_markdown_table returns None both for "no table" and for a
+            # table with a separator but zero body rows.
+            return False, "answer does not contain a usable Markdown table (header + >=1 data row)"
     return True, ""
 
 
 def _merge_usage(a: dict, b: dict) -> dict:
-    """Sum two token-usage dicts so retried calls report combined cost."""
+    """Sum two token-usage dicts (numeric fields, nested dicts merged) so retried
+    calls report combined cost."""
     out = dict(a)
     for k, v in (b or {}).items():
-        if isinstance(v, (int, float)) and isinstance(out.get(k), (int, float)):
+        if isinstance(v, dict):
+            out[k] = _merge_usage(out[k], v) if isinstance(out.get(k), dict) else dict(v)
+        elif isinstance(v, (int, float)) and isinstance(out.get(k), (int, float)):
             out[k] = out[k] + v
         elif isinstance(v, (int, float)):
             out[k] = v
@@ -573,6 +576,7 @@ def extract_image(
     max_attempts = 2
     result = None
     reason = ""
+    transport_error = None
     for _ in range(max_attempts):
         attempts += 1
         try:
@@ -581,8 +585,8 @@ def extract_image(
                 api_key=key, base_url=url, model=mdl, _request=_request,
             )
         except Exception as e:  # noqa: BLE001
-            return {"file": path, "type": kind, "description": None, "usage": usage,
-                    "cached": False, "error": str(e), "compressed": compressed}
+            transport_error = str(e)
+            break
         usage = _merge_usage(usage, result.get("usage") or {})
         ok, reason = validate_description(result.get("description"), kind)
         if ok:
@@ -592,18 +596,31 @@ def extract_image(
             break
         attempt_prompt = _corrective_prompt(prompt, kind, reason)
 
-    last_description = (usable or result).get("description")
+    if result is None:
+        # The endpoint produced no answer at all (first call failed).
+        return {"file": path, "type": kind, "description": None, "usage": usage,
+                "cached": False, "error": transport_error or "no answer",
+                "compressed": compressed}
+
+    last = usable or result
     payload = {
         "file": path,
         "type": kind,
-        "description": last_description,
+        "description": last.get("description"),
         "usage": usage,
         "cached": False,
-        "model": (usable or result).get("model", mdl),
+        "model": last.get("model", mdl),
         "compressed": compressed,
         "attempts": attempts,
         "validation": "ok" if usable else f"flagged: {reason}",
     }
+    if transport_error:
+        # A non-conforming answer arrived, but the corrective retry failed at
+        # transport level: keep the first answer flagged, surface the error,
+        # and do NOT cache the uncertain result.
+        payload["error"] = transport_error
+        payload["dataframe"] = parse_markdown_table(payload["description"] or "")
+        return payload
     cache_put(file_hash, prompt, mdl, {k: v for k, v in payload.items() if k != "dataframe"},
               cache_dir=cache_dir)
     payload["dataframe"] = parse_markdown_table(payload["description"] or "")

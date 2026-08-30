@@ -23,7 +23,9 @@ data — Tesseract cannot read data points from charts.
   only need a non-empty answer (prose is legitimate there). A non-conforming answer triggers
   **one corrective retry** — the retry prompt names the failure and restates the output
   contract (`_corrective_prompt`). An answer that still fails is **kept and flagged**
-  (`validation: "flagged: …"`), never dropped and never rewritten. `attempts` counts model
+  (`validation: "flagged: …"`), never dropped and never rewritten. If the corrective
+  retry itself fails at transport level, the first answer is likewise kept and flagged
+  with the error surfaced, and the uncertain result is **not** cached. `attempts` counts model
   calls; `usage` sums them, so cost accounting stays honest across retries.
 - **Cache hygiene rule (apply to any future LLM-backed step in this toolkit):** cache by
   content hash + exact prompt text + model, so a prompt edit invalidates automatically;
