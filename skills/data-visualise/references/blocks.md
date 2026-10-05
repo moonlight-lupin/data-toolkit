@@ -12,6 +12,28 @@ from viz import (kpi_card, kpi_row, bar_chart, line_chart, donut_chart,
                  apply_theme, rows_from_xlsx, open_in_browser)
 ```
 
+## Contents
+
+- KPI cards
+- Bar chart
+- Line chart
+- Donut chart
+- Heat map
+- Sparkline
+- Waterfall (bridge)
+- Scatter plot
+- Histogram
+- Stacked bar
+- From data-analyse (`analysis.json`)
+- Table with RAG conditional formatting
+- Status pill
+- Layout — sections & grids
+- Assemble the page
+- Feeding from a toolkit store
+- Interactivity (optional — off by default)
+- Theming — your own colours / logo
+- Recipe — a quick weekly ops one-pager
+
 ## KPI cards
 
 ```python

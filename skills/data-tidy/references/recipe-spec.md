@@ -24,6 +24,15 @@ the same recurring source). Build it from the profile + the user's intent, confi
 }
 ```
 
+## Contents
+
+- Fields
+- How conversion is reported
+- Semantic types in the profile (advisory)
+- Masters
+- Saving & reuse — runner + card (token-saving, verify-first)
+- OCR / Tesseract setup (scanned PDFs only)
+
 ## Fields
 - **header_row** — 0-based index of the real header in the raw rows. Omit to auto-detect
   (`detect_header` skips title/banner/junk rows).

@@ -8,6 +8,14 @@ to confirm** against your own reconciliation and materiality policy. Edit `TRIAG
 > classifies and proposes; a person investigates and (if needed) adjusts. Unmatched items are
 > **flagged, never force-fitted** into a match.
 
+## Contents
+
+- Stage 1 — match outcomes
+- Stage 2 — Discrepancy Triage
+- Aggregation matching (sum-to-one / sum-to-sum) — confirm-first
+- Presets (common recurring reconciliations)
+- Out of scope (by design)
+
 ## Stage 1 — match outcomes
 
 Each row of A is matched to B, producing one of:

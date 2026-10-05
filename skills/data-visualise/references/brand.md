@@ -6,6 +6,15 @@ own name, colours, fonts and logo without touching the code. Everything lives in
 `scripts/viz.py` as `DEFAULT_THEME` (with `BRAND` / `FONT` as the active module-level state).
 Refer to those tokens, don't hardcode hexes in a caller.
 
+## Contents
+
+- The default palette
+- Status keywords
+- Chart series order
+- Fonts
+- Logo
+- How a firm sets its own brand
+
 ## The default palette
 
 The toolkit's neutral default scheme — a teal accent on cool paper. Colour-token *names* are

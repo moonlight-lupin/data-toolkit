@@ -1,5 +1,17 @@
 # The conversion spec — declarative, deterministic
 
+## Contents
+
+- Blocks
+- Field mappings (`map` entries)
+- Row filter (`filter` list)
+- Reshape ops (`reshape` list)
+- Output validation (target-column validators)
+- How it's reported
+- Determinism & boundaries
+
+
+
 A **spec** is a JSON-able dict describing how to re-express a source onto a target contract. It's
 what makes convert general (any source→target) *and* auditable + reusable. It lives inside a
 **conversion card** (a Markdown doc) in a fenced ` ```convert-spec ` block — the human reads the

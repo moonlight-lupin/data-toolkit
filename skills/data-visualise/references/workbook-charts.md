@@ -7,6 +7,15 @@ Implementation is **openpyxl** (already a toolkit dependency). Vocabulary follow
 where it maps cleanly — so agents that know OfficeCLI prop names can reuse them.
 OfficeCLI itself is **not** required at runtime.
 
+## Contents
+
+- Choose this path when
+- Chart types (OfficeCLI-aligned names)
+- Spec shape
+- From `analysis.json`
+- Agent plan
+- Optional: render charts to PNG (OfficeCLI)
+
 ## Choose this path when
 
 - The reader will keep working in Excel (filter, annotate, paste into a pack).

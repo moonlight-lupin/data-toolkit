@@ -8,6 +8,21 @@ functions in `scripts/analyse.py`.
 
 All examples are **fictional**. Metrics with a ★ are the usual headline for that type.
 
+## Contents
+
+- Transactions / sales / revenue
+- Receivables / payables / open items
+- Pipeline / CRM
+- Survey / categorical
+- Task / operations list
+- General ledger / trial balance
+- Inventory / stock
+- Spend / AP analysis
+- Cross-domain / relational (TWO datasets)
+- Time series / measurements
+- Generic / unknown table
+- Cross-playbook rules
+
 ## Transactions / sales / revenue
 *(date + amount + a party/category — invoices, sales lines, bookings, donations)*
 
