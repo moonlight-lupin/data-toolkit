@@ -1,5 +1,12 @@
 # data-toolkit benchmark — skills vs baseline, two model tiers, ten tests
 
+> **Currency note (added 6 Oct 2026):** this run tested **v0.8.5**. Engine changes since the
+> run: v0.8.6 (reconcile absurd-result guard), v0.8.7 (`parse_number` identifier fix), and
+> v0.8.8 (image_extract answer validation + retry). All three are engine-safety fixes, not
+> workflow changes — the skill instructions tested here are unchanged — but per-test
+> numbers must not be quoted as "current engine behaviour" for those paths until the
+> benchmark re-runs on the current tag (§10's one-afternoon regression pass covers this).
+
 **Period:** 14–21 Jul 2026 · **Toolkit under test:** [moonlight-lupin/data-toolkit](https://github.com/moonlight-lupin/data-toolkit), final version **v0.8.5** (six skills + shared deterministic engine; per-test versions in the Appendix) · **Test models:** Claude Sonnet 5 (primary series) and Claude Haiku 4.5 (model-tier companion), each in both arms · **Orchestration & evaluation:** Claude Fable 5 · **Status:** draft for review
 
 ---

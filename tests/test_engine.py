@@ -1362,6 +1362,11 @@ def test_image_extract_batch_and_compress():
     except ImportError:
         print("  SKIP  test_image_extract_batch_and_compress (no Pillow)")
         return
+    try:
+        import pandas  # noqa: F401
+    except ImportError:
+        print("  SKIP  test_image_extract_batch_and_compress (no pandas — extract_batch requires it)")
+        return
 
     d = Path(tempfile.mkdtemp())
     imgs = d / "shots"

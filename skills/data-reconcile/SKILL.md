@@ -41,6 +41,10 @@ Establish **A** (e.g. our invoice tracker / cashbook / internal records) and **B
 ledger / bank statement / fund administrator). Pick the **preset** if it's a recurring one
 (`python scripts/reconcile.py --catalogue`), else go generic.
 
+**Done when:** you have both sources (paths confirmed on disk, sheets resolved), the user has
+confirmed what A and B are and what "reconciled" means for this run, and you've picked a preset
+or generic mode.
+
 ### 2. Pick the match strategy (per run — it's a mix)
 - **Key** — a shared reference exists on both sides (invoice no, payment ref): `--mode key --key <col>`.
 - **Amount + date** — no clean key (typical for bank vs cashbook): `--mode amount_date` — matches
@@ -103,6 +107,10 @@ write_workpaper(res, exceptions, summary, "reconciliation_[name]_[date].xlsx",
 Or one-shot from the CLI:
 `python scripts/reconcile.py A B --preset bank_vs_ledger --mode amount_date --out wp.xlsx`
 
+**Done when:** the run completed without being flagged `⛔ UNRELIABLE`, the working paper
+`.xlsx` is written, and `summary["warnings"]` has been read and acted on (warnings are
+guidance, not decoration).
+
 ### 3a. (Optional) Aggregation — sum-to-one / sum-to-sum, **confirm-first**
 When one item ties to a *sum* of items on the other side (a bank receipt = several invoices), or
 a *batch* on each side ties total-to-total, run a second pass over what's still unmatched. It is
@@ -128,6 +136,10 @@ The working paper leads with the **answer** (RAG, % reconciled, value matched vs
 then the exceptions **sorted by materiality** (escalate → material → immaterial) within category.
 Each carries a **probable cause** and a **suggested action** — but the action is for a person to
 take; the skill proposes, it doesn't post.
+
+**Done when:** every escalation-band exception has been raised to the user with its probable
+cause, the material band has been reviewed, and the working paper plus the triage summary have
+been delivered. The user (or finance) decides the actions — record their decisions.
 
 ## Discrepancy Triage (the categories)
 

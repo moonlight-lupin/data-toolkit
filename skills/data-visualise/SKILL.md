@@ -73,6 +73,9 @@ Ask (briefly) who reads it and where it will live:
 Infer from the plan when unspoken: `format: "xlsx"` or `output` ending in `.xlsx` → Excel;
 otherwise HTML.
 
+**Done when:** the user has confirmed the artefact (HTML / Excel / both), the reader and where
+it will live are known, and the data source (table, `analysis.json`, or store) is decided.
+
 > Excel charts use **openpyxl** (toolkit hard dep). Chart prop names follow
 > [OfficeCLI / AionUi](https://github.com/iOfficeAI/OfficeCLI/wiki/excel-chart-add)
 > (`chartType`, `categories`, `series`, waterfall colours) — OfficeCLI is **not** required
@@ -95,8 +98,17 @@ when metrics must be engine-exact or shared across HTML + Excel.
 2. **Data** — plain table rows, *or* `analysis.json` when you need the analyse engine.
 3. **Propose** — derive the same category/value series for either path. HTML: block list
    (or `$analysis`). Excel: `type: chart` list (or `$analysis`). Confirm.
+
+**Done when:** the proposed block/chart list has been confirmed by the user (count and content),
+the data source is loaded (`read_any` note read for quality flags), and the render path
+(`viz.py` vs `workbook.py`) matches the confirmed artefact.
+
 4. **Render & review** — HTML → `dashboard(...)` / open in browser; Excel →
    `write_charts_xlsx` / `charts_from_analysis`. Draft for a qualified person; never auto-send.
+
+**Done when (final):** the artefact is rendered, opened/reviewed (every number traceable to the
+source table or the analyse engine), and delivered as a draft — with the footer disclaimer
+intact and no auto-distribution.
 
 ## HTML path (`viz.py`)
 

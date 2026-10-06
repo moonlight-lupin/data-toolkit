@@ -8,7 +8,8 @@ jsonschema>=4.18.0
 #   python-docx      Word .docx
 #   python-pptx      PowerPoint .pptx (legacy .ppt not supported)
 #   extract-msg      Outlook .msg
-#   pandas           large-file path (ingest.read_large / streaming.optimize_dtypes)
+#   pandas           large-file path (ingest.read_large / streaming.optimize_dtypes);
+#                    REQUIRED for image_extract's batch .xlsx export (extract_batch)
 #   pyarrow          large-file Parquet cache/stream (python_version >= "3.9")
 #   Pillow           image compression for data-extract image_extract.py
 #   requests         vision API calls for image_extract.py (often already present)

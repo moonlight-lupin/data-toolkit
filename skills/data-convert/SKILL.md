@@ -43,6 +43,9 @@ order, required fields, formats) and the **purpose**. Once you understand the pu
 **propose the target shape** and the mapping; the user confirms. If you don't have the target
 contract, ask for a sample of the destination format or the field list.
 
+**Done when:** you have the source (confirmed readable), the target contract (a spec, a sample,
+or the field list), and the user has confirmed the proposed mapping before any file is written.
+
 ### 2. Card-first — reuse before you rebuild
 **Always check whether a conversion card already exists** for this source→target (e.g. a
 `convert_[name].md` in the working folder). If one does, **do not blind-run it**:
@@ -66,6 +69,10 @@ The engine reads the source (any format via the shared `ingest`), runs any resha
 the target contract, and writes the target format (`csv` / `json` / `xlsx`). It reports rows
 in/out, the **sense-check**, unmapped source columns and required-but-missing target fields.
 
+**Done when:** `report["sense_check"]` is clean (or every discrepancy has been flagged to the
+user and resolved), the target file is written, and the report's unmapped-column /
+required-missing lists are all accounted for — never delivered with an unexplained gap.
+
 ### 4. Save the reusable card
 Put the user's standing confirm-first rules on the spec as `standing_rules` (verbatim) before
 rendering — later sessions must not rediscover them from chat.
@@ -79,6 +86,9 @@ The **card** is the reusable artefact — a Markdown doc a person can read (purp
 contract, a Source→Target mapping table, the *Expected source* to verify) **with an embedded
 ` ```convert-spec ` JSON block that is the machine source of truth.** No per-conversion `.py`
 runner: next month an agent reads the card, sense-checks the new export, and re-runs this engine.
+
+**Done when:** the card file exists with the embedded `convert-spec` JSON block, the standing
+rules are on the spec verbatim, and a fresh `sense_check` against the card passes.
 
 ## Live inputs (FX and the like) — pinned, never fetched
 The **engine never reaches the network** — reproducibility and the data-handling rule both depend

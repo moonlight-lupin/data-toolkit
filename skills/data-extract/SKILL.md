@@ -214,5 +214,7 @@ Python + `PyMuPDF` (PDF), `openpyxl` (output); `pdfplumber` (optional — prefer
 borderless PDF tables), `python-docx` for `.docx`, `python-pptx` for `.pptx`, `extract_msg` for
 `.msg`; **local Tesseract** only for scanned-document OCR (degrades cleanly without it).
 **Image/chart extraction** needs a vision-capable OpenAI-compatible API endpoint + key
-(`Pillow`, `requests`, `pandas` optional helpers) — without it `image_extract.py` exits
-clearly and does not fall back to Tesseract.
+(`Pillow`, `requests`, `pandas` helpers — `pandas` is REQUIRED for the image batch `.xlsx`
+export; the others are optional) — without a key `image_extract.py` exits
+clearly and does not fall back to Tesseract; without pandas, single-image table parsing
+still works but `extract_batch` raises with a clear message.
