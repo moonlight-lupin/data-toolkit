@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.8.9 — 2026-10-06
+
+- **Done-when gates added to `data-reconcile`, `data-convert` and `data-visualise`.** A
+  skill-quality reassessment (harness: skill-quality-review v1.2.1) found these three skills
+  carried zero completion criteria while `data-tidy` / `data-extract` had them. Each numbered
+  workflow step now ends with a concrete **Done when** gate (sources confirmed / run not
+  flagged `⛔ UNRELIABLE` / sense-check clean and no unexplained gaps / block list confirmed
+  before render, etc.). Docs-only; no engine changes.
+- **`pandas` dependency made explicit for the image batch export.** `extract_batch` (the
+  image batch `.xlsx` path in `image_extract.py`) hard-requires `pandas`
+  (`pd.DataFrame` / `iterrows` / `concat`); the docs previously listed pandas as an optional
+  large-file helper only, and the test skipped on missing Pillow but crashed on missing
+  pandas. `requirements.txt`, the `data-extract` SKILL.md and the README compatibility table
+  now state: pandas REQUIRED for `extract_batch`, optional elsewhere (single-image table
+  parsing works without it via the `_Mini` fallback). The test gained a matching pandas
+  skip-guard (suite now reports 116).
+- **Benchmark currency note** in `benchmark/REPORT.md`: the two-tier benchmark run tested
+  v0.8.5; the engine-safety fixes in v0.8.6-v0.8.8 are listed and per-test numbers must not
+  be quoted as current engine behaviour for those paths until the benchmark re-runs on the
+  current tag.
+
+No engine code changed in this release — `reconcile.py`, `convert.py`, `analyse.py`,
+`viz.py`, `workbook.py`, `ingest.py`, `dataclean.py`, `streaming.py` and their tests are
+untouched; the test-suite delta is one skip-guard.
+
 ## 0.8.8 — 2026-08-30
 
 - **`image_extract.py` now validates the vision model's answer before accepting it**
