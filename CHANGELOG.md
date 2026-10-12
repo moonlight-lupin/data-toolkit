@@ -1,5 +1,39 @@
 # Changelog
 
+## 0.8.10 — 2026-10-12
+
+- **`data-convert` refuses to write over source drift.** `convert_file` previously blocked only
+  on contract errors; a mapped source column that was missing or renamed (a sense-check
+  `error`) still produced output with that column blank. Any sense-check `error` now blocks the
+  write too: `report["blocked"] = True`, `report["written"] = []`, and a new
+  `report["blocked_by"]` lists `"contract"` and/or `"sense_check"`. The report is still
+  produced; `render_report` states the blocking reason(s); the CLI exits 1 when blocked.
+- **Date-keyed FX never invents a rate.** With a pinned `fx.rates` table, a row dated before
+  every pinned rate, or with a blank/unparseable date, was silently converted at the earliest
+  (or latest) rate. Such cells are now left **blank** and flagged `fx_rate_unresolved`
+  (severity `warning`, with row and field) in the report's `issues`. Rate selection parses
+  dates (ISO, DD MMM YYYY, dd/mm/yyyy, Excel serial — via the shared `dataclean.parse_date`)
+  instead of comparing strings. A single pinned `fx.rate` still applies to every row; a
+  `fx_convert` with no pinned rate still raises. New helpers `_to_date` and `_fx_resolve`;
+  `_field` / `apply_map` gain optional `flags=` / `issues=` (defaults unchanged).
+- **Stale-FX sense-check parses dates.** The check was a raw string compare and gave the wrong
+  answer for DD MMM YYYY dates (e.g. `"30 Jun 2026" < "2026-07-01"` is false). Both sides are
+  now parsed; a `rates` table is judged by its latest `as_of`; an unparseable date raises a new
+  `fx_date_unparsed` warning instead of passing silently. `--as-of` help clarified.
+- **`ingest.read_large_rows(path, sheet=None, cache_dir=None)`** — additive drop-in for
+  `read_any` on big files: returns `(rows, note)` in the same list-of-rows shape (header first,
+  missing cells as `""`). `.xlsx`/`.xlsm` go through `read_large` (Parquet cache / streaming);
+  any other type falls back to `read_any`, so it never raises just because the file is not
+  Excel. `read_large` itself stays Excel-only.
+- Docs: `data-convert` SKILL.md / `conversion-spec.md` (default `flag`, stale rule,
+  `--as-of` / `run_dates_after` on the call lines, blocking, unresolved FX);
+  `data-analyse` / `data-tidy` SKILL.md and `large-file-patterns.md` (which reader:
+  `read_large_rows` vs `read_large`).
+- Tests: 4 new engine tests (suite 116 → 120) + extended `convert.py --self-test`.
+
+All changes are backward-compatible at the API level; the behavioural changes are the
+blocked write on sense-check errors (exit 1) and blank-plus-flag for unresolvable FX rows.
+
 ## 0.8.9 — 2026-10-06
 
 - **Done-when gates added to `data-reconcile`, `data-convert` and `data-visualise`.** A

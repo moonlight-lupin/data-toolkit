@@ -77,9 +77,13 @@ user's intent, confirm it, then `convert_file(spec, in, out)`.
   "as_of": "2026-07-15", "source": "<url>" }`, or a **date-keyed table** for per-row conversion
   by transaction date: `{ "pair": "USD/GBP", "rates": [ {"as_of":"2026-01-01","rate":"0.80"},
   {"as_of":"2026-06-01","rate":"0.75"} ] }` — with `compute:"fx_convert"` setting `on_date` to
-  the row's date column (the latest rate whose `as_of` ≤ the row date is used). The engine
-  **never fetches** — the agent fetches on the user's instruction, the user approves, and it's
-  recorded here.
+  the row's date column (the latest rate whose `as_of` ≤ the row date is used; dates are parsed
+  — ISO, DD MMM YYYY, dd/mm/yyyy — never compared as text). A row dated **before every pinned
+  rate**, or with a blank/unparseable date, is left **blank and flagged** (`fx_rate_unresolved`)
+  — never converted at the nearest rate. The engine **never fetches** — the agent fetches on the
+  user's instruction, the user approves, and it's recorded here. **Stale rule:** pass the run's
+  as-of date (`run_dates_after=` / CLI `--as-of`); a pinned `as_of` (for a table, the latest one)
+  earlier than that date is flagged `stale_fx`.
 - **standing_rules** — a string list of user confirm-first rules to preserve across sessions.
   `render_card` always emits them as a **Standing rules** section so later agents do not have to
   rediscover policy from chat history.
@@ -163,9 +167,10 @@ Beyond `required`, a target column can carry validators; violations surface in t
 
 ## How it's reported
 
-- **Sense-check** (run against the card before applying): a mapped source column missing/renamed,
-  a new column, an expected column gone, or a **stale pinned rate** → surfaced to the user; the
-  engine does **not** auto-apply over drift.
+- **Sense-check** (run against the card before applying): a mapped source column missing/renamed
+  (`error`), a new column, an expected column gone, or a **stale pinned rate** (`warn`) →
+  surfaced to the user; the engine does **not** auto-apply over drift — any sense-check `error`
+  **blocks the write** (`report["blocked"]`, CLI exit 1) and the report says why.
 - **Contract issues**: a required target field unmapped → `error`; a required field blank on a
   row → handled by `on_missing_required` (`flag` / `exclude` / `error`); a
   validator violation (`allowed`/`pattern`/`max_len`/`check`) → `error`; a source column the

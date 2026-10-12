@@ -33,7 +33,8 @@ _ROOT = Path(__file__).resolve().parents[1]
 for _p in (_ROOT / "scripts",
            _ROOT / "skills" / "data-reconcile" / "scripts",
            _ROOT / "skills" / "data-visualise" / "scripts",
-           _ROOT / "skills" / "data-analyse" / "scripts"):
+           _ROOT / "skills" / "data-analyse" / "scripts",
+           _ROOT / "skills" / "data-convert" / "scripts"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
@@ -43,6 +44,7 @@ import ingest           # noqa: E402
 import reconcile        # noqa: E402
 import viz              # noqa: E402
 import workbook         # noqa: E402
+import convert          # noqa: E402  (interoperability engine — data-convert)
 
 
 # --------------------------------------------------------------------------- #
@@ -2050,6 +2052,99 @@ def test_extract_image_force_bypasses_cached_flagged_result():
     )
     assert r3["cached"] is True and calls["n"] == 4
     assert str(r3["validation"]).startswith("flagged"), r3["validation"]
+
+
+# --------------------------------------------------------------------------- #
+# Skill-quality audit fixes (Oct 2026): read_large_rows, convert drift block + FX dates
+# --------------------------------------------------------------------------- #
+def test_read_large_rows_matches_read_any_shape():
+    """read_large_rows is a drop-in for read_any: (rows, note), header row first, blanks as ""."""
+    d = tempfile.mkdtemp()
+    xp = Path(d) / "big.xlsx"
+    rows = [["txn_id", "amount", "region"], ["T1", 10, "APAC"], ["T2", None, "EMEA"]]
+    _write_xlsx(xp, [("Data", rows)])
+    got, note = ingest.read_large_rows(str(xp), sheet="Data", cache_dir=d)
+    assert isinstance(got, list) and isinstance(note, str)
+    assert [str(c) for c in got[0]] == ["txn_id", "amount", "region"], got
+    assert len(got) == 3 and got[2][1] in ("", None) and got[2][2] == "EMEA", got
+    assert all(not (isinstance(v, float) and v != v) for r in got for v in r), "no NaN leaks"
+    # a CSV never raises (read_large itself is Excel-only)
+    cp = Path(d) / "big.csv"
+    cp.write_text("a,b\n1,2\n", encoding="utf-8")
+    crow, cnote = ingest.read_large_rows(str(cp))
+    assert crow == [["a", "b"], ["1", "2"]] and "non-Excel" in cnote
+    try:
+        ingest.read_large(str(cp))
+        raise AssertionError("read_large should stay Excel-only")
+    except ValueError:
+        pass
+
+
+def test_convert_blocks_write_on_sense_check_error():
+    """A renamed/missing mapped source column must not be force-converted (written blank)."""
+    d = Path(tempfile.mkdtemp())
+    src = d / "src.csv"
+    src.write_text("Date,Acct,Amount\n01/03/2026,4000,10\n", encoding="utf-8")   # 'Account' renamed
+    spec = {"name": "t", "source": {"expected_columns": ["Date", "Account", "Amount"]},
+            "target": {"format": "csv"},
+            "map": {"D": {"from": "Date", "type": "date"}, "A": {"from": "Account"},
+                    "V": {"from": "Amount", "type": "number"}}}
+    out = d / "out.csv"
+    rep = convert.convert_file(spec, str(src), str(out))
+    assert rep["blocked"] and rep["written"] == [] and not out.exists(), rep
+    assert "sense_check" in rep["blocked_by"]
+    assert any(i["kind"] == "mapped_column_missing" for i in rep["sense_check"])
+    assert "drifted" in convert.render_report(rep)
+    # CLI: non-zero exit and nothing written
+    card = d / "card.json"
+    card.write_text(json.dumps(spec), encoding="utf-8")
+    assert convert.main([str(src), "--card", str(card), "-o", str(out)]) == 1 and not out.exists()
+    # the matching source still converts
+    src.write_text("Date,Account,Amount\n01/03/2026,4000,10\n", encoding="utf-8")
+    rep2 = convert.convert_file(spec, str(src), str(out))
+    assert not rep2.get("blocked") and out.exists(), rep2
+
+
+def test_convert_stale_fx_parses_both_date_formats():
+    def kinds(as_of, run):
+        return [i["kind"] for i in convert.sense_check(
+            {"fx": {"pair": "USD/GBP", "rate": "0.8", "as_of": as_of}}, [], [], run_dates_after=run)]
+    assert kinds("30 Jun 2026", "2026-07-01") == ["stale_fx"]      # string compare said "not stale"
+    assert kinds("2026-06-30", "01 Jul 2026") == ["stale_fx"]
+    assert kinds("01 Jul 2026", "2026-07-01") == []                 # same day — current
+    assert kinds("2026-07-02", "01 Jul 2026") == []
+    assert kinds("someday", "01 Jul 2026") == ["fx_date_unparsed"]
+    # a rates table is judged by its latest as_of
+    st = convert.sense_check({"fx": {"rates": [{"as_of": "01 Jan 2026", "rate": "0.8"},
+                                               {"as_of": "2026-06-01", "rate": "0.75"}]}},
+                             [], [], run_dates_after="15 Jul 2026")
+    assert [i["kind"] for i in st] == ["stale_fx"], st
+
+
+def test_convert_fx_rate_never_invented():
+    spec = {"map": {"GBP": {"from": "USD", "compute": "fx_convert", "on_date": "Date", "dp": 2}},
+            "fx": {"pair": "USD/GBP", "rates": [{"as_of": "01 Jan 2026", "rate": "0.80"},
+                                                {"as_of": "2026-06-01", "rate": "0.75"}]},
+            "target": {}}
+    _, rows, rep = convert.convert_rows(spec, ["USD", "Date"], [
+        {"USD": "100", "Date": "31 Dec 2025"},      # predates every rate -> blank + flag
+        {"USD": "100", "Date": "garbage"},          # unparseable -> blank + flag
+        {"USD": "100", "Date": ""},                 # blank -> blank + flag
+        {"USD": "100", "Date": "15/03/2026"},       # -> 0.80
+        {"USD": "100", "Date": "2026-06-01"}])      # boundary -> 0.75
+    assert [r["GBP"] for r in rows] == ["", "", "", "80.00", "75.00"], rows
+    flagged = [i for i in rep["issues"] if i["kind"] == "fx_rate_unresolved"]
+    assert [i["row"] for i in flagged] == [1, 2, 3] and all(i["severity"] == "warning" for i in flagged)
+    # a single pinned rate still applies to every row; no rate at all still raises
+    _, r1, _ = convert.convert_rows({"map": spec["map"], "fx": {"rate": "0.5"}, "target": {}},
+                                    ["USD", "Date"], [{"USD": "10", "Date": "garbage"}])
+    assert r1[0]["GBP"] == "5.00"
+    try:
+        convert.convert_rows({"map": spec["map"], "fx": {}, "target": {}}, ["USD", "Date"],
+                             [{"USD": "10", "Date": "01/01/2026"}])
+        raise AssertionError("missing fx should raise")
+    except ValueError:
+        pass
 
 
 # --------------------------------------------------------------------------- #

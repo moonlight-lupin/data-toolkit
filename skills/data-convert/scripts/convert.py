@@ -262,29 +262,69 @@ def load_lookups(mapping, base_dir=None):
     return out
 
 
-def _fx_rate(fx, row, spec):
-    """The rate to apply: a single pinned `fx.rate`, or the row-date-effective rate from a pinned
-    `fx.rates` table (latest as_of <= the row's `on_date`). The engine never fetches."""
-    if not fx:
+def _to_date(v):
+    """Parse a date (ISO, DD MMM YYYY, dd/mm/yyyy, Excel serial, ...) -> date | None. Uses the
+    shared dataclean parser (dayfirst) when present, else ISO only. Never compares raw strings."""
+    import datetime as _dt
+    if isinstance(v, _dt.datetime):
+        return v.date()
+    if isinstance(v, _dt.date):
+        return v
+    if _s(v) == "":
         return None
+    dc, _ = _load_engine()
+    if dc is not None:
+        d, _note = dc.parse_date(v, dayfirst=True)
+        return d
+    try:
+        return _dt.date.fromisoformat(_s(v)[:10])
+    except ValueError:
+        return None
+
+
+def _fx_resolve(fx, row, spec):
+    """(rate | None, problem | None). A single pinned `fx.rate` always applies. From a pinned
+    `fx.rates` table the row-date-effective rate is used (latest as_of <= the row's `on_date`,
+    dates parsed, not string-compared). Never invents: a row date that is blank/unparseable, or
+    that predates every pinned rate, resolves to (None, reason) — the caller leaves the cell
+    blank and flags it. With a table but no `on_date`, the latest pinned rate applies."""
+    if not fx:
+        return None, None
     if fx.get("rate") not in (None, ""):
-        return Decimal(str(fx["rate"]))
+        return Decimal(str(fx["rate"])), None
     rates = fx.get("rates")
-    if rates:
-        on = spec.get("on_date")
-        d = _fmt_date(row.get(on), {"format": "%Y-%m-%d"}) if on else None
-        eligible = [r for r in rates if (not d or _s(r.get("as_of")) <= d)]
-        chosen = (max(eligible, key=lambda r: _s(r.get("as_of")), default=None)
-                  or min(rates, key=lambda r: _s(r.get("as_of")), default=None))
-        return Decimal(str(chosen["rate"])) if chosen else None
-    return None
+    if not rates:
+        return None, None
+    dated = [(_to_date(r.get("as_of")), r) for r in rates]
+    dated = [(d, r) for d, r in dated if d is not None]
+    if not dated:
+        return None, "no pinned fx.rates entry has a parseable as_of date"
+    on = spec.get("on_date")
+    if not on:
+        return Decimal(str(max(dated, key=lambda t: t[0])[1]["rate"])), None
+    raw = row.get(on)
+    d = _to_date(raw)
+    if d is None:
+        return None, f"row date {_s(raw)!r} in '{on}' is blank or unparseable — no rate applied"
+    eligible = [(rd, r) for rd, r in dated if rd <= d]
+    if not eligible:
+        first = min(rd for rd, _ in dated)
+        return None, (f"row date {d:%d %b %Y} predates the earliest pinned rate "
+                      f"({first:%d %b %Y}) — no rate applied")
+    return Decimal(str(max(eligible, key=lambda t: t[0])[1]["rate"])), None
+
+
+def _fx_rate(fx, row, spec):
+    """The rate to apply, or None when it can't be resolved (see `_fx_resolve`). The engine
+    never fetches."""
+    return _fx_resolve(fx, row, spec)[0]
 
 
 # --------------------------------------------------------------------------- #
 # Stage 2 — map onto the target contract.
 # mapping: {target_col: {from, compute?, type?, format?, dp?, const?, sep?, ...}}
 # --------------------------------------------------------------------------- #
-def _field(row, spec, fx=None, lookup=None):
+def _field(row, spec, fx=None, lookup=None, flags=None):
     comp = spec.get("compute", "as_is")
     frm = spec.get("from")
     if "const" in spec:
@@ -297,9 +337,13 @@ def _field(row, spec, fx=None, lookup=None):
     elif comp == "concat":
         return spec.get("sep", " ").join(_s(row.get(x)) for x in frm)
     elif comp == "fx_convert":
-        rate = _fx_rate(fx, row, spec)
-        if rate is None:
+        rate, problem = _fx_resolve(fx, row, spec)
+        if rate is None and problem is None:
             raise ValueError("compute 'fx_convert' needs a pinned fx.rate (or fx.rates + on_date)")
+        if rate is None:                             # never invent: blank + flagged
+            if flags is not None:
+                flags.append(problem)
+            return ""
         n = _num(row.get(frm))
         return _fmt_number((n * rate) if n is not None else None, spec)
     elif comp == "lookup":
@@ -321,11 +365,24 @@ def _field(row, spec, fx=None, lookup=None):
     return _s(raw)
 
 
-def apply_map(header, rows, mapping, fx=None, lookups=None):
-    """Produce (target_header, target_rows) by applying `mapping` to each source row."""
+def apply_map(header, rows, mapping, fx=None, lookups=None, issues=None):
+    """Produce (target_header, target_rows) by applying `mapping` to each source row. Pass a list
+    as `issues` to receive per-cell flags (e.g. an FX rate that could not be resolved for a row's
+    date — that cell is left blank, never filled with a guessed rate)."""
     lookups = lookups or {}
     tcols = list(mapping.keys())
-    out = [{tc: _field(r, sp, fx, lookups.get(tc)) for tc, sp in mapping.items()} for r in rows]
+    out = []
+    for idx, r in enumerate(rows):
+        rec = {}
+        for tc, sp in mapping.items():
+            flags = []
+            rec[tc] = _field(r, sp, fx, lookups.get(tc), flags)
+            if issues is not None:
+                for f in flags:
+                    issues.append({"kind": "fx_rate_unresolved", "severity": "warning",
+                                   "row": idx + 1, "fields": [tc],
+                                   "detail": f"row {idx + 1}, '{tc}' left blank: {f}"})
+        out.append(rec)
     return tcols, out
 
 
@@ -581,11 +638,29 @@ def sense_check(spec, header, rows, run_dates_after=None):
         if col not in header:
             issues.append({"kind": "expected_column_gone", "severity": "warn",
                            "detail": f"card expects '{col}', absent from this source"})
+    # Stale-rate rule: a pinned rate is "old" when its as_of date is strictly EARLIER than the
+    # run's as-of date (`run_dates_after` — the date the conversion should be current for, e.g.
+    # the period end or latest transaction date). Both sides are parsed as dates (ISO,
+    # DD MMM YYYY, dd/mm/yyyy ...), never string-compared. A `rates` table is judged by its
+    # latest as_of. An unparseable date is flagged rather than silently passed.
     fx = spec.get("fx")
-    if fx and fx.get("as_of") and run_dates_after and fx["as_of"] < run_dates_after:
-        issues.append({"kind": "stale_fx", "severity": "warn",
-                       "detail": f"pinned {fx.get('pair','rate')} is as of {fx['as_of']} — "
-                                 f"older than this run; refresh if the rate should be current"})
+    if fx and run_dates_after:
+        pinned = fx.get("as_of")
+        if not pinned and fx.get("rates"):
+            ds = [_to_date(r.get("as_of")) for r in fx["rates"]]
+            ds = [d for d in ds if d is not None]
+            pinned = max(ds) if ds else None
+        if pinned:
+            p_d, run_d = _to_date(pinned), _to_date(run_dates_after)
+            if p_d is None or run_d is None:
+                issues.append({"kind": "fx_date_unparsed", "severity": "warn",
+                               "detail": f"could not compare the pinned rate date ({pinned}) with "
+                                         f"the run date ({run_dates_after}) — check both dates"})
+            elif p_d < run_d:
+                issues.append({"kind": "stale_fx", "severity": "warn",
+                               "detail": f"pinned {fx.get('pair','rate')} is as of "
+                                         f"{p_d:%d %b %Y} — older than this run "
+                                         f"({run_d:%d %b %Y}); refresh if the rate should be current"})
     return issues
 
 
@@ -679,13 +754,15 @@ def convert_rows(spec, header, rows, lookups=None):
     rules = spec.get("rules") or {}
     if lookups is None:
         lookups = load_lookups(mapping)              # inline map_values (file tables need a base_dir)
+    map_issues = []
     if mapping:
-        t_header, t_rows = apply_map(header, rows, mapping, fx=spec.get("fx"), lookups=lookups)
+        t_header, t_rows = apply_map(header, rows, mapping, fx=spec.get("fx"), lookups=lookups,
+                                     issues=map_issues)
     else:
         t_header, t_rows = header, rows
     t_rows, required_issues, n_excluded = apply_required_policy(
         t_header, t_rows, tgt.get("columns"), rules)
-    issues = list(required_issues)
+    issues = map_issues + list(required_issues)
     issues.extend(check_contract(t_header, t_rows, tgt.get("columns"), header, mapping, rules))
     report = {"rows_in": n_in, "rows_filtered": n_filtered,
               "rows_excluded_required": n_excluded, "rows_out": len(t_rows),
@@ -727,10 +804,15 @@ def convert_file(spec, in_path, out_path, run_dates_after=None, base_dir=None):
     lookups = load_lookups(spec.get("map", {}), base_dir=base_dir)   # resolve file tables here
     t_header, t_rows, report = convert_rows(spec, header, rows, lookups=lookups)
     report["sense_check"] = drift
+    # Never blind-apply: an error in the contract issues OR in the source sense-check (e.g. a
+    # mapped source column missing/renamed — it would be written blank) blocks the write. The
+    # report is still produced so the drift can be shown and the card adjusted/regenerated.
     blocking = [i for i in (report.get("issues") or []) if i.get("severity") == "error"]
-    if blocking:
+    drift_errors = [i for i in drift if i.get("severity") == "error"]
+    if blocking or drift_errors:
         report["written"] = []
         report["blocked"] = True
+        report["blocked_by"] = (["contract"] if blocking else []) + (["sense_check"] if drift_errors else [])
         return report
 
     split_op = next((o for o in spec.get("reshape", []) if o["op"] == "split"), None)
@@ -765,7 +847,14 @@ def render_report(report, *, name="Conversion"):
              + (f" · excluded (required missing): {excl}" if excl else "")
              + f" · rows out: {report['rows_out']}")
     if report.get("blocked"):
-        L.append("- Written: (blocked — contract errors; fix required fields or policy)")
+        why = report.get("blocked_by") or ["contract"]
+        reasons = []
+        if "sense_check" in why:
+            reasons.append("the source has drifted from the card (see sense-check errors) — "
+                           "adjust or regenerate the card, then re-run")
+        if "contract" in why:
+            reasons.append("contract errors — fix required fields or policy")
+        L.append("- Written: nothing (blocked — " + "; ".join(reasons) + ")")
     else:
         L.append(f"- Written: {', '.join(report.get('written', [])) or '(not written)'}")
     drift = report.get("sense_check") or []
@@ -938,6 +1027,19 @@ def _self_test():
                              [{"USD": "100", "Date": "15/03/2026"},   # -> 0.80
                               {"USD": "100", "Date": "20/06/2026"}])  # -> 0.75
     assert fxr[0]["GBP"] == "80.00" and fxr[1]["GBP"] == "75.00", fxr
+    # never invent: a row predating every rate, or an unparseable date, is blank + flagged
+    _, fxr2, fxrep2 = convert_rows(fxspec, ["USD", "Date"],
+                                   [{"USD": "100", "Date": "15 Dec 2025"},
+                                    {"USD": "100", "Date": "not a date"},
+                                    {"USD": "100", "Date": "15 Jul 2026"}])
+    assert fxr2[0]["GBP"] == "" and fxr2[1]["GBP"] == "" and fxr2[2]["GBP"] == "75.00", fxr2
+    assert sum(1 for i in fxrep2["issues"] if i["kind"] == "fx_rate_unresolved") == 2, fxrep2
+    # stale-rate check parses dates (DD MMM YYYY vs ISO), never string-compares
+    st = sense_check({"fx": {"pair": "USD/GBP", "rate": "0.8", "as_of": "30 Jun 2026"}}, [], [],
+                     run_dates_after="2026-07-01")
+    assert [i["kind"] for i in st] == ["stale_fx"], st
+    assert not sense_check({"fx": {"rate": "0.8", "as_of": "01 Jul 2026"}}, [], [],
+                           run_dates_after="2026-07-01")
     print("v2 date-keyed FX: PASS")
 
     # v2 (5) fixed-width output
@@ -971,7 +1073,8 @@ def main(argv=None):
     ap.add_argument("-o", "--out", help="output path (a split writes <stem>_<key><suffix>)")
     ap.add_argument("--check-only", action="store_true",
                     help="sense-check the source against the card and report; write nothing")
-    ap.add_argument("--as-of", help="this run's date, to flag a stale pinned rate")
+    ap.add_argument("--as-of", help="this run's as-of date (ISO or DD MMM YYYY); a pinned rate "
+                                    "dated earlier is flagged stale")
     ap.add_argument("--self-test", action="store_true")
     a = ap.parse_args(argv)
     if a.self_test:
@@ -991,7 +1094,7 @@ def main(argv=None):
     base_dir = str(Path(a.card).resolve().parent)   # resolve relative lookup tables / templates
     report = convert_file(spec, a.source, out, run_dates_after=a.as_of, base_dir=base_dir)
     print(render_report(report, name=spec.get("name", "Conversion")))
-    return 0
+    return 1 if report.get("blocked") else 0
 
 
 if __name__ == "__main__":
