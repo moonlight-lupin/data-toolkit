@@ -50,10 +50,14 @@ For a **multi-tab workbook** it won't guess: `read_any` auto-selects the single 
 but if several tabs hold data it raises `SheetSelectionRequired` — call `ingest.list_sheets(path)`,
 show the tabs, then `read_any(path, sheet="<name>")`.
 
-For files with 10k+ rows, use `ingest.read_large` instead of `read_any` to avoid OOM. See
-`references/large-file-patterns.md` for vectorised operation guidance.
+For files with 10k+ rows, use `ingest.read_large_rows(path)` instead of `read_any` — a drop-in
+that returns the same `(rows, note)` shape (Parquet cache / streaming for `.xlsx`; any
+other type falls back to `read_any`). `ingest.read_large` is the DataFrame variant and is
+**`.xlsx`/`.xlsm` only** (raises on `.csv`); convert its result with
+`header, rows = list(df.columns), df.values.tolist()`. See `references/large-file-patterns.md`
+for vectorised operation guidance.
 
-**Done when:** you have `(header, rows, note)` from `read_any` (or `read_large` for 10k+ rows), and `note` has been read for any source-quality flags. If `SheetSelectionRequired` was raised, the user has chosen a sheet.
+**Done when:** you have `(header, rows, note)` from `read_any` (or `read_large_rows` for 10k+ rows), and `note` has been read for any source-quality flags. If `SheetSelectionRequired` was raised, the user has chosen a sheet.
 
 ### 2 — Profile (against the target)
 `dataclean.profile_table(header, rows)` / `dataclean.render_profile(...)` — shows columns,

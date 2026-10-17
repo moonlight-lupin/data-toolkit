@@ -2,12 +2,13 @@
 text, so the diversity of inputs lives here and the cleanup pipeline (dataclean.py) stays one
 shared path. Used by `data-tidy` (clean tabular data) and `data-extract` (get data
 out of documents). Lives at the toolkit-root `scripts/`; skills import it by adding
-`../../scripts` to sys.path (run from the skill directory).
+`[skill]/../../scripts` (absolute) to sys.path, so commands can run from the work folder.
 
-    from ingest import read_any, read_large, read_paste, read_text, list_sheets, list_pdf_tables, ocr_available
+    from ingest import read_any, read_large, read_large_rows, read_paste, read_text, list_sheets, list_pdf_tables, ocr_available
     rows, note = read_any("export.xlsx")       # or .csv/.tsv, a .pdf, a .docx, a .msg, a .pptx
     rows, note = read_any("book.xlsx", sheet="Q2")  # pick a tab in a multi-sheet workbook
     df, note   = read_large("ledger.xlsx")     # 10k+ rows: strategy gate + Parquet cache/stream
+    rows, note = read_large_rows("ledger.xlsx") # same, but rows shaped like read_any (any ext)
     sheets     = list_sheets("book.xlsx")       # discover tabs (name/size/hidden/empty)
     rows, note = read_paste(pasted_text)        # markdown / tab / csv-ish pasted table
     text, note = read_text("form.pdf")          # document -> plain text (OCR fallback)
@@ -204,6 +205,38 @@ def read_large(path: str, sheet=None, cache_dir=None):
 
     df, note = streaming.load_via_strategy(path, sheet=target, cache_dir=cache_dir)
     return df, note
+
+
+def read_large_rows(path: str, sheet=None, cache_dir=None):
+    """Drop-in for ``read_any`` on big files → ``(rows, note)`` in the SAME shape as
+    ``read_any`` (list of row lists, header row first), so the rest of the workflow
+    (``dataclean.detect_header`` / ``profile_table`` / ``analyse``) is unchanged.
+
+    ``.xlsx``/``.xlsm`` go through ``read_large`` (Parquet cache / streaming when pandas+pyarrow
+    are installed); a DataFrame result is converted as ``[list(df.columns)] + df.values.tolist()``
+    with missing cells (None/NaN/NaT) as ``""``. Any other type (``.csv``, ``.pdf`` …) is read
+    with ``read_any`` — it never raises just because the file is not Excel."""
+    ext = Path(path).suffix.lower()
+    if ext not in (".xlsx", ".xlsm"):
+        rows, note = read_any(path, sheet=sheet)
+        return rows, note + " (read_large_rows: non-Excel source read directly)"
+    frame, note = read_large(path, sheet=sheet, cache_dir=cache_dir)
+    if isinstance(frame, list):                  # fallback path already returns rows
+        return frame, note
+
+    def _cell(v):
+        if v is None:
+            return ""
+        try:
+            if v != v:                           # NaN / NaT
+                return ""
+        except (TypeError, ValueError):          # pandas.NA refuses bool()
+            return "" if repr(v) == "<NA>" else v
+        return v
+
+    rows = [[str(c) for c in frame.columns]]
+    rows += [[_cell(v) for v in rec] for rec in frame.astype(object).values.tolist()]
+    return rows, note
 
 
 def read_csv(path: str):

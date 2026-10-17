@@ -55,10 +55,14 @@ header_rows, note = ingest.read_any(path)     # xlsx/csv/pdf/docx/msg; read_past
 Multi-tab workbooks: `read_any` raises `SheetSelectionRequired` if several tabs hold data —
 list the sheets and ask, don't guess.
 
-For files with 10k+ rows, use `ingest.read_large` instead of `read_any` to avoid OOM. See
-`references/large-file-patterns.md` for vectorised operation guidance.
+For files with 10k+ rows, use `ingest.read_large_rows(path)` instead of `read_any` — a drop-in
+that returns the same `(header_rows, note)` shape (Parquet cache / streaming for `.xlsx`; any
+other type falls back to `read_any`). `ingest.read_large` is the DataFrame variant and is
+**`.xlsx`/`.xlsm` only** (raises on `.csv`); convert its result with
+`header, rows = list(df.columns), df.values.tolist()`. See `references/large-file-patterns.md`
+for vectorised operation guidance.
 
-**Done when:** you have `(header_rows, note)` from `read_any` (or `read_large` for 10k+ rows). If `SheetSelectionRequired` was raised, the user has chosen a sheet. `note` has been read for source-quality flags.
+**Done when:** you have `(header_rows, note)` from `read_any` (or `read_large_rows` for 10k+ rows). If `SheetSelectionRequired` was raised, the user has chosen a sheet. `note` has been read for source-quality flags.
 
 ### 2 — Profile & quality gate
 `dataclean.profile_table(header, rows)` / `score_quality(...)` — column types, missing %,

@@ -23,7 +23,7 @@ clean result.
 > **Two jobs, often combined:**
 > 1. **Contract mapping** — map a source onto *another system's* import contract (columns, order,
 >    types, required fields). Unmapped sources are reported; required-but-missing rows follow
->    `rules.on_missing_required` (`flag` / `exclude` / `error`) — never invent values.
+>    `rules.on_missing_required` (`flag` / `exclude` / `error`; default `flag`) — never invent values.
 > 2. **Structural reshape** — `unpivot` (wide→long), `pivot` (long→wide), `flatten`/`nest`
 >    (JSON↔table), `split` (one file→many by a key), `union` (many→one with column alignment).
 
@@ -51,23 +51,33 @@ or the field list), and the user has confirmed the proposed mapping before any f
 `convert_[name].md` in the working folder). If one does, **do not blind-run it**:
 1. Load it (`load_spec`) and read its **Mapping** + **Expected source**.
 2. **Sense-check today's source against it** (`sense_check(spec, header, rows)` /
-   `convert.py <src> --card card.md --check-only`).
+   `convert.py <src> --card card.md --check-only`), passing the run's as-of date —
+   `sense_check(spec, header, rows, run_dates_after="30 Jun 2026")` / `--as-of "30 Jun 2026"`
+   (ISO or DD MMM YYYY; the date the conversion must be current for, e.g. the period end).
 3. **Flag any discrepancy to the user** — a mapped column missing/renamed, a new column, a
    required field now empty, or a **stale pinned rate** — and let them decide: proceed / adjust /
-   regenerate. Never apply over drift silently.
+   regenerate. Never apply over drift silently. **Stale rule:** a pinned rate is "old" when its
+   `as_of` (for a `rates` table, the latest `as_of`) is earlier than the run's as-of date; both
+   dates are parsed, never compared as text.
 
 ### 3. Apply (deterministic)
 ```python
 spec = load_spec("convert_gl_to_journal.md")          # or a dict you just built + confirmed
-report = convert_file(spec, "gl_export.xlsx", "journal_import.csv")
+report = convert_file(spec, "gl_export.xlsx", "journal_import.csv",
+                      run_dates_after="30 Jun 2026")   # the run's as-of date (stale-FX check)
 print(render_report(report, name=spec["name"]))
 ```
 Or one-shot from the CLI:
-`python scripts/convert.py gl_export.xlsx --card convert_gl_to_journal.md -o journal_import.csv`
+`python scripts/convert.py gl_export.xlsx --card convert_gl_to_journal.md -o journal_import.csv --as-of "30 Jun 2026"`
 
 The engine reads the source (any format via the shared `ingest`), runs any reshape ops, maps to
 the target contract, and writes the target format (`csv` / `json` / `xlsx`). It reports rows
 in/out, the **sense-check**, unmapped source columns and required-but-missing target fields.
+**Nothing is written** (`report["blocked"]`, CLI exit code 1) when the sense-check or the contract
+has an `error` — e.g. a mapped source column that is missing or renamed, which would otherwise be
+written blank; the report still lists why. With a date-keyed `fx.rates` table, a row dated
+before every pinned rate (or with a blank/unparseable date) is left **blank and flagged**
+(`fx_rate_unresolved`), never converted at a guessed rate.
 
 **Done when:** `report["sense_check"]` is clean (or every discrepancy has been flagged to the
 user and resolved), the target file is written, and the report's unmapped-column /
@@ -97,7 +107,8 @@ on that. When a conversion needs a live value (e.g. a USD→GBP rate):
   decides** whether to apply it (confirm-first);
 - the value is **pinned into the card** (`fx: {pair, rate, as_of, source}`) and applied by the
   engine as a **recorded constant**, so a re-run is deterministic and auditable;
-- refreshing is a deliberate act — the sense-check flags a pinned rate that's old for the run.
+- refreshing is a deliberate act — the sense-check flags a pinned rate that's old for the run
+  (its `as_of` is earlier than the run's `--as-of` date).
 
 Fetching a public rate is a public lookup, not egress of the user's data — the dataset never
 leaves. Never send the actual rows to an external service to "convert" them.
@@ -121,7 +132,8 @@ Ready-made example contracts: `references/contracts/journal-import.md`,
 ## Safety
 - **Deterministic & human-in-the-loop** — the engine applies a confirmed spec; it never invents a
   value. Output is a **draft for review**, not a posting or an upload — a person submits it.
-- **Never blind-applies** — a drifted source is flagged, not force-converted.
+- **Never blind-applies** — a drifted source is flagged, not force-converted: a missing or
+  renamed mapped column blocks the write.
 
 ## Files
 
